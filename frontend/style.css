@@ -18,9 +18,15 @@ label {
   gap: 4px;
 }
 
-input, button {
+input, button, select, textarea {
   padding: 8px;
   font-size: 14px;
+  font-family: inherit;
+}
+
+.card button {
+  margin-right: 6px;
+  margin-top: 8px;
 }
 
 button {

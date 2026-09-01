@@ -70,6 +70,12 @@ func uniqueViolationField(err error) string {
 	return ""
 }
 
+// 23503 = foreign_key_violation в Postgres — например ссылка на несуществующую игру
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+}
+
 func setAuthCookie(w http.ResponseWriter, token string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",

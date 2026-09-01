@@ -1,6 +1,9 @@
 package main
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 var roleRank = map[string]int{
 	"player":     1,
@@ -12,9 +15,18 @@ func hasRole(userRole, minRole string) bool {
 	return roleRank[userRole] >= roleRank[minRole]
 }
 
+type contextKey string
+
+const claimsContextKey contextKey = "claims"
+
+func claimsFromContext(r *http.Request) *customClaims {
+	claims, _ := r.Context().Value(claimsContextKey).(*customClaims)
+	return claims
+}
+
 // requireRole оборачивает обработчик: пускает дальше только если у пользователя
-// роль minRole или выше (player < admin < superadmin). Понадобится, когда появятся
-// защищённые эндпоинты — например управление статьями или назначение ролей.
+// роль minRole или выше (player < admin < superadmin), и кладёт claims в контекст
+// запроса, чтобы обработчик знал, кто именно его вызвал (например для author_id).
 func requireRole(minRole string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("token")
@@ -34,6 +46,7 @@ func requireRole(minRole string, next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		next(w, r)
+		ctx := context.WithValue(r.Context(), claimsContextKey, claims)
+		next(w, r.WithContext(ctx))
 	}
 }

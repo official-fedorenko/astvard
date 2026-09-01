@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Админка — Astvard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Админка</h1>
+  <p><a href="cabinet.html" style="color:#6cf;">← Кабинет</a></p>
+  <p id="status">Проверяем доступ...</p>
+
+  <section id="content" style="display:none;">
+    <h2>Сервера</h2>
+    <form id="server-form">
+      <input type="hidden" id="server-id">
+      <label>
+        Игра
+        <select id="server-gameId" required></select>
+      </label>
+      <label>
+        Название
+        <input type="text" id="server-name" required>
+      </label>
+      <label>
+        Host
+        <input type="text" id="server-host" required>
+      </label>
+      <label>
+        Port
+        <input type="number" id="server-port" min="1" max="65535" required>
+      </label>
+      <label>
+        Описание
+        <input type="text" id="server-description">
+      </label>
+      <button type="submit" id="server-submit">Добавить сервер</button>
+      <button type="button" id="server-cancel" style="display:none;">Отмена</button>
+    </form>
+    <p id="server-message"></p>
+    <div id="servers-list"></div>
+
+    <h2>Статьи</h2>
+    <form id="article-form">
+      <input type="hidden" id="article-id">
+      <label>
+        Заголовок
+        <input type="text" id="article-title" required>
+      </label>
+      <label>
+        Slug
+        <input type="text" id="article-slug" pattern="[-a-z0-9]+" required>
+      </label>
+      <label>
+        Текст
+        <textarea id="article-content" rows="5" required></textarea>
+      </label>
+      <button type="submit" id="article-submit">Добавить статью</button>
+      <button type="button" id="article-cancel" style="display:none;">Отмена</button>
+    </form>
+    <p id="article-message"></p>
+    <div id="articles-list"></div>
+  </section>
+
+  <script src="admin.js"></script>
+</body>
+</html>

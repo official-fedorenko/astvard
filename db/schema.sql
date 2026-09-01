@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS servers (
 
 CREATE TABLE IF NOT EXISTS server_status (
   id SERIAL PRIMARY KEY,
-  server_id INTEGER NOT NULL REFERENCES servers(id),
+  server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
   online BOOLEAN NOT NULL,
   players_online INTEGER,
   players_max INTEGER,

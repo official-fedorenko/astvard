@@ -62,6 +62,10 @@ async function loadMe() {
   logoutBtn.style.display = 'inline-block';
   content.style.display = 'block';
 
+  if (data.role === 'admin' || data.role === 'superadmin') {
+    document.getElementById('admin-link').style.display = 'inline';
+  }
+
   loadServers();
   loadArticles();
 }

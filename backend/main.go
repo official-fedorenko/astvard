@@ -35,6 +35,13 @@ func main() {
 	mux.HandleFunc("GET /api/servers", handleGetServers(pool))
 	mux.HandleFunc("GET /api/articles", handleGetArticles(pool))
 
+	mux.HandleFunc("POST /api/admin/articles", requireRole("admin", handleCreateArticle(pool)))
+	mux.HandleFunc("PUT /api/admin/articles/{id}", requireRole("admin", handleUpdateArticle(pool)))
+	mux.HandleFunc("DELETE /api/admin/articles/{id}", requireRole("admin", handleDeleteArticle(pool)))
+	mux.HandleFunc("POST /api/admin/servers", requireRole("admin", handleCreateServer(pool)))
+	mux.HandleFunc("PUT /api/admin/servers/{id}", requireRole("admin", handleUpdateServer(pool)))
+	mux.HandleFunc("DELETE /api/admin/servers/{id}", requireRole("admin", handleDeleteServer(pool)))
+
 	// http.FileServer сам отдаёт index.html для "/" и сам защищён от path traversal —
 	// то, что в Node мы писали руками (serveStatic), тут даёт стандартная библиотека
 	frontendDir := filepath.Join("..", "frontend")
