@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -37,9 +38,28 @@ func main() {
 
 	fmt.Println("status-service запущен, опрос каждые 30 секунд")
 
-	for {
+	go func() {
+		for {
+			checkAllServers(pool)
+			time.Sleep(30 * time.Second)
+		}
+	}()
+
+	// внутренний HTTP — только на localhost, чтобы бэкенд мог попросить
+	// перепроверить сервера прямо сейчас, не дожидаясь следующего цикла
+	statusPort := os.Getenv("STATUS_PORT")
+	if statusPort == "" {
+		statusPort = "3002"
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /check-all", func(w http.ResponseWriter, r *http.Request) {
 		checkAllServers(pool)
-		time.Sleep(30 * time.Second)
+		w.WriteHeader(http.StatusOK)
+	})
+	addr := "127.0.0.1:" + statusPort
+	fmt.Println("status-service внутренний HTTP:", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		panic(err)
 	}
 }
 

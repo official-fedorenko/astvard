@@ -41,6 +41,7 @@ func main() {
 	mux.HandleFunc("POST /api/admin/servers", requireRole("admin", handleCreateServer(pool)))
 	mux.HandleFunc("PUT /api/admin/servers/{id}", requireRole("admin", handleUpdateServer(pool)))
 	mux.HandleFunc("DELETE /api/admin/servers/{id}", requireRole("admin", handleDeleteServer(pool)))
+	mux.HandleFunc("POST /api/admin/servers/refresh", requireRole("admin", handleRefreshServers))
 
 	// http.FileServer сам отдаёт index.html для "/" и сам защищён от path traversal —
 	// то, что в Node мы писали руками (serveStatic), тут даёт стандартная библиотека.

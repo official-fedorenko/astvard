@@ -24,12 +24,12 @@ async function checkAccess() {
 const serverForm = document.getElementById('server-form');
 const serverIdInput = document.getElementById('server-id');
 const serverGameSelect = document.getElementById('server-gameId');
-const serverNameInput = document.getElementById('server-name');
 const serverHostInput = document.getElementById('server-host');
 const serverPortInput = document.getElementById('server-port');
 const serverDescInput = document.getElementById('server-description');
 const serverSubmitBtn = document.getElementById('server-submit');
 const serverCancelBtn = document.getElementById('server-cancel');
+const serverRefreshBtn = document.getElementById('server-refresh');
 const serverMessage = document.getElementById('server-message');
 const serversList = document.getElementById('servers-list');
 
@@ -46,17 +46,20 @@ async function loadServersAdmin() {
   const servers = await response.json();
 
   serversList.innerHTML = servers
-    .map(
-      (s) => `
+    .map((s) => {
+      const displayName = s.reported_name || s.name;
+      const statusText =
+        s.online === true ? '🟢 онлайн' : s.online === false ? '🔴 офлайн' : '⚪ ещё не проверялся';
+      return `
         <div class="card">
-          <strong>${escapeHtml(s.name)}</strong> (${escapeHtml(s.game_name)})<br>
+          <strong>${escapeHtml(displayName)}</strong> (${escapeHtml(s.game_name)}) — ${statusText}<br>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
           <span>${escapeHtml(s.description)}</span><br>
           <button class="btn-secondary" data-edit-server="${s.id}">Изменить</button>
           <button class="btn-danger" data-delete-server="${s.id}">Удалить</button>
         </div>
-      `
-    )
+      `;
+    })
     .join('');
 
   serversList.querySelectorAll('[data-edit-server]').forEach((btn) => {
@@ -74,7 +77,6 @@ async function loadServersAdmin() {
 function startEditServer(server) {
   serverIdInput.value = server.id;
   serverGameSelect.value = String(games.find((g) => g.slug === server.game_slug)?.id ?? '');
-  serverNameInput.value = server.name;
   serverHostInput.value = server.host;
   serverPortInput.value = server.port;
   serverDescInput.value = server.description ?? '';
@@ -97,7 +99,6 @@ serverForm.addEventListener('submit', async (event) => {
   const id = serverIdInput.value;
   const body = {
     gameId: Number(serverGameSelect.value),
-    name: serverNameInput.value,
     host: serverHostInput.value,
     port: Number(serverPortInput.value),
     description: serverDescInput.value,
@@ -127,6 +128,18 @@ async function deleteServer(id) {
   await fetch(`/api/admin/servers/${id}`, { method: 'DELETE' });
   loadServersAdmin();
 }
+
+serverRefreshBtn.addEventListener('click', async () => {
+  serverRefreshBtn.disabled = true;
+  serverRefreshBtn.textContent = 'Проверяю...';
+  try {
+    await fetch('/api/admin/servers/refresh', { method: 'POST' });
+    await loadServersAdmin();
+  } finally {
+    serverRefreshBtn.disabled = false;
+    serverRefreshBtn.textContent = 'Обновить статусы';
+  }
+});
 
 // ---------- Статьи ----------
 

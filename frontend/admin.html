@@ -12,15 +12,12 @@
 
   <section id="content" style="display:none;">
     <h2>Сервера</h2>
+    <p style="color:var(--color-text-muted); font-size:0.9rem;">Название подтягивается само с реального сервера — вводить не нужно.</p>
     <form id="server-form">
       <input type="hidden" id="server-id">
       <label>
         Игра
         <select id="server-gameId" required></select>
-      </label>
-      <label>
-        Название
-        <input type="text" id="server-name" required>
       </label>
       <label>
         Host
@@ -38,6 +35,7 @@
       <button type="button" id="server-cancel" class="btn-secondary" style="display:none;">Отмена</button>
     </form>
     <p id="server-message"></p>
+    <button type="button" id="server-refresh" class="btn-secondary">Обновить статусы</button>
     <div id="servers-list"></div>
 
     <h2>Статьи</h2>

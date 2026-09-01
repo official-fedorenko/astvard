@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,7 +23,6 @@ type articleRequest struct {
 
 type serverRequest struct {
 	GameID      int    `json:"gameId"`
-	Name        string `json:"name"`
 	Host        string `json:"host"`
 	Port        int    `json:"port"`
 	Description string `json:"description"`
@@ -142,18 +143,20 @@ func handleDeleteArticle(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-func validateServerRequest(req serverRequest) (name, host, description string, ok bool, errMsg string) {
-	name = strings.TrimSpace(req.Name)
+// Имя сервера не спрашиваем у админа — сразу после создания его подтянет
+// status-service из реального ответа сервера (reported_name). До первого опроса
+// (максимум ~30 сек) показываем как временную заглушку "host:port".
+func validateServerRequest(req serverRequest) (host, description string, ok bool, errMsg string) {
 	host = strings.TrimSpace(req.Host)
 	description = strings.TrimSpace(req.Description)
 
-	if req.GameID == 0 || name == "" || host == "" {
-		return "", "", "", false, "Нужны gameId, name и host"
+	if req.GameID == 0 || host == "" {
+		return "", "", false, "Нужны gameId и host"
 	}
 	if req.Port < 1 || req.Port > 65535 {
-		return "", "", "", false, "Port должен быть от 1 до 65535"
+		return "", "", false, "Port должен быть от 1 до 65535"
 	}
-	return name, host, description, true, ""
+	return host, description, true, ""
 }
 
 func handleCreateServer(pool *pgxpool.Pool) http.HandlerFunc {
@@ -164,11 +167,12 @@ func handleCreateServer(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		name, host, description, ok, errMsg := validateServerRequest(req)
+		host, description, ok, errMsg := validateServerRequest(req)
 		if !ok {
 			writeError(w, http.StatusBadRequest, errMsg)
 			return
 		}
+		name := fmt.Sprintf("%s:%d", host, req.Port)
 
 		var id int
 		var createdAt time.Time
@@ -213,11 +217,12 @@ func handleUpdateServer(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		name, host, description, ok, errMsg := validateServerRequest(req)
+		host, description, ok, errMsg := validateServerRequest(req)
 		if !ok {
 			writeError(w, http.StatusBadRequest, errMsg)
 			return
 		}
+		name := fmt.Sprintf("%s:%d", host, req.Port)
 
 		tag, err := pool.Exec(r.Context(),
 			`UPDATE servers SET game_id = $1, name = $2, host = $3, port = $4, description = $5
@@ -269,4 +274,23 @@ func handleDeleteServer(pool *pgxpool.Pool) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
+}
+
+// handleRefreshServers просит status-service (отдельный процесс) перепроверить
+// все сервера прямо сейчас, вместо того чтобы ждать следующего цикла (до 30 сек)
+func handleRefreshServers(w http.ResponseWriter, r *http.Request) {
+	statusPort := os.Getenv("STATUS_PORT")
+	if statusPort == "" {
+		statusPort = "3002"
+	}
+
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(fmt.Sprintf("http://127.0.0.1:%s/check-all", statusPort), "", nil)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "status-service недоступен")
+		return
+	}
+	defer resp.Body.Close()
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
