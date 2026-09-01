@@ -87,10 +87,10 @@ async function loadServers() {
       const { icon, accent } = gameVisual(s.game_slug);
 
       const statsParts = [];
-      if (s.uptime_percent != null) statsParts.push(`аптайм 24ч: ${s.uptime_percent}%`);
-      if (s.peak_players != null) statsParts.push(`пик игроков за 24ч: ${s.peak_players}`);
+      if (s.uptime_percent != null) statsParts.push(`📶 аптайм 24ч: ${s.uptime_percent}%`);
+      if (s.peak_players != null) statsParts.push(`🏆 пик за 24ч: ${s.peak_players}`);
       const statsLine = statsParts.length
-        ? `<div class="card-meta">${statsParts.join(' · ')}</div>`
+        ? `<div class="server-stats">${statsParts.map((p) => `<span>${p}</span>`).join('')}</div>`
         : '';
 
       let playersLine = '';
@@ -103,6 +103,10 @@ async function loadServers() {
         playersLine = `<div class="player-count">👥 Игроков: ${s.players_online}/${s.players_max}</div>${chips}`;
       }
 
+      const descriptionLine = s.description
+        ? `<p class="server-description">${escapeHtml(s.description)}</p>`
+        : '';
+
       return `
         <div class="card card-server" style="--game-accent:${accent};">
           <div class="card-header">
@@ -110,8 +114,8 @@ async function loadServers() {
             ${statusBadge(s.online)}
           </div>
           <div class="card-meta">${escapeHtml(s.game_name)}</div>
-          <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
-          <span>${escapeHtml(s.description)}</span>
+          <div class="server-address">🔗 ${escapeHtml(s.host)}:${escapeHtml(s.port)}</div>
+          ${descriptionLine}
           ${playersLine}
           ${statsLine}
         </div>
