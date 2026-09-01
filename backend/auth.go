@@ -29,8 +29,14 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-// r.RemoteAddr приходит в виде "1.2.3.4:54321" — порт нам не нужен, только сам IP
+// За nginx r.RemoteAddr — это всегда сам nginx (127.0.0.1), а не реальный посетитель,
+// поэтому сначала смотрим на X-Real-IP, который nginx проставляет из настоящего адреса
+// (см. proxy_set_header в конфиге). Если заголовка нет — значит идём напрямую (локальная
+// разработка), тогда берём r.RemoteAddr как раньше.
 func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
