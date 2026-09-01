@@ -12,7 +12,7 @@ let games = [];
 async function checkAccess() {
   const response = await fetch('/api/me');
   if (!response.ok) {
-    window.location.href = 'login.html';
+    window.location.href = 'login';
     return false;
   }
   const data = await response.json();

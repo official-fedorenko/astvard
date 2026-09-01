@@ -51,7 +51,7 @@ form.addEventListener('submit', async (event) => {
     });
 
     if (loginResponse.ok) {
-      window.location.href = 'cabinet.html';
+      window.location.href = 'cabinet';
       return;
     }
 

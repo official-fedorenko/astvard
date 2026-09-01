@@ -54,7 +54,7 @@ async function loadMe() {
 
   if (!response.ok) {
     // не залогинен — отправляем на страницу входа
-    window.location.href = 'login.html';
+    window.location.href = 'login';
     return;
   }
 
@@ -74,7 +74,7 @@ async function loadMe() {
 
 logoutBtn.addEventListener('click', async () => {
   await fetch('/api/logout', { method: 'POST' });
-  window.location.href = 'login.html';
+  window.location.href = 'login';
 });
 
 loadMe();

@@ -43,9 +43,10 @@ func main() {
 	mux.HandleFunc("DELETE /api/admin/servers/{id}", requireRole("admin", handleDeleteServer(pool)))
 
 	// http.FileServer сам отдаёт index.html для "/" и сам защищён от path traversal —
-	// то, что в Node мы писали руками (serveStatic), тут даёт стандартная библиотека
+	// то, что в Node мы писали руками (serveStatic), тут даёт стандартная библиотека.
+	// cleanURLFileServer сверху добавляет красивые пути (/admin вместо /admin.html)
 	frontendDir := filepath.Join("..", "frontend")
-	mux.Handle("/", http.FileServer(http.Dir(frontendDir)))
+	mux.Handle("/", cleanURLFileServer(frontendDir))
 
 	port := os.Getenv("PORT")
 	if port == "" {

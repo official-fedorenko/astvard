@@ -24,7 +24,7 @@ form.addEventListener('submit', async (event) => {
       return;
     }
 
-    window.location.href = 'cabinet.html';
+    window.location.href = 'cabinet';
   } catch (err) {
     message.textContent = 'Не удалось связаться с сервером';
     message.style.color = '#e66';
