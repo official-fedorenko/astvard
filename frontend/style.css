@@ -187,6 +187,11 @@ button:disabled,
   padding: var(--spacing-md);
   margin-bottom: var(--spacing-sm);
   max-width: var(--max-content-width);
+  transition: border-color 0.15s ease;
+}
+
+.card:hover {
+  border-color: var(--color-primary);
 }
 
 .card button,
@@ -196,6 +201,78 @@ button:disabled,
   min-height: 36px;
   padding: 8px 14px;
   font-size: 14px;
+}
+
+/* карточки серверов/статей получают цветную полоску слева — у серверов цвет
+   зависит от игры (--game-accent задаётся инлайном под конкретную карточку) */
+.card-server {
+  border-left: 4px solid var(--game-accent, var(--color-primary));
+}
+
+.card-article {
+  border-left: 4px solid var(--color-primary);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.card-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.card-meta {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin-bottom: var(--spacing-xs);
+}
+
+/* ---------- Бейдж статуса ---------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-online {
+  background: rgba(110, 230, 110, 0.15);
+  color: var(--color-success);
+}
+
+.badge-offline {
+  background: rgba(230, 102, 102, 0.15);
+  color: var(--color-danger);
+}
+
+.badge-pending {
+  background: rgba(153, 153, 153, 0.15);
+  color: var(--color-text-muted);
+}
+
+/* ---------- Сетка карточек ---------- */
+/* сама раскладывается в несколько колонок, если хватает ширины, и в одну на мобильных —
+   без медиа-запросов, minmax разруливает это сам */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.grid .card {
+  max-width: none;
+  margin-bottom: 0;
 }
 
 /* ---------- Адаптив ---------- */

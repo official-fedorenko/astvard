@@ -48,11 +48,13 @@ async function loadServersAdmin() {
   serversList.innerHTML = servers
     .map((s) => {
       const displayName = s.reported_name || s.name;
-      const statusText =
-        s.online === true ? '🟢 онлайн' : s.online === false ? '🔴 офлайн' : '⚪ ещё не проверялся';
       return `
         <div class="card">
-          <strong>${escapeHtml(displayName)}</strong> (${escapeHtml(s.game_name)}) — ${statusText}<br>
+          <div class="card-header">
+            <span class="card-title">${escapeHtml(displayName)}</span>
+            ${statusBadge(s.online)}
+          </div>
+          <div class="card-meta">${escapeHtml(s.game_name)}</div>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
           <span>${escapeHtml(s.description)}</span><br>
           <button class="btn-secondary" data-edit-server="${s.id}">Изменить</button>

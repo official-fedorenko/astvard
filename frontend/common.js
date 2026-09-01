@@ -55,6 +55,24 @@ async function renderNav() {
 // Общие для главной и кабинета — обе страницы показывают один и тот же список
 // серверов/статей, просто в разном контексте (публично / после входа)
 
+// иконка + акцентный цвет левой полоски карточки — под конкретную игру;
+// неизвестная игра просто получает нейтральный вид
+const GAME_VISUALS = {
+  valheim: { icon: '⚔️', accent: '#7cb87c' },
+  cs2: { icon: '🎯', accent: '#e6a23c' },
+  minecraft: { icon: '⛏️', accent: '#8bc34a' },
+};
+
+function gameVisual(slug) {
+  return GAME_VISUALS[slug] ?? { icon: '🎮', accent: 'var(--color-primary)' };
+}
+
+function statusBadge(online) {
+  if (online === true) return '<span class="badge badge-online">🟢 онлайн</span>';
+  if (online === false) return '<span class="badge badge-offline">🔴 офлайн</span>';
+  return '<span class="badge badge-pending">⚪ не проверялся</span>';
+}
+
 async function loadServers() {
   const container = document.getElementById('servers-list');
   if (!container) return;
@@ -62,26 +80,38 @@ async function loadServers() {
   const response = await fetch('/api/servers');
   const servers = await response.json();
 
-  container.innerHTML = servers
+  const cards = servers
     .map((s) => {
-      const statusText =
-        s.online === true ? '🟢 онлайн' : s.online === false ? '🔴 офлайн' : '⚪ ещё не проверялся';
       // реальное имя, которое сообщил сам игровой сервер, приоритетнее ручного названия
       const displayName = s.reported_name || s.name;
+      const { icon, accent } = gameVisual(s.game_slug);
+
       const statsParts = [];
       if (s.uptime_percent != null) statsParts.push(`аптайм 24ч: ${s.uptime_percent}%`);
       if (s.peak_players != null) statsParts.push(`пик игроков за 24ч: ${s.peak_players}`);
-      const statsLine = statsParts.length ? `<br><span style="color:var(--color-text-muted); font-size:0.85rem;">${statsParts.join(' · ')}</span>` : '';
+      const statsLine = statsParts.length
+        ? `<div class="card-meta">${statsParts.join(' · ')}</div>`
+        : '';
+
       return `
-        <div class="card">
-          <strong>${escapeHtml(displayName)}</strong> (${escapeHtml(s.game_name)}) — ${statusText}<br>
+        <div class="card card-server" style="--game-accent:${accent};">
+          <div class="card-header">
+            <span class="card-title">${icon} ${escapeHtml(displayName)}</span>
+            ${statusBadge(s.online)}
+          </div>
+          <div class="card-meta">${escapeHtml(s.game_name)}</div>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
-          <span>${escapeHtml(s.description)}</span>${statsLine}
+          <span>${escapeHtml(s.description)}</span>
+          ${statsLine}
         </div>
       `;
     })
     .join('');
+
+  container.innerHTML = `<div class="grid">${cards}</div>`;
 }
+
+const ARTICLE_PREVIEW_LENGTH = 160;
 
 async function loadArticles() {
   const container = document.getElementById('articles-list');
@@ -90,14 +120,33 @@ async function loadArticles() {
   const response = await fetch('/api/articles');
   const articles = await response.json();
 
-  container.innerHTML = articles
-    .map(
-      (a) => `
-        <div class="card">
-          <strong>${escapeHtml(a.title)}</strong>
-          <p>${escapeHtml(a.content)}</p>
+  const cards = articles
+    .map((a, i) => {
+      const isLong = a.content.length > ARTICLE_PREVIEW_LENGTH;
+      const previewRaw = isLong ? a.content.slice(0, ARTICLE_PREVIEW_LENGTH) + '…' : a.content;
+      const readMoreBtn = isLong
+        ? `<button class="btn-secondary read-more-btn" data-expand-article="${i}">Читать дальше</button>`
+        : '';
+
+      return `
+        <div class="card card-article">
+          <div class="card-header">
+            <span class="card-title">📰 ${escapeHtml(a.title)}</span>
+          </div>
+          <p data-article-text="${i}">${escapeHtml(previewRaw)}</p>
+          ${readMoreBtn}
         </div>
-      `
-    )
+      `;
+    })
     .join('');
+
+  container.innerHTML = `<div class="grid">${cards}</div>`;
+
+  container.querySelectorAll('[data-expand-article]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = btn.dataset.expandArticle;
+      container.querySelector(`[data-article-text="${i}"]`).textContent = articles[i].content;
+      btn.remove();
+    });
+  });
 }
