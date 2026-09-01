@@ -13,10 +13,11 @@ import (
 )
 
 type server struct {
-	ID   int
-	Host string
-	Port int
-	Name string
+	ID       int
+	Host     string
+	Port     int
+	Name     string
+	GameSlug string
 }
 
 func main() {
@@ -45,7 +46,11 @@ func main() {
 func checkAllServers(pool *pgxpool.Pool) {
 	ctx := context.Background()
 
-	rows, err := pool.Query(ctx, "SELECT id, host, port, name FROM servers")
+	rows, err := pool.Query(ctx, `
+		SELECT servers.id, servers.host, servers.port, servers.name, games.slug
+		FROM servers
+		JOIN games ON games.id = servers.game_id
+	`)
 	if err != nil {
 		fmt.Println("ошибка чтения servers:", err)
 		return
@@ -54,7 +59,7 @@ func checkAllServers(pool *pgxpool.Pool) {
 	var servers []server
 	for rows.Next() {
 		var s server
-		if err := rows.Scan(&s.ID, &s.Host, &s.Port, &s.Name); err != nil {
+		if err := rows.Scan(&s.ID, &s.Host, &s.Port, &s.Name, &s.GameSlug); err != nil {
 			fmt.Println("ошибка чтения строки:", err)
 			continue
 		}
@@ -63,17 +68,38 @@ func checkAllServers(pool *pgxpool.Pool) {
 	rows.Close()
 
 	for _, s := range servers {
-		online := isReachable(s.Host, s.Port)
+		online, playersOnline, playersMax := checkServer(s)
 
 		_, err := pool.Exec(ctx,
-			"INSERT INTO server_status (server_id, online) VALUES ($1, $2)",
-			s.ID, online,
+			"INSERT INTO server_status (server_id, online, players_online, players_max) VALUES ($1, $2, $3, $4)",
+			s.ID, online, playersOnline, playersMax,
 		)
 		if err != nil {
 			fmt.Println("ошибка записи статуса:", err)
 			continue
 		}
-		fmt.Printf("%s (%s:%d) -> online=%v\n", s.Name, s.Host, s.Port, online)
+
+		msg := fmt.Sprintf("%s (%s:%d) -> online=%v", s.Name, s.Host, s.Port, online)
+		if playersOnline != nil {
+			msg += fmt.Sprintf(", players=%d/%d", *playersOnline, *playersMax)
+		}
+		fmt.Println(msg)
+	}
+}
+
+func checkServer(s server) (online bool, playersOnline, playersMax *int) {
+	switch s.GameSlug {
+	case "valheim":
+		// у Valheim (образ lloesche/valheim-server) query-порт A2S — это игровой порт + 1
+		info, err := queryA2SInfo(s.Host, s.Port+1, 3*time.Second)
+		if err != nil {
+			return false, nil, nil
+		}
+		p, m := info.Players, info.MaxPlayers
+		return true, &p, &m
+	default:
+		// для остальных игр пока держим грубую TCP-проверку — см. isReachable
+		return isReachable(s.Host, s.Port), nil, nil
 	}
 }
 

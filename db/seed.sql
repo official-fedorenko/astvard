@@ -5,7 +5,7 @@ INSERT INTO games (name, slug, description) VALUES
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO servers (game_id, name, host, port, description)
-SELECT id, 'Astvard Valheim', 'valheim.astvard.local', 2456, 'Основной сервер Valheim.'
+SELECT id, 'Astvard Valheim', '72.61.139.115', 2456, 'Основной сервер Valheim.'
 FROM games WHERE slug = 'valheim'
 ON CONFLICT DO NOTHING;
 
