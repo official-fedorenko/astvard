@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS servers (
   docker_container_name TEXT,
   docker_world_name TEXT,
   connect_password TEXT,
+  -- публичный сервер виден в браузере серверов Steam и обязан иметь пароль (мин. 5 симв.);
+  -- приватный не регистрируется в Steam и может быть без пароля вообще
+  is_public BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (host, port)
 );

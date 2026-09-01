@@ -25,6 +25,7 @@ async function checkAccess() {
 const serverForm = document.getElementById('server-form');
 const serverIdInput = document.getElementById('server-id');
 const serverGameSelect = document.getElementById('server-gameId');
+const serverNameInput = document.getElementById('server-name');
 const serverHostInput = document.getElementById('server-host');
 const serverPortInput = document.getElementById('server-port');
 const serverDescInput = document.getElementById('server-description');
@@ -117,24 +118,50 @@ async function toggleInfraPanel(serverId) {
       </label>
     </div>
     <button type="button" class="btn-secondary" data-save-infra="${serverId}">Сохранить настройки</button>
-    <div class="row" style="margin-top:var(--spacing-sm);">
+
+    <div class="row" style="margin-top:var(--spacing-md);">
       <label style="flex:1 1 200px;">
         Текущий пароль
         <input type="text" value="${escapeHtml(infra.connectPassword ?? '(не задан)')}" readonly>
       </label>
     </div>
+
+    <div class="row" style="margin-top:var(--spacing-sm);">
+      <label class="row" style="flex:none; gap:var(--spacing-xs);">
+        <input type="checkbox" data-infra-public="${serverId}" ${infra.isPublic ? 'checked' : ''}>
+        Публичный (виден в браузере серверов Steam)
+      </label>
+    </div>
+    <p style="color:var(--color-text-muted); font-size:0.85rem;" data-infra-public-hint="${serverId}"></p>
+
     <div class="row" style="margin-top:var(--spacing-sm);">
       <label style="flex:1 1 200px;">
-        Новый пароль (мин. 5 символов)
-        <input type="text" data-infra-password="${serverId}" minlength="5">
+        <span data-infra-password-label="${serverId}"></span>
+        <input type="text" data-infra-password="${serverId}">
       </label>
-      <button type="button" class="btn-danger" data-change-password="${serverId}">Сменить пароль на сервере</button>
+      <button type="button" class="btn-danger" data-change-password="${serverId}">Применить на сервере</button>
     </div>
     <p style="color:var(--color-text-muted); font-size:0.85rem;">
-      Смена пароля пересоздаёт контейнер — сервер на пару секунд уйдёт в оффлайн, текущие игроки отключатся.
+      Применение пересоздаёт контейнер — сервер на пару секунд уйдёт в оффлайн, текущие игроки отключатся.
     </p>
     <p data-infra-message="${serverId}"></p>
   `;
+
+  const publicCheckbox = panel.querySelector(`[data-infra-public="${serverId}"]`);
+  const publicHint = panel.querySelector(`[data-infra-public-hint="${serverId}"]`);
+  const passwordLabel = panel.querySelector(`[data-infra-password-label="${serverId}"]`);
+
+  function updatePublicHint() {
+    if (publicCheckbox.checked) {
+      publicHint.textContent = 'Публичному серверу Steam требует пароль (мин. 5 символов).';
+      passwordLabel.textContent = 'Новый пароль (мин. 5 символов)';
+    } else {
+      publicHint.textContent = 'Приватный — не виден в поиске, подключаются по прямому адресу. Пароль можно оставить пустым.';
+      passwordLabel.textContent = 'Новый пароль (необязательно)';
+    }
+  }
+  updatePublicHint();
+  publicCheckbox.addEventListener('change', updatePublicHint);
 
   panel.querySelector(`[data-save-infra="${serverId}"]`).addEventListener('click', async () => {
     const containerName = panel.querySelector(`[data-infra-container="${serverId}"]`).value;
@@ -152,7 +179,13 @@ async function toggleInfraPanel(serverId) {
 
   panel.querySelector(`[data-change-password="${serverId}"]`).addEventListener('click', async () => {
     const password = panel.querySelector(`[data-infra-password="${serverId}"]`).value;
+    const isPublic = publicCheckbox.checked;
     const msg = panel.querySelector(`[data-infra-message="${serverId}"]`);
+    if (isPublic && password.length < 5) {
+      msg.textContent = 'Для публичного сервера нужен пароль от 5 символов';
+      msg.style.color = 'var(--color-danger)';
+      return;
+    }
     if (!confirm('Сервер перезапустится, текущие игроки отключатся. Продолжить?')) return;
 
     msg.textContent = 'Пересобираю контейнер...';
@@ -160,14 +193,14 @@ async function toggleInfraPanel(serverId) {
     const res = await fetch(`/api/admin/servers/${serverId}/password`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, isPublic }),
     });
     const data = await res.json();
     if (res.ok) {
-      msg.textContent = 'Готово, пароль сменён';
+      msg.textContent = 'Готово, применено';
       msg.style.color = 'var(--color-success)';
       toggleInfraPanel(serverId);
-      toggleInfraPanel(serverId); // перезагрузить панель со свежим паролем
+      toggleInfraPanel(serverId); // перезагрузить панель со свежими данными
     } else {
       msg.textContent = data.error;
       msg.style.color = 'var(--color-danger)';
@@ -178,6 +211,7 @@ async function toggleInfraPanel(serverId) {
 function startEditServer(server) {
   serverIdInput.value = server.id;
   serverGameSelect.value = String(games.find((g) => g.slug === server.game_slug)?.id ?? '');
+  serverNameInput.value = server.name ?? '';
   serverHostInput.value = server.host;
   serverPortInput.value = server.port;
   serverDescInput.value = server.description ?? '';
@@ -200,6 +234,7 @@ serverForm.addEventListener('submit', async (event) => {
   const id = serverIdInput.value;
   const body = {
     gameId: Number(serverGameSelect.value),
+    name: serverNameInput.value,
     host: serverHostInput.value,
     port: Number(serverPortInput.value),
     description: serverDescInput.value,

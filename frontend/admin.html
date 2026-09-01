@@ -16,12 +16,16 @@
     <section id="content" style="display:none;">
       <section id="servers-admin" aria-labelledby="servers-admin-heading">
         <h2 id="servers-admin-heading">Сервера</h2>
-        <p style="color:var(--color-text-muted); font-size:0.9rem;">Название подтягивается само с реального сервера — вводить не нужно.</p>
+        <p style="color:var(--color-text-muted); font-size:0.9rem;">Имя можно не указывать — тогда подтянется само с реального сервера. Задай явно, если хочешь зафиксировать своё.</p>
         <form id="server-form">
           <input type="hidden" id="server-id">
           <label>
             Игра
             <select id="server-gameId" required></select>
+          </label>
+          <label>
+            Имя (необязательно)
+            <input type="text" id="server-name" placeholder="оставь пустым для автоподхвата">
           </label>
           <label>
             Host

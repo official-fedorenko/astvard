@@ -23,6 +23,7 @@ type articleRequest struct {
 
 type serverRequest struct {
 	GameID      int    `json:"gameId"`
+	Name        string `json:"name"`
 	Host        string `json:"host"`
 	Port        int    `json:"port"`
 	Description string `json:"description"`
@@ -143,9 +144,10 @@ func handleDeleteArticle(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// Имя сервера не спрашиваем у админа — сразу после создания его подтянет
-// status-service из реального ответа сервера (reported_name). До первого опроса
-// (максимум ~30 сек) показываем как временную заглушку "host:port".
+// Имя необязательно: если не задано, ставим временную заглушку "host:port" —
+// её тут же перекроет reported_name после первого опроса статус-сервисом
+// (максимум ~30 сек). Если задано явно — это и есть SERVER_NAME для Docker
+// при следующем пересоздании контейнера (смена пароля/видимости).
 func validateServerRequest(req serverRequest) (host, description string, ok bool, errMsg string) {
 	host = strings.TrimSpace(req.Host)
 	description = strings.TrimSpace(req.Description)
@@ -172,7 +174,10 @@ func handleCreateServer(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, errMsg)
 			return
 		}
-		name := fmt.Sprintf("%s:%d", host, req.Port)
+		name := strings.TrimSpace(req.Name)
+		if name == "" {
+			name = fmt.Sprintf("%s:%d", host, req.Port)
+		}
 
 		var id int
 		var createdAt time.Time
@@ -222,7 +227,10 @@ func handleUpdateServer(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, errMsg)
 			return
 		}
-		name := fmt.Sprintf("%s:%d", host, req.Port)
+		name := strings.TrimSpace(req.Name)
+		if name == "" {
+			name = fmt.Sprintf("%s:%d", host, req.Port)
+		}
 
 		tag, err := pool.Exec(r.Context(),
 			`UPDATE servers SET game_id = $1, name = $2, host = $3, port = $4, description = $5

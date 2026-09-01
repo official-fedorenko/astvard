@@ -18,6 +18,7 @@ type serverInfra struct {
 	DockerContainerName *string `json:"dockerContainerName"`
 	DockerWorldName     *string `json:"dockerWorldName"`
 	ConnectPassword     *string `json:"connectPassword"`
+	IsPublic            bool    `json:"isPublic"`
 }
 
 // handleGetServerInfra — только superadmin: текущие настройки контейнера и пароль подключения
@@ -31,8 +32,8 @@ func handleGetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var infra serverInfra
 		err = pool.QueryRow(r.Context(),
-			"SELECT docker_container_name, docker_world_name, connect_password FROM servers WHERE id = $1", id,
-		).Scan(&infra.DockerContainerName, &infra.DockerWorldName, &infra.ConnectPassword)
+			"SELECT docker_container_name, docker_world_name, connect_password, is_public FROM servers WHERE id = $1", id,
+		).Scan(&infra.DockerContainerName, &infra.DockerWorldName, &infra.ConnectPassword, &infra.IsPublic)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "Сервер не найден")
 			return
@@ -89,11 +90,12 @@ func handleSetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 
 type setPasswordRequest struct {
 	Password string `json:"password"`
+	IsPublic bool   `json:"isPublic"`
 }
 
 // handleSetServerPassword — реально пересоздаёт Docker-контейнер Valheim с новым паролем
-// (SERVER_PASS — переменная окружения, её нельзя поменять на уже запущенном контейнере).
-// Сервер на несколько секунд уходит в оффлайн, все подключённые игроки отвалятся.
+// и видимостью (SERVER_PASS/PUBLIC — переменные окружения, их нельзя поменять на уже
+// запущенном контейнере). Сервер на несколько секунд уходит в оффлайн, игроки отвалятся.
 func handleSetServerPassword(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(r.PathValue("id"))
@@ -107,8 +109,10 @@ func handleSetServerPassword(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "Некорректный JSON")
 			return
 		}
-		if len(req.Password) < 5 {
-			writeError(w, http.StatusBadRequest, "Steam требует пароль не короче 5 символов")
+		// пароль обязателен только для публичных серверов (Steam так требует),
+		// приватный сервер (не виден в браузере серверов) может быть вообще без пароля
+		if req.IsPublic && len(req.Password) < 5 {
+			writeError(w, http.StatusBadRequest, "Для публичного сервера Steam требует пароль не короче 5 символов")
 			return
 		}
 
@@ -141,15 +145,19 @@ func handleSetServerPassword(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		if err := recreateValheimContainer(*containerName, volumeName, port, serverName, *worldName, req.Password); err != nil {
+		if err := recreateValheimContainer(*containerName, volumeName, port, serverName, *worldName, req.Password, req.IsPublic); err != nil {
 			writeError(w, http.StatusInternalServerError, "Не удалось пересоздать контейнер: "+err.Error())
 			return
 		}
 
+		var passwordValue any
+		if req.Password != "" {
+			passwordValue = req.Password
+		}
 		if _, err := pool.Exec(r.Context(),
-			"UPDATE servers SET connect_password = $1 WHERE id = $2", req.Password, id,
+			"UPDATE servers SET connect_password = $1, is_public = $2 WHERE id = $3", passwordValue, req.IsPublic, id,
 		); err != nil {
-			writeError(w, http.StatusInternalServerError, "Контейнер пересоздан, но не удалось сохранить пароль в базе: "+err.Error())
+			writeError(w, http.StatusInternalServerError, "Контейнер пересоздан, но не удалось сохранить настройки в базе: "+err.Error())
 			return
 		}
 
@@ -169,10 +177,15 @@ func dockerVolumeNameFromPath(path string) (string, error) {
 	return strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix), nil
 }
 
-func recreateValheimContainer(containerName, volumeName string, hostPort int, serverName, worldName, password string) error {
+func recreateValheimContainer(containerName, volumeName string, hostPort int, serverName, worldName, password string, isPublic bool) error {
 	// игнорируем ошибку stop/rm — контейнера могло не быть или он уже остановлен
 	exec.Command("docker", "stop", containerName).Run()
 	exec.Command("docker", "rm", containerName).Run()
+
+	publicValue := "0"
+	if isPublic {
+		publicValue = "1"
+	}
 
 	args := []string{
 		"run", "-d",
@@ -184,10 +197,15 @@ func recreateValheimContainer(containerName, volumeName string, hostPort int, se
 		"-v", volumeName + ":/config",
 		"-e", "SERVER_NAME=" + serverName,
 		"-e", "WORLD_NAME=" + worldName,
-		"-e", "SERVER_PASS=" + password,
+		"-e", "PUBLIC=" + publicValue,
 		"-e", "TZ=Europe/Vilnius",
-		"ghcr.io/lloesche/valheim-server",
 	}
+	// SERVER_PASS не передаём вовсе, если пароля нет — приватному серверу
+	// (не публикуется в браузере Steam) он не обязателен
+	if password != "" {
+		args = append(args, "-e", "SERVER_PASS="+password)
+	}
+	args = append(args, "ghcr.io/lloesche/valheim-server")
 
 	// os/exec передаёт аргументы напрямую процессу, минуя шелл — значения (даже с
 	// спецсимволами) не могут повлиять на саму команду, инъекция тут невозможна
