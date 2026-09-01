@@ -160,6 +160,14 @@ button:disabled,
   left: -9999px;
 }
 
+/* строка, которая сама переносится на несколько при нехватке ширины (мобилки) */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
 .card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);

@@ -281,6 +281,99 @@ async function loadUsers() {
   });
 }
 
+// ---------- Игровые админы (только superadmin) ----------
+
+const gameAdminsSection = document.getElementById('game-admins-section');
+const gameAdminsServerSelect = document.getElementById('game-admins-server');
+const gameAdminsPathWarning = document.getElementById('game-admins-path-warning');
+const gameAdminsPathInput = document.getElementById('game-admins-path-input');
+const gameAdminsPathSaveBtn = document.getElementById('game-admins-path-save');
+const gameAdminsUserSelect = document.getElementById('game-admins-user');
+const gameAdminsAddBtn = document.getElementById('game-admins-add');
+const gameAdminsList = document.getElementById('game-admins-list');
+
+let steamUsers = [];
+
+async function populateGameAdminsPickers() {
+  const serversResponse = await fetch('/api/servers');
+  const allServers = await serversResponse.json();
+  gameAdminsServerSelect.innerHTML = allServers
+    .map((s) => `<option value="${s.id}">${escapeHtml(s.reported_name || s.name)} (${escapeHtml(s.game_name)})</option>`)
+    .join('');
+
+  const usersResponse = await fetch('/api/admin/users');
+  const allUsers = await usersResponse.json();
+  steamUsers = allUsers.filter((u) => u.authMethod === 'steam');
+  gameAdminsUserSelect.innerHTML = steamUsers
+    .map((u) => `<option value="${u.id}">${escapeHtml(u.nickname)}</option>`)
+    .join('');
+}
+
+async function loadGameAdmins() {
+  const serverId = gameAdminsServerSelect.value;
+  if (!serverId) return;
+
+  const response = await fetch(`/api/admin/servers/${serverId}/admins`);
+  if (!response.ok) return;
+  const data = await response.json();
+
+  if (data.dockerVolumePath) {
+    gameAdminsPathWarning.style.display = 'none';
+    gameAdminsPathInput.value = data.dockerVolumePath;
+  } else {
+    gameAdminsPathWarning.style.display = 'block';
+    gameAdminsPathWarning.innerHTML = `<p style="color:var(--color-danger);">Для этого сервера ещё не указан путь к тому — назначение админов не применится к реальному серверу, пока не сохранишь путь ниже.</p>`;
+    gameAdminsPathInput.value = '';
+  }
+
+  gameAdminsList.innerHTML = data.admins
+    .map(
+      (a) => `
+        <li class="card row" style="max-width:420px;">
+          <span style="flex:1;">${escapeHtml(a.nickname)}</span>
+          <button class="btn-danger" data-remove-game-admin="${a.userId}">Убрать</button>
+        </li>
+      `
+    )
+    .join('') || '<li style="color:var(--color-text-muted);">Пока никого нет</li>';
+
+  gameAdminsList.querySelectorAll('[data-remove-game-admin]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await fetch(`/api/admin/servers/${serverId}/admins/${btn.dataset.removeGameAdmin}`, { method: 'DELETE' });
+      loadGameAdmins();
+    });
+  });
+}
+
+gameAdminsServerSelect.addEventListener('change', loadGameAdmins);
+
+gameAdminsPathSaveBtn.addEventListener('click', async () => {
+  const serverId = gameAdminsServerSelect.value;
+  gameAdminsPathSaveBtn.disabled = true;
+  const response = await fetch(`/api/admin/servers/${serverId}/docker-path`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dockerVolumePath: gameAdminsPathInput.value }),
+  });
+  gameAdminsPathSaveBtn.disabled = false;
+  if (response.ok) loadGameAdmins();
+});
+
+gameAdminsAddBtn.addEventListener('click', async () => {
+  const serverId = gameAdminsServerSelect.value;
+  const userId = Number(gameAdminsUserSelect.value);
+  if (!serverId || !userId) return;
+
+  gameAdminsAddBtn.disabled = true;
+  await fetch(`/api/admin/servers/${serverId}/admins`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
+  });
+  gameAdminsAddBtn.disabled = false;
+  loadGameAdmins();
+});
+
 // ---------- Инициализация ----------
 
 (async () => {
@@ -293,5 +386,9 @@ async function loadUsers() {
   if (me.role === 'superadmin') {
     usersSection.style.display = 'block';
     await loadUsers();
+
+    gameAdminsSection.style.display = 'block';
+    await populateGameAdminsPickers();
+    await loadGameAdmins();
   }
 })();

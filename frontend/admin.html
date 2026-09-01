@@ -63,6 +63,41 @@
       <h2>Пользователи</h2>
       <div id="users-list"></div>
     </div>
+
+    <section id="game-admins-section" style="display:none;" aria-labelledby="game-admins-heading">
+      <h2 id="game-admins-heading">Игровые админы</h2>
+      <p style="color:var(--color-text-muted); font-size:0.9rem;">
+        Даёт доступ к консольным командам прямо в игре (сейчас поддерживается только Valheim —
+        пишет SteamID в adminlist.txt на сервере). Работает только для аккаунтов, вошедших через Steam.
+      </p>
+
+      <div class="row">
+        <label style="flex:1 1 200px;">
+          Сервер
+          <select id="game-admins-server"></select>
+        </label>
+      </div>
+
+      <div id="game-admins-path-warning" style="display:none;"></div>
+
+      <div class="row" style="margin-top:var(--spacing-sm);">
+        <label style="flex:1 1 200px;">
+          Путь к тому Docker (superadmin)
+          <input type="text" id="game-admins-path-input" placeholder="/var/lib/docker/volumes/.../_data">
+        </label>
+        <button type="button" id="game-admins-path-save" class="btn-secondary">Сохранить путь</button>
+      </div>
+
+      <div class="row" style="margin-top:var(--spacing-md);">
+        <label style="flex:1 1 200px;">
+          Пользователь (только Steam-аккаунты)
+          <select id="game-admins-user"></select>
+        </label>
+        <button type="button" id="game-admins-add">Назначить админом</button>
+      </div>
+
+      <ul id="game-admins-list" style="list-style:none; padding:0; margin-top:var(--spacing-md);"></ul>
+    </section>
   </section>
 
   <script src="common.js"></script>

@@ -29,8 +29,19 @@ CREATE TABLE IF NOT EXISTS servers (
   host TEXT NOT NULL,
   port INTEGER NOT NULL,
   description TEXT,
+  -- путь к тому Docker-контейнера на VPS (только для игр, где мы умеем управлять
+  -- игровыми админами напрямую через файл — сейчас только Valheim/adminlist.txt)
+  docker_volume_path TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (host, port)
+);
+
+CREATE TABLE IF NOT EXISTS server_admins (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, server_id)
 );
 
 CREATE TABLE IF NOT EXISTS server_status (

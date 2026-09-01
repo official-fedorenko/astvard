@@ -48,6 +48,11 @@ func main() {
 	mux.HandleFunc("GET /api/admin/users", requireRole("superadmin", handleListUsers(pool)))
 	mux.HandleFunc("PUT /api/admin/users/{id}/role", requireRole("superadmin", handleUpdateUserRole(pool)))
 
+	mux.HandleFunc("PUT /api/admin/servers/{id}/docker-path", requireRole("superadmin", handleSetServerDockerPath(pool)))
+	mux.HandleFunc("GET /api/admin/servers/{id}/admins", requireRole("superadmin", handleListServerAdmins(pool)))
+	mux.HandleFunc("POST /api/admin/servers/{id}/admins", requireRole("superadmin", handleAddServerAdmin(pool)))
+	mux.HandleFunc("DELETE /api/admin/servers/{id}/admins/{userId}", requireRole("superadmin", handleRemoveServerAdmin(pool)))
+
 	mux.HandleFunc("GET /auth/steam/login", handleSteamLogin)
 	mux.HandleFunc("GET /auth/steam/callback", handleSteamCallback(pool))
 
