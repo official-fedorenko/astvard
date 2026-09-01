@@ -187,6 +187,10 @@ func recreateValheimContainer(containerName, volumeName string, hostPort int, se
 		publicValue = "1"
 	}
 
+	// отдельный volume под /opt/valheim (сам сервер + кэш SteamCMD, ~3.3 ГБ) —
+	// без него каждое пересоздание контейнера качает игру заново с нуля
+	binVolumeName := strings.TrimSuffix(volumeName, "_data") + "_bin"
+
 	args := []string{
 		"run", "-d",
 		"--name", containerName,
@@ -195,6 +199,7 @@ func recreateValheimContainer(containerName, volumeName string, hostPort int, se
 		"-p", fmt.Sprintf("%d:2457/udp", hostPort+1),
 		"-p", fmt.Sprintf("%d:2458/udp", hostPort+2),
 		"-v", volumeName + ":/config",
+		"-v", binVolumeName + ":/opt/valheim",
 		"-e", "SERVER_NAME=" + serverName,
 		"-e", "WORLD_NAME=" + worldName,
 		"-e", "PUBLIC=" + publicValue,
