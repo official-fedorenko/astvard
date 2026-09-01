@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,11 +16,12 @@ import (
 )
 
 type server struct {
-	ID       int
-	Host     string
-	Port     int
-	Name     string
-	GameSlug string
+	ID                  int
+	Host                string
+	Port                int
+	Name                string
+	GameSlug            string
+	DockerContainerName *string
 }
 
 func main() {
@@ -67,7 +70,7 @@ func checkAllServers(pool *pgxpool.Pool) {
 	ctx := context.Background()
 
 	rows, err := pool.Query(ctx, `
-		SELECT servers.id, servers.host, servers.port, servers.name, games.slug
+		SELECT servers.id, servers.host, servers.port, servers.name, games.slug, servers.docker_container_name
 		FROM servers
 		JOIN games ON games.id = servers.game_id
 	`)
@@ -79,7 +82,7 @@ func checkAllServers(pool *pgxpool.Pool) {
 	var servers []server
 	for rows.Next() {
 		var s server
-		if err := rows.Scan(&s.ID, &s.Host, &s.Port, &s.Name, &s.GameSlug); err != nil {
+		if err := rows.Scan(&s.ID, &s.Host, &s.Port, &s.Name, &s.GameSlug, &s.DockerContainerName); err != nil {
 			fmt.Println("ошибка чтения строки:", err)
 			continue
 		}
@@ -123,17 +126,51 @@ func checkServer(s server) (online bool, playersOnline, playersMax *int, reporte
 			return false, nil, nil, nil, nil
 		}
 		p, m := info.Players, info.MaxPlayers
-		// ники — отдельным запросом, необязательным: если он не удался, счётчик
-		// и остальной статус всё равно сохраняем
-		names, err := queryA2SPlayers(s.Host, s.Port+1, 3*time.Second)
-		if err != nil {
-			names = nil
+		// A2S_PLAYER у Valheim всегда отдаёт пустое имя (ограничение самой игры,
+		// проверено вживую) — реальные ники есть только в логах контейнера
+		// ("Got character ZDOID from <ник>"), поэтому достаём их оттуда
+		var names []string
+		if s.DockerContainerName != nil {
+			names = queryValheimPlayerNamesFromLogs(*s.DockerContainerName, info.Players)
 		}
 		return true, &p, &m, &info.Name, names
 	default:
 		// для остальных игр пока держим грубую TCP-проверку — см. isReachable
 		return isReachable(s.Host, s.Port), nil, nil, nil, nil
 	}
+}
+
+var characterJoinRe = regexp.MustCompile(`Got character ZDOID from (\S+) :`)
+
+// queryValheimPlayerNamesFromLogs достаёт ники игроков из лога контейнера —
+// A2S_PLAYER для Valheim имена не отдаёт, а сервер сам их логирует при заходе
+// персонажа в мир. Берём count последних уникальных имён (count — реальное
+// число игроков из A2S_INFO), чтобы не показывать тех, кто уже отключился.
+func queryValheimPlayerNamesFromLogs(containerName string, count int) []string {
+	if containerName == "" || count <= 0 {
+		return nil
+	}
+	out, err := exec.Command("docker", "logs", "--tail", "500", containerName).CombinedOutput()
+	if err != nil {
+		return nil
+	}
+
+	matches := characterJoinRe.FindAllSubmatch(out, -1)
+	names := make([]string, 0, count)
+	seen := make(map[string]bool)
+	for i := len(matches) - 1; i >= 0 && len(names) < count; i-- {
+		name := string(matches[i][1])
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	// разворачиваем обратно в порядок захода (от старых к новым)
+	for i, j := 0, len(names)-1; i < j; i, j = i+1, j-1 {
+		names[i], names[j] = names[j], names[i]
+	}
+	return names
 }
 
 // Это грубая TCP-проверка доступности, ещё не настоящий игровой протокол —
