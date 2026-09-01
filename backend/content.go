@@ -47,6 +47,7 @@ type serverWithStatus struct {
 	Online        *bool      `json:"online"`
 	PlayersOnline *int       `json:"players_online"`
 	PlayersMax    *int       `json:"players_max"`
+	ReportedName  *string    `json:"reported_name"`
 	CheckedAt     *time.Time `json:"checked_at"`
 }
 
@@ -55,11 +56,12 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 		rows, err := pool.Query(r.Context(), `
 			SELECT servers.id, servers.name, servers.host, servers.port, servers.description,
 			       games.name AS game_name, games.slug AS game_slug,
-			       latest.online, latest.players_online, latest.players_max, latest.checked_at
+			       latest.online, latest.players_online, latest.players_max,
+			       latest.reported_name, latest.checked_at
 			FROM servers
 			JOIN games ON games.id = servers.game_id
 			LEFT JOIN LATERAL (
-			  SELECT online, players_online, players_max, checked_at
+			  SELECT online, players_online, players_max, reported_name, checked_at
 			  FROM server_status
 			  WHERE server_status.server_id = servers.id
 			  ORDER BY checked_at DESC
@@ -77,7 +79,8 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 		for rows.Next() {
 			var s serverWithStatus
 			if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.Description,
-				&s.GameName, &s.GameSlug, &s.Online, &s.PlayersOnline, &s.PlayersMax, &s.CheckedAt); err != nil {
+				&s.GameName, &s.GameSlug, &s.Online, &s.PlayersOnline, &s.PlayersMax,
+				&s.ReportedName, &s.CheckedAt); err != nil {
 				writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 				return
 			}

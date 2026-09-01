@@ -68,11 +68,12 @@ func checkAllServers(pool *pgxpool.Pool) {
 	rows.Close()
 
 	for _, s := range servers {
-		online, playersOnline, playersMax := checkServer(s)
+		online, playersOnline, playersMax, reportedName := checkServer(s)
 
 		_, err := pool.Exec(ctx,
-			"INSERT INTO server_status (server_id, online, players_online, players_max) VALUES ($1, $2, $3, $4)",
-			s.ID, online, playersOnline, playersMax,
+			`INSERT INTO server_status (server_id, online, players_online, players_max, reported_name)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			s.ID, online, playersOnline, playersMax, reportedName,
 		)
 		if err != nil {
 			fmt.Println("ошибка записи статуса:", err)
@@ -83,23 +84,26 @@ func checkAllServers(pool *pgxpool.Pool) {
 		if playersOnline != nil {
 			msg += fmt.Sprintf(", players=%d/%d", *playersOnline, *playersMax)
 		}
+		if reportedName != nil {
+			msg += fmt.Sprintf(", реальное имя=%q", *reportedName)
+		}
 		fmt.Println(msg)
 	}
 }
 
-func checkServer(s server) (online bool, playersOnline, playersMax *int) {
+func checkServer(s server) (online bool, playersOnline, playersMax *int, reportedName *string) {
 	switch s.GameSlug {
 	case "valheim":
 		// у Valheim (образ lloesche/valheim-server) query-порт A2S — это игровой порт + 1
 		info, err := queryA2SInfo(s.Host, s.Port+1, 3*time.Second)
 		if err != nil {
-			return false, nil, nil
+			return false, nil, nil, nil
 		}
 		p, m := info.Players, info.MaxPlayers
-		return true, &p, &m
+		return true, &p, &m, &info.Name
 	default:
 		// для остальных игр пока держим грубую TCP-проверку — см. isReachable
-		return isReachable(s.Host, s.Port), nil, nil
+		return isReachable(s.Host, s.Port), nil, nil, nil
 	}
 }
 

@@ -19,9 +19,11 @@ async function loadServers() {
       (s) => {
         const statusText =
           s.online === true ? '🟢 онлайн' : s.online === false ? '🔴 офлайн' : '⚪ ещё не проверялся';
+        // реальное имя, которое сообщил сам игровой сервер, приоритетнее ручного названия
+        const displayName = s.reported_name || s.name;
         return `
         <div class="card">
-          <strong>${escapeHtml(s.name)}</strong> (${escapeHtml(s.game_name)}) — ${statusText}<br>
+          <strong>${escapeHtml(displayName)}</strong> (${escapeHtml(s.game_name)}) — ${statusText}<br>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
           <span>${escapeHtml(s.description)}</span>
         </div>

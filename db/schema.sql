@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS server_status (
   online BOOLEAN NOT NULL,
   players_online INTEGER,
   players_max INTEGER,
+  reported_name TEXT,
   checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
