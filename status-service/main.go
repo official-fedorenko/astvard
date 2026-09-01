@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -140,35 +141,65 @@ func checkServer(s server) (online bool, playersOnline, playersMax *int, reporte
 	}
 }
 
-var characterJoinRe = regexp.MustCompile(`Got character ZDOID from (\S+) :`)
+var (
+	connectRe = regexp.MustCompile(`Got connection SteamID (\d+)`)
+	zdoidRe   = regexp.MustCompile(`Got character ZDOID from (\S+) :`)
+	closeRe   = regexp.MustCompile(`Closing socket (\d+)`)
+)
+
+type valheimConn struct {
+	steamID string
+	name    string // пусто, пока персонаж ещё не догрузился
+}
 
 // queryValheimPlayerNamesFromLogs достаёт ники игроков из лога контейнера —
-// A2S_PLAYER для Valheim имена не отдаёт, а сервер сам их логирует при заходе
-// персонажа в мир. Берём count последних уникальных имён (count — реальное
-// число игроков из A2S_INFO), чтобы не показывать тех, кто уже отключился.
+// A2S_PLAYER для Valheim имена не отдаёт, а сервер сам их логирует. Проходим
+// лог по порядку и ведём точный учёт: "Got connection SteamID" — подключение,
+// "Got character ZDOID from" — присвоение имени этому подключению (первому
+// ещё безымянному — они резолвятся в том же порядке, в каком подключались),
+// "Closing socket <SteamID>" — именно ЭТОТ SteamID отключился. Благодаря
+// последней строке (несёт SteamID) учёт точный даже при нескольких игроках
+// одновременно — в отличие от простого "последние N уникальных имён".
 func queryValheimPlayerNamesFromLogs(containerName string, count int) []string {
 	if containerName == "" || count <= 0 {
 		return nil
 	}
-	out, err := exec.Command("docker", "logs", "--tail", "500", containerName).CombinedOutput()
+	out, err := exec.Command("docker", "logs", "--tail", "2000", containerName).CombinedOutput()
 	if err != nil {
 		return nil
 	}
 
-	matches := characterJoinRe.FindAllSubmatch(out, -1)
-	names := make([]string, 0, count)
-	seen := make(map[string]bool)
-	for i := len(matches) - 1; i >= 0 && len(names) < count; i-- {
-		name := string(matches[i][1])
-		if seen[name] {
+	var open []*valheimConn
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		if m := connectRe.FindSubmatch(line); m != nil {
+			open = append(open, &valheimConn{steamID: string(m[1])})
 			continue
 		}
-		seen[name] = true
-		names = append(names, name)
+		if m := zdoidRe.FindSubmatch(line); m != nil {
+			for _, c := range open {
+				if c.name == "" {
+					c.name = string(m[1])
+					break
+				}
+			}
+			continue
+		}
+		if m := closeRe.FindSubmatch(line); m != nil {
+			steamID := string(m[1])
+			for i, c := range open {
+				if c.steamID == steamID {
+					open = append(open[:i], open[i+1:]...)
+					break
+				}
+			}
+		}
 	}
-	// разворачиваем обратно в порядок захода (от старых к новым)
-	for i, j := 0, len(names)-1; i < j; i, j = i+1, j-1 {
-		names[i], names[j] = names[j], names[i]
+
+	names := make([]string, 0, len(open))
+	for _, c := range open {
+		if c.name != "" {
+			names = append(names, c.name)
+		}
 	}
 	return names
 }
