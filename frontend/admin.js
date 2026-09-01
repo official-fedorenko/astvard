@@ -4,12 +4,12 @@ const content = document.getElementById('content');
 let games = [];
 
 async function checkAccess() {
-  const response = await fetch('/api/me');
-  if (!response.ok) {
+  // renderNav() уже дёргает /api/me для шапки — переиспользуем результат
+  const data = await renderNav();
+  if (!data) {
     window.location.href = 'login';
     return null;
   }
-  const data = await response.json();
   if (data.role !== 'admin' && data.role !== 'superadmin') {
     status.textContent = 'Недостаточно прав для этой страницы.';
     return null;

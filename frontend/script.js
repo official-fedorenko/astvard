@@ -1,2 +1,3 @@
+renderNav();
 loadServers();
 loadArticles();

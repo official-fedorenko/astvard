@@ -1,3 +1,5 @@
+renderNav();
+
 const form = document.getElementById('login-form');
 const message = document.getElementById('message');
 

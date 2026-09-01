@@ -1,5 +1,4 @@
 const status = document.getElementById('status');
-const logoutBtn = document.getElementById('logout-btn');
 const content = document.getElementById('content');
 const profileCard = document.getElementById('profile-card');
 const adminStats = document.getElementById('admin-stats');
@@ -39,22 +38,21 @@ async function loadAdminStats() {
   `;
 }
 
-async function loadMe() {
-  const response = await fetch('/api/me');
+async function init() {
+  // renderNav() уже делает единственный запрос к /api/me — переиспользуем результат,
+  // а не дёргаем эндпоинт второй раз
+  const me = await renderNav();
 
-  if (!response.ok) {
-    // не залогинен — отправляем на страницу входа
+  if (!me) {
     window.location.href = 'login';
     return;
   }
 
-  const data = await response.json();
   status.textContent = '';
-  renderProfileCard(data);
+  renderProfileCard(me);
   content.style.display = 'block';
 
-  if (data.role === 'admin' || data.role === 'superadmin') {
-    document.getElementById('admin-link').style.display = 'inline-flex';
+  if (me.role === 'admin' || me.role === 'superadmin') {
     loadAdminStats();
   }
 
@@ -62,9 +60,4 @@ async function loadMe() {
   loadArticles();
 }
 
-logoutBtn.addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
-  window.location.href = 'login';
-});
-
-loadMe();
+init();

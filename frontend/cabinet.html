@@ -2,32 +2,36 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Кабинет — Astvard</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Личный кабинет</h1>
-  <p id="status">Проверяем вход...</p>
+  <header id="site-header"></header>
 
-  <section id="content" style="display:none;">
-    <div id="profile-card" class="card" style="max-width:420px;"></div>
+  <main>
+    <h1>Личный кабинет</h1>
+    <p id="status">Проверяем вход...</p>
 
-    <p>
-      <button id="logout-btn" class="btn-secondary">Выйти</button>
-      <a href="admin" id="admin-link" class="btn btn-secondary" style="display:none;">Админка →</a>
-    </p>
+    <section id="content" style="display:none;">
+      <div id="profile-card" class="card" style="max-width:420px;"></div>
 
-    <div id="admin-stats" style="display:none;">
-      <h2>Сводка по сайту</h2>
-      <div id="admin-stats-list"></div>
-    </div>
+      <section id="admin-stats" aria-labelledby="admin-stats-heading" style="display:none;">
+        <h2 id="admin-stats-heading">Сводка по сайту</h2>
+        <div id="admin-stats-list"></div>
+      </section>
 
-    <h2>Наши сервера</h2>
-    <div id="servers-list"></div>
+      <section id="servers" aria-labelledby="servers-heading">
+        <h2 id="servers-heading">Наши сервера</h2>
+        <div id="servers-list"></div>
+      </section>
 
-    <h2>Статьи</h2>
-    <div id="articles-list"></div>
-  </section>
+      <section id="articles" aria-labelledby="articles-heading">
+        <h2 id="articles-heading">Статьи</h2>
+        <div id="articles-list"></div>
+      </section>
+    </section>
+  </main>
 
   <script src="common.js"></script>
   <script src="cabinet.js"></script>

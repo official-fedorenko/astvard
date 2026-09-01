@@ -1,3 +1,5 @@
+renderNav();
+
 const form = document.getElementById('register-form');
 const message = document.getElementById('message');
 
