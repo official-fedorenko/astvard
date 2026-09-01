@@ -1,6 +1,11 @@
 const form = document.getElementById('login-form');
 const message = document.getElementById('message');
 
+if (new URLSearchParams(window.location.search).get('error') === 'steam') {
+  message.textContent = 'Не удалось войти через Steam, попробуй ещё раз';
+  message.style.color = '#e66';
+}
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 

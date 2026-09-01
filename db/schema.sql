@@ -1,12 +1,16 @@
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   nickname TEXT UNIQUE NOT NULL,
-  first_name TEXT NOT NULL,
-  last_name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  email TEXT UNIQUE,
+  password_hash TEXT,
+  steam_id TEXT UNIQUE,
   role TEXT NOT NULL DEFAULT 'player' CHECK (role IN ('player', 'admin', 'superadmin')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- обычный аккаунт обязан иметь email+пароль, Steam-аккаунт — steam_id;
+  -- одного из двух способов входа достаточно
+  CHECK (steam_id IS NOT NULL OR (email IS NOT NULL AND password_hash IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS games (

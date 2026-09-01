@@ -11,6 +11,7 @@ import (
 
 var jwtSecret []byte
 var isProduction bool
+var steamAPIKey string
 
 func main() {
 	envPath := filepath.Join("..", ".env")
@@ -20,6 +21,7 @@ func main() {
 
 	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 	isProduction = os.Getenv("APP_ENV") == "production"
+	steamAPIKey = os.Getenv("STEAM_API_KEY")
 
 	pool := connectDB()
 	defer pool.Close()
@@ -42,6 +44,9 @@ func main() {
 	mux.HandleFunc("PUT /api/admin/servers/{id}", requireRole("admin", handleUpdateServer(pool)))
 	mux.HandleFunc("DELETE /api/admin/servers/{id}", requireRole("admin", handleDeleteServer(pool)))
 	mux.HandleFunc("POST /api/admin/servers/refresh", requireRole("admin", handleRefreshServers))
+
+	mux.HandleFunc("GET /auth/steam/login", handleSteamLogin)
+	mux.HandleFunc("GET /auth/steam/callback", handleSteamCallback(pool))
 
 	// http.FileServer сам отдаёт index.html для "/" и сам защищён от path traversal —
 	// то, что в Node мы писали руками (serveStatic), тут даёт стандартная библиотека.
