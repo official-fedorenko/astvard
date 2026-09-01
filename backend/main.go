@@ -40,8 +40,16 @@ func main() {
 	frontendDir := filepath.Join("..", "frontend")
 	mux.Handle("/", http.FileServer(http.Dir(frontendDir)))
 
-	log.Println("Astvard server running: http://localhost:3000")
-	if err := http.ListenAndServe(":3000", mux); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
+	// слушаем только localhost — снаружи сервер виден через nginx (он проксирует сюда),
+	// напрямую с публичного интерфейса достучаться до Go-процесса нельзя
+	addr := "127.0.0.1:" + port
+
+	log.Println("Astvard server running:", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
 }
