@@ -93,11 +93,15 @@ async function loadServers() {
         ? `<div class="card-meta">${statsParts.join(' · ')}</div>`
         : '';
 
-      const playersLine = s.players_online != null
-        ? `<div class="card-meta">Игроков: ${s.players_online}/${s.players_max}${
-            s.player_names?.length ? ` (${s.player_names.map(escapeHtml).join(', ')})` : ''
-          }</div>`
-        : '';
+      let playersLine = '';
+      if (s.players_online != null) {
+        const chips = s.player_names?.length
+          ? `<div class="player-chips">${s.player_names
+              .map((name) => `<span class="player-chip">${escapeHtml(name)}</span>`)
+              .join('')}</div>`
+          : '';
+        playersLine = `<div class="player-count">👥 Игроков: ${s.players_online}/${s.players_max}</div>${chips}`;
+      }
 
       return `
         <div class="card card-server" style="--game-accent:${accent};">
