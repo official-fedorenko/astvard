@@ -57,7 +57,7 @@ async function loadMe() {
   }
 
   const data = await response.json();
-  status.textContent = `Ты вошёл как ${data.email}`;
+  status.textContent = `Привет, ${data.nickname}! (${data.email})`;
   logoutBtn.style.display = 'inline-block';
   content.style.display = 'block';
 

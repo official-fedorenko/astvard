@@ -10,6 +10,21 @@
 
   <form id="register-form">
     <label>
+      Ник
+      <input type="text" id="nickname" minlength="3" maxlength="20" pattern="[a-zA-Z0-9_-]+" required>
+    </label>
+
+    <label>
+      Имя
+      <input type="text" id="firstName" required>
+    </label>
+
+    <label>
+      Фамилия
+      <input type="text" id="lastName" required>
+    </label>
+
+    <label>
       Email
       <input type="email" id="email" required>
     </label>
@@ -17,6 +32,17 @@
     <label>
       Пароль (минимум 8 символов)
       <input type="password" id="password" minlength="8" required>
+    </label>
+
+    <label>
+      Повтор пароля
+      <input type="password" id="passwordConfirm" minlength="8" required>
+    </label>
+
+    <!-- honeypot: скрыто от людей стилями, боты часто заполняют все поля подряд -->
+    <label class="honeypot" aria-hidden="true">
+      Website
+      <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
     </label>
 
     <button type="submit">Зарегистрироваться</button>

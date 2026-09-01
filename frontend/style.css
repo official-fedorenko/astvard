@@ -27,6 +27,11 @@ button {
   cursor: pointer;
 }
 
+.honeypot {
+  position: absolute;
+  left: -9999px;
+}
+
 .card {
   border: 1px solid #333;
   border-radius: 6px;

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +20,20 @@ type authRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
+
+type registerRequest struct {
+	Nickname        string `json:"nickname"`
+	FirstName       string `json:"firstName"`
+	LastName        string `json:"lastName"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	PasswordConfirm string `json:"passwordConfirm"`
+	// скрытое поле-ловушка для ботов: реальный человек его не видит и не заполняет,
+	// а простые боты, автоматически заполняющие все поля формы, попадаются на нём
+	Website string `json:"website"`
+}
+
+var nicknameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,20}$`)
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -44,12 +60,14 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-func isUniqueViolation(err error) bool {
+// возвращает имя нарушенного UNIQUE-ограничения (например "users_email_key"),
+// или "" если это вообще не ошибка нарушения уникальности
+func uniqueViolationField(err error) string {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505"
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr.ConstraintName
 	}
-	return false
+	return ""
 }
 
 func setAuthCookie(w http.ResponseWriter, token string, maxAge time.Duration) {
@@ -82,19 +100,41 @@ func handleRegister(pool *pgxpool.Pool, limiter *rateLimiter) http.HandlerFunc {
 			return
 		}
 
-		var req authRequest
+		var req registerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "Некорректный JSON")
 			return
 		}
 
+		// honeypot: поле должно быть пустым у настоящего человека
+		if req.Website != "" {
+			writeError(w, http.StatusBadRequest, "Регистрация не удалась")
+			return
+		}
+
+		nickname := strings.TrimSpace(req.Nickname)
+		firstName := strings.TrimSpace(req.FirstName)
+		lastName := strings.TrimSpace(req.LastName)
 		email := strings.ToLower(strings.TrimSpace(req.Email))
-		if email == "" || req.Password == "" {
-			writeError(w, http.StatusBadRequest, "Нужны email и password")
+
+		if !nicknameRe.MatchString(nickname) {
+			writeError(w, http.StatusBadRequest, "Ник должен быть 3-20 символов: латинские буквы, цифры, _ или -")
+			return
+		}
+		if firstName == "" || lastName == "" {
+			writeError(w, http.StatusBadRequest, "Нужны имя и фамилия")
+			return
+		}
+		if _, err := mail.ParseAddress(email); err != nil {
+			writeError(w, http.StatusBadRequest, "Некорректный email")
 			return
 		}
 		if len(req.Password) < 8 {
 			writeError(w, http.StatusBadRequest, "Пароль должен быть не короче 8 символов")
+			return
+		}
+		if req.Password != req.PasswordConfirm {
+			writeError(w, http.StatusBadRequest, "Пароли не совпадают")
 			return
 		}
 
@@ -107,20 +147,26 @@ func handleRegister(pool *pgxpool.Pool, limiter *rateLimiter) http.HandlerFunc {
 		var id int
 		var createdAt time.Time
 		err = pool.QueryRow(r.Context(),
-			"INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, created_at",
-			email, string(hash),
+			`INSERT INTO users (nickname, first_name, last_name, email, password_hash)
+			 VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
+			nickname, firstName, lastName, email, string(hash),
 		).Scan(&id, &createdAt)
 
 		if err != nil {
-			if isUniqueViolation(err) {
+			switch uniqueViolationField(err) {
+			case "users_nickname_key":
+				writeError(w, http.StatusConflict, "Этот ник уже занят")
+			case "users_email_key":
 				writeError(w, http.StatusConflict, "Этот email уже зарегистрирован")
-				return
+			default:
+				writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 			}
-			writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 			return
 		}
 
-		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "email": email, "created_at": createdAt})
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"id": id, "nickname": nickname, "email": email, "created_at": createdAt,
+		})
 	}
 }
 
@@ -146,10 +192,11 @@ func handleLogin(pool *pgxpool.Pool, limiter *rateLimiter) http.HandlerFunc {
 		invalid := func() { writeError(w, http.StatusUnauthorized, "Неверный email или пароль") }
 
 		var userID int
+		var nickname string
 		var passwordHash string
 		err := pool.QueryRow(r.Context(),
-			"SELECT id, password_hash FROM users WHERE email = $1", email,
-		).Scan(&userID, &passwordHash)
+			"SELECT id, nickname, password_hash FROM users WHERE email = $1", email,
+		).Scan(&userID, &nickname, &passwordHash)
 
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -165,14 +212,14 @@ func handleLogin(pool *pgxpool.Pool, limiter *rateLimiter) http.HandlerFunc {
 			return
 		}
 
-		token, err := signToken(userID, email)
+		token, err := signToken(userID, email, nickname)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 			return
 		}
 
 		setAuthCookie(w, token, 7*24*time.Hour)
-		writeJSON(w, http.StatusOK, map[string]string{"email": email})
+		writeJSON(w, http.StatusOK, map[string]string{"email": email, "nickname": nickname})
 	}
 }
 
@@ -194,5 +241,5 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"email": claims.Email})
+	writeJSON(w, http.StatusOK, map[string]string{"email": claims.Email, "nickname": claims.Nickname})
 }
