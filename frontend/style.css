@@ -95,8 +95,9 @@ textarea {
 }
 
 /* ---------- Кнопки ---------- */
-/* Обычный <button> уже выглядит как надо без всяких классов —
-   .btn-secondary/.btn-danger нужны только для явных исключений */
+/* Обычный <button> уже выглядит как надо без всяких классов — .btn нужен только
+   чтобы <a> (ссылка-навигация) выглядела как кнопка; .btn-secondary/.btn-danger —
+   для явных исключений (второстепенное действие / опасное действие) */
 
 button,
 .btn {
@@ -108,6 +109,7 @@ button,
   font-size: 15px;
   font-family: inherit;
   font-weight: 500;
+  text-decoration: none;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--color-primary);

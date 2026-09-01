@@ -65,7 +65,7 @@ async function loadMe() {
   content.style.display = 'block';
 
   if (data.role === 'admin' || data.role === 'superadmin') {
-    document.getElementById('admin-link').style.display = 'inline';
+    document.getElementById('admin-link').style.display = 'inline-flex';
   }
 
   loadServers();
