@@ -93,6 +93,12 @@ async function loadServers() {
         ? `<div class="card-meta">${statsParts.join(' · ')}</div>`
         : '';
 
+      const playersLine = s.players_online != null
+        ? `<div class="card-meta">Игроков: ${s.players_online}/${s.players_max}${
+            s.player_names?.length ? ` (${s.player_names.map(escapeHtml).join(', ')})` : ''
+          }</div>`
+        : '';
+
       return `
         <div class="card card-server" style="--game-accent:${accent};">
           <div class="card-header">
@@ -102,6 +108,7 @@ async function loadServers() {
           <div class="card-meta">${escapeHtml(s.game_name)}</div>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
           <span>${escapeHtml(s.description)}</span>
+          ${playersLine}
           ${statsLine}
         </div>
       `;

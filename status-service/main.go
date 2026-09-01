@@ -88,12 +88,12 @@ func checkAllServers(pool *pgxpool.Pool) {
 	rows.Close()
 
 	for _, s := range servers {
-		online, playersOnline, playersMax, reportedName := checkServer(s)
+		online, playersOnline, playersMax, reportedName, playerNames := checkServer(s)
 
 		_, err := pool.Exec(ctx,
-			`INSERT INTO server_status (server_id, online, players_online, players_max, reported_name)
-			 VALUES ($1, $2, $3, $4, $5)`,
-			s.ID, online, playersOnline, playersMax, reportedName,
+			`INSERT INTO server_status (server_id, online, players_online, players_max, reported_name, player_names)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
+			s.ID, online, playersOnline, playersMax, reportedName, playerNames,
 		)
 		if err != nil {
 			fmt.Println("ошибка записи статуса:", err)
@@ -107,23 +107,32 @@ func checkAllServers(pool *pgxpool.Pool) {
 		if reportedName != nil {
 			msg += fmt.Sprintf(", реальное имя=%q", *reportedName)
 		}
+		if len(playerNames) > 0 {
+			msg += fmt.Sprintf(", игроки=%v", playerNames)
+		}
 		fmt.Println(msg)
 	}
 }
 
-func checkServer(s server) (online bool, playersOnline, playersMax *int, reportedName *string) {
+func checkServer(s server) (online bool, playersOnline, playersMax *int, reportedName *string, playerNames []string) {
 	switch s.GameSlug {
 	case "valheim":
 		// у Valheim (образ lloesche/valheim-server) query-порт A2S — это игровой порт + 1
 		info, err := queryA2SInfo(s.Host, s.Port+1, 3*time.Second)
 		if err != nil {
-			return false, nil, nil, nil
+			return false, nil, nil, nil, nil
 		}
 		p, m := info.Players, info.MaxPlayers
-		return true, &p, &m, &info.Name
+		// ники — отдельным запросом, необязательным: если он не удался, счётчик
+		// и остальной статус всё равно сохраняем
+		names, err := queryA2SPlayers(s.Host, s.Port+1, 3*time.Second)
+		if err != nil {
+			names = nil
+		}
+		return true, &p, &m, &info.Name, names
 	default:
 		// для остальных игр пока держим грубую TCP-проверку — см. isReachable
-		return isReachable(s.Host, s.Port), nil, nil, nil
+		return isReachable(s.Host, s.Port), nil, nil, nil, nil
 	}
 }
 

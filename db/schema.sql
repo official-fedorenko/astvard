@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS server_status (
   players_online INTEGER,
   players_max INTEGER,
   reported_name TEXT,
+  -- ники игроков онлайн сейчас (A2S_PLAYER) — есть не для всех игр/серверов,
+  -- может быть NULL даже если players_online > 0
+  player_names TEXT[],
   checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
