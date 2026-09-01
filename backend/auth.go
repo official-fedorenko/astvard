@@ -17,8 +17,8 @@ import (
 )
 
 type authRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Identifier string `json:"identifier"` // email или ник
+	Password   string `json:"password"`
 }
 
 type registerRequest struct {
@@ -183,20 +183,24 @@ func handleLogin(pool *pgxpool.Pool, limiter *rateLimiter) http.HandlerFunc {
 			return
 		}
 
-		email := strings.ToLower(strings.TrimSpace(req.Email))
-		if email == "" || req.Password == "" {
-			writeError(w, http.StatusBadRequest, "Нужны email и password")
+		identifier := strings.TrimSpace(req.Identifier)
+		if identifier == "" || req.Password == "" {
+			writeError(w, http.StatusBadRequest, "Нужны email/ник и password")
 			return
 		}
 
-		invalid := func() { writeError(w, http.StatusUnauthorized, "Неверный email или пароль") }
+		invalid := func() { writeError(w, http.StatusUnauthorized, "Неверный email/ник или пароль") }
 
 		var userID int
-		var nickname string
+		var nickname, email string
 		var passwordHash string
+		// identifier сравниваем и как email (без учёта регистра), и как ник (тоже без учёта
+		// регистра) — не знаем заранее, что именно ввёл пользователь
 		err := pool.QueryRow(r.Context(),
-			"SELECT id, nickname, password_hash FROM users WHERE email = $1", email,
-		).Scan(&userID, &nickname, &passwordHash)
+			`SELECT id, nickname, email, password_hash FROM users
+			 WHERE email = LOWER($1) OR LOWER(nickname) = LOWER($1)`,
+			identifier,
+		).Scan(&userID, &nickname, &email, &passwordHash)
 
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

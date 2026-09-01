@@ -4,7 +4,7 @@ const message = document.getElementById('message');
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const email = document.getElementById('email').value;
+  const identifier = document.getElementById('identifier').value;
   const password = document.getElementById('password').value;
 
   message.textContent = 'Отправка...';
@@ -13,7 +13,7 @@ form.addEventListener('submit', async (event) => {
     const response = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     });
 
     const data = await response.json();
