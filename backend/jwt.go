@@ -11,14 +11,16 @@ type customClaims struct {
 	UserID   int    `json:"userId"`
 	Email    string `json:"email"`
 	Nickname string `json:"nickname"`
+	Role     string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func signToken(userID int, email, nickname string) (string, error) {
+func signToken(userID int, email, nickname, role string) (string, error) {
 	claims := customClaims{
 		UserID:   userID,
 		Email:    email,
 		Nickname: nickname,
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

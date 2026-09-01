@@ -57,7 +57,8 @@ async function loadMe() {
   }
 
   const data = await response.json();
-  status.textContent = `Привет, ${data.nickname}! (${data.email})`;
+  const roleLabels = { player: 'игрок', admin: 'админ', superadmin: 'супер-админ' };
+  status.textContent = `Привет, ${data.nickname}! (${data.email}) — ${roleLabels[data.role] ?? data.role}`;
   logoutBtn.style.display = 'inline-block';
   content.style.display = 'block';
 

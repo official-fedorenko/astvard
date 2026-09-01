@@ -192,15 +192,15 @@ func handleLogin(pool *pgxpool.Pool, limiter *rateLimiter) http.HandlerFunc {
 		invalid := func() { writeError(w, http.StatusUnauthorized, "Неверный email/ник или пароль") }
 
 		var userID int
-		var nickname, email string
+		var nickname, email, role string
 		var passwordHash string
 		// identifier сравниваем и как email (без учёта регистра), и как ник (тоже без учёта
 		// регистра) — не знаем заранее, что именно ввёл пользователь
 		err := pool.QueryRow(r.Context(),
-			`SELECT id, nickname, email, password_hash FROM users
+			`SELECT id, nickname, email, role, password_hash FROM users
 			 WHERE email = LOWER($1) OR LOWER(nickname) = LOWER($1)`,
 			identifier,
-		).Scan(&userID, &nickname, &email, &passwordHash)
+		).Scan(&userID, &nickname, &email, &role, &passwordHash)
 
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -216,14 +216,14 @@ func handleLogin(pool *pgxpool.Pool, limiter *rateLimiter) http.HandlerFunc {
 			return
 		}
 
-		token, err := signToken(userID, email, nickname)
+		token, err := signToken(userID, email, nickname, role)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 			return
 		}
 
 		setAuthCookie(w, token, 7*24*time.Hour)
-		writeJSON(w, http.StatusOK, map[string]string{"email": email, "nickname": nickname})
+		writeJSON(w, http.StatusOK, map[string]string{"email": email, "nickname": nickname, "role": role})
 	}
 }
 
@@ -245,5 +245,5 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"email": claims.Email, "nickname": claims.Nickname})
+	writeJSON(w, http.StatusOK, map[string]string{"email": claims.Email, "nickname": claims.Nickname, "role": claims.Role})
 }
