@@ -49,6 +49,8 @@ type serverWithStatus struct {
 	PlayersMax    *int       `json:"players_max"`
 	ReportedName  *string    `json:"reported_name"`
 	CheckedAt     *time.Time `json:"checked_at"`
+	UptimePercent *float64   `json:"uptime_percent"`
+	PeakPlayers   *int       `json:"peak_players"`
 }
 
 func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
@@ -57,7 +59,8 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 			SELECT servers.id, servers.name, servers.host, servers.port, servers.description,
 			       games.name AS game_name, games.slug AS game_slug,
 			       latest.online, latest.players_online, latest.players_max,
-			       latest.reported_name, latest.checked_at
+			       latest.reported_name, latest.checked_at,
+			       stats.uptime_percent, stats.peak_players
 			FROM servers
 			JOIN games ON games.id = servers.game_id
 			LEFT JOIN LATERAL (
@@ -67,6 +70,15 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 			  ORDER BY checked_at DESC
 			  LIMIT 1
 			) latest ON true
+			LEFT JOIN LATERAL (
+			  -- аптайм и пик игроков за последние 24 часа (по накопленной истории опроса)
+			  SELECT
+			    ROUND(100.0 * COUNT(*) FILTER (WHERE online) / NULLIF(COUNT(*), 0), 1) AS uptime_percent,
+			    MAX(players_online) AS peak_players
+			  FROM server_status
+			  WHERE server_status.server_id = servers.id
+			    AND checked_at > now() - interval '24 hours'
+			) stats ON true
 			ORDER BY servers.name
 		`)
 		if err != nil {
@@ -80,7 +92,7 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 			var s serverWithStatus
 			if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.Description,
 				&s.GameName, &s.GameSlug, &s.Online, &s.PlayersOnline, &s.PlayersMax,
-				&s.ReportedName, &s.CheckedAt); err != nil {
+				&s.ReportedName, &s.CheckedAt, &s.UptimePercent, &s.PeakPlayers); err != nil {
 				writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 				return
 			}

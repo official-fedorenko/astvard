@@ -20,11 +20,15 @@ async function loadServers() {
         s.online === true ? '🟢 онлайн' : s.online === false ? '🔴 офлайн' : '⚪ ещё не проверялся';
       // реальное имя, которое сообщил сам игровой сервер, приоритетнее ручного названия
       const displayName = s.reported_name || s.name;
+      const statsParts = [];
+      if (s.uptime_percent != null) statsParts.push(`аптайм 24ч: ${s.uptime_percent}%`);
+      if (s.peak_players != null) statsParts.push(`пик игроков за 24ч: ${s.peak_players}`);
+      const statsLine = statsParts.length ? `<br><span style="color:var(--color-text-muted); font-size:0.85rem;">${statsParts.join(' · ')}</span>` : '';
       return `
         <div class="card">
           <strong>${escapeHtml(displayName)}</strong> (${escapeHtml(s.game_name)}) — ${statusText}<br>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
-          <span>${escapeHtml(s.description)}</span>
+          <span>${escapeHtml(s.description)}</span>${statsLine}
         </div>
       `;
     })

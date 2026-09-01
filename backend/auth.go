@@ -238,18 +238,46 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func handleMe(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("token")
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "Не авторизован")
-		return
-	}
+// handleMe отдаёт данные не из JWT (там снимок на момент логина — role/nickname/avatar
+// могли поменяться), а свежие из базы, идентифицируя пользователя по userId из токена
+func handleMe(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "Не авторизован")
+			return
+		}
 
-	claims, err := parseToken(cookie.Value)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "Не авторизован")
-		return
-	}
+		claims, err := parseToken(cookie.Value)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "Не авторизован")
+			return
+		}
 
-	writeJSON(w, http.StatusOK, map[string]string{"email": claims.Email, "nickname": claims.Nickname, "role": claims.Role})
+		var nickname, role string
+		var email, avatarURL, steamID *string
+		var createdAt time.Time
+		err = pool.QueryRow(r.Context(),
+			"SELECT nickname, role, email, avatar_url, steam_id, created_at FROM users WHERE id = $1",
+			claims.UserID,
+		).Scan(&nickname, &role, &email, &avatarURL, &steamID, &createdAt)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "Не авторизован")
+			return
+		}
+
+		authMethod := "email"
+		if steamID != nil {
+			authMethod = "steam"
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"nickname":   nickname,
+			"role":       role,
+			"email":      email,
+			"avatarUrl":  avatarURL,
+			"authMethod": authMethod,
+			"createdAt":  createdAt,
+		})
+	}
 }

@@ -112,33 +112,33 @@ func verifySteamCallback(r *http.Request) (steamID string, err error) {
 }
 
 func createSteamUser(r *http.Request, pool *pgxpool.Pool, steamID string) (id int, nickname, role string, err error) {
-	nickname = steamPersonaName(steamID)
+	nickname, avatarURL := steamProfile(steamID)
 	if nickname == "" {
 		nickname = "steam_" + steamID[len(steamID)-6:]
 	}
 
 	err = pool.QueryRow(r.Context(),
-		"INSERT INTO users (nickname, steam_id) VALUES ($1, $2) RETURNING id, role",
-		nickname, steamID,
+		"INSERT INTO users (nickname, steam_id, avatar_url) VALUES ($1, $2, $3) RETURNING id, role",
+		nickname, steamID, avatarURL,
 	).Scan(&id, &role)
 
 	if uniqueViolationField(err) == "users_nickname_key" {
 		// ник уже занят кем-то другим — добавляем кусок SteamID для уникальности
 		nickname = nickname + "_" + steamID[len(steamID)-4:]
 		err = pool.QueryRow(r.Context(),
-			"INSERT INTO users (nickname, steam_id) VALUES ($1, $2) RETURNING id, role",
-			nickname, steamID,
+			"INSERT INTO users (nickname, steam_id, avatar_url) VALUES ($1, $2, $3) RETURNING id, role",
+			nickname, steamID, avatarURL,
 		).Scan(&id, &role)
 	}
 
 	return id, nickname, role, err
 }
 
-// steamPersonaName запрашивает имя профиля через Steam Web API — работает только
-// если задан STEAM_API_KEY; без ключа просто возвращает "" и мы берём ник по умолчанию
-func steamPersonaName(steamID string) string {
+// steamProfile запрашивает имя профиля и аватарку через Steam Web API — работает только
+// если задан STEAM_API_KEY; без ключа просто возвращает пустые строки, тогда берём ник по умолчанию
+func steamProfile(steamID string) (nickname, avatarURL string) {
 	if steamAPIKey == "" {
-		return ""
+		return "", ""
 	}
 
 	apiURL := fmt.Sprintf(
@@ -147,7 +147,7 @@ func steamPersonaName(steamID string) string {
 	)
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	defer resp.Body.Close()
 
@@ -155,22 +155,24 @@ func steamPersonaName(steamID string) string {
 		Response struct {
 			Players []struct {
 				PersonaName string `json:"personaname"`
+				AvatarFull  string `json:"avatarfull"`
 			} `json:"players"`
 		} `json:"response"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return ""
+		return "", ""
 	}
 	if len(result.Response.Players) == 0 {
-		return ""
+		return "", ""
 	}
 
-	sanitized := nicknameSanitizeRe.ReplaceAllString(result.Response.Players[0].PersonaName, "")
+	player := result.Response.Players[0]
+	sanitized := nicknameSanitizeRe.ReplaceAllString(player.PersonaName, "")
 	if len(sanitized) > 20 {
 		sanitized = sanitized[:20]
 	}
 	if len(sanitized) < 3 {
-		return ""
+		sanitized = ""
 	}
-	return sanitized
+	return sanitized, player.AvatarFull
 }

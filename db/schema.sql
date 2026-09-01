@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE,
   password_hash TEXT,
   steam_id TEXT UNIQUE,
+  avatar_url TEXT,
   role TEXT NOT NULL DEFAULT 'player' CHECK (role IN ('player', 'admin', 'superadmin')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- обычный аккаунт обязан иметь email+пароль, Steam-аккаунт — steam_id;

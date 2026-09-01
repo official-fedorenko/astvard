@@ -32,7 +32,7 @@ func main() {
 	mux.HandleFunc("POST /api/register", handleRegister(pool, limiter))
 	mux.HandleFunc("POST /api/login", handleLogin(pool, limiter))
 	mux.HandleFunc("POST /api/logout", handleLogout)
-	mux.HandleFunc("GET /api/me", handleMe)
+	mux.HandleFunc("GET /api/me", handleMe(pool))
 	mux.HandleFunc("GET /api/games", handleGetGames(pool))
 	mux.HandleFunc("GET /api/servers", handleGetServers(pool))
 	mux.HandleFunc("GET /api/articles", handleGetArticles(pool))
@@ -44,6 +44,9 @@ func main() {
 	mux.HandleFunc("PUT /api/admin/servers/{id}", requireRole("admin", handleUpdateServer(pool)))
 	mux.HandleFunc("DELETE /api/admin/servers/{id}", requireRole("admin", handleDeleteServer(pool)))
 	mux.HandleFunc("POST /api/admin/servers/refresh", requireRole("admin", handleRefreshServers))
+	mux.HandleFunc("GET /api/admin/stats", requireRole("admin", handleAdminStats(pool)))
+	mux.HandleFunc("GET /api/admin/users", requireRole("superadmin", handleListUsers(pool)))
+	mux.HandleFunc("PUT /api/admin/users/{id}/role", requireRole("superadmin", handleUpdateUserRole(pool)))
 
 	mux.HandleFunc("GET /auth/steam/login", handleSteamLogin)
 	mux.HandleFunc("GET /auth/steam/callback", handleSteamCallback(pool))

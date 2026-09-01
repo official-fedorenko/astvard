@@ -7,16 +7,16 @@ async function checkAccess() {
   const response = await fetch('/api/me');
   if (!response.ok) {
     window.location.href = 'login';
-    return false;
+    return null;
   }
   const data = await response.json();
   if (data.role !== 'admin' && data.role !== 'superadmin') {
     status.textContent = 'Недостаточно прав для этой страницы.';
-    return false;
+    return null;
   }
   status.textContent = `Ты вошёл как ${data.nickname} (${data.role})`;
   content.style.display = 'block';
-  return true;
+  return data;
 }
 
 // ---------- Сервера ----------
@@ -235,12 +235,63 @@ async function deleteArticle(id) {
   loadArticlesAdmin();
 }
 
+// ---------- Пользователи (только superadmin) ----------
+
+const usersSection = document.getElementById('users-section');
+const usersList = document.getElementById('users-list');
+const roleLabels = { player: 'игрок', admin: 'админ', superadmin: 'супер-админ' };
+const authMethodLabels = { email: 'Email/пароль', steam: 'Steam' };
+
+async function loadUsers() {
+  const response = await fetch('/api/admin/users');
+  if (!response.ok) return;
+  const users = await response.json();
+
+  usersList.innerHTML = users
+    .map(
+      (u) => `
+        <div class="card">
+          <strong>${escapeHtml(u.nickname)}</strong> — ${authMethodLabels[u.authMethod] ?? u.authMethod}<br>
+          С ${new Date(u.createdAt).toLocaleDateString('ru-RU')}<br>
+          <select data-role-for="${u.id}">
+            ${['player', 'admin', 'superadmin']
+              .map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${roleLabels[r]}</option>`)
+              .join('')}
+          </select>
+          <button class="btn-secondary" data-save-role="${u.id}">Сохранить</button>
+        </div>
+      `
+    )
+    .join('');
+
+  usersList.querySelectorAll('[data-save-role]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.saveRole;
+      const select = usersList.querySelector(`[data-role-for="${id}"]`);
+      btn.disabled = true;
+      await fetch(`/api/admin/users/${id}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: select.value }),
+      });
+      btn.disabled = false;
+      btn.textContent = 'Сохранено';
+      setTimeout(() => (btn.textContent = 'Сохранить'), 1500);
+    });
+  });
+}
+
 // ---------- Инициализация ----------
 
 (async () => {
-  const allowed = await checkAccess();
-  if (!allowed) return;
+  const me = await checkAccess();
+  if (!me) return;
   await loadGames();
   await loadServersAdmin();
   await loadArticlesAdmin();
+
+  if (me.role === 'superadmin') {
+    usersSection.style.display = 'block';
+    await loadUsers();
+  }
 })();
