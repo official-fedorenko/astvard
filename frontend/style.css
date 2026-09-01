@@ -1,37 +1,157 @@
-body {
-  font-family: sans-serif;
-  background: #111;
-  color: #eee;
-  padding: 40px;
+:root {
+  --color-bg: #111;
+  --color-surface: #1a1a1a;
+  --color-border: #333;
+  --color-text: #eee;
+  --color-text-muted: #999;
+  --color-primary: #6cf;
+  --color-primary-hover: #8ddcff;
+  --color-primary-text: #08222c;
+  --color-danger: #e66;
+  --color-danger-hover: #f4908f;
+  --color-danger-text: #2a0a0a;
+  --color-success: #6e6;
+
+  --radius: 8px;
+  --radius-sm: 4px;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+
+  --font-size-base: 15px;
+  --max-content-width: 420px;
 }
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: var(--spacing-lg);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin: 0 0 var(--spacing-sm);
+}
+
+h2 {
+  font-size: 1.2rem;
+  margin: var(--spacing-lg) 0 var(--spacing-sm);
+}
+
+a {
+  color: var(--color-primary);
+}
+
+/* ---------- Формы ---------- */
 
 form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 320px;
+  gap: var(--spacing-md);
+  max-width: var(--max-content-width);
+  width: 100%;
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--spacing-xs);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
 }
 
-input, button, select, textarea {
-  padding: 8px;
-  font-size: 14px;
+input,
+select,
+textarea {
+  padding: 10px 12px;
+  font-size: 16px; /* не даёт iOS зумить страницу при фокусе на поле */
   font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  width: 100%;
 }
 
-.card button {
-  margin-right: 6px;
-  margin-top: 8px;
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
 }
 
-button {
+textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* ---------- Кнопки ---------- */
+/* Обычный <button> уже выглядит как надо без всяких классов —
+   .btn-secondary/.btn-danger нужны только для явных исключений */
+
+button,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  min-height: 40px;
+  font-size: 15px;
+  font-family: inherit;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
   cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
 }
+
+button:hover,
+.btn:hover {
+  background: var(--color-primary-hover);
+}
+
+button:active,
+.btn:active {
+  opacity: 0.85;
+}
+
+button:disabled,
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  background: var(--color-surface);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: var(--color-danger-text);
+}
+
+.btn-danger:hover {
+  background: var(--color-danger-hover);
+}
+
+/* ---------- Переиспользуемые блоки ---------- */
 
 .honeypot {
   position: absolute;
@@ -39,9 +159,36 @@ button {
 }
 
 .card {
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 12px;
-  margin-bottom: 10px;
-  max-width: 400px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  max-width: var(--max-content-width);
+}
+
+.card button,
+.card .btn {
+  margin-right: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+/* ---------- Адаптив ---------- */
+
+@media (max-width: 480px) {
+  body {
+    padding: var(--spacing-md);
+  }
+
+  form,
+  .card {
+    max-width: 100%;
+  }
+
+  form > button,
+  form > .btn {
+    width: 100%;
+  }
 }

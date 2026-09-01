@@ -58,8 +58,8 @@ async function loadServersAdmin() {
           <strong>${escapeHtml(s.name)}</strong> (${escapeHtml(s.game_name)})<br>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
           <span>${escapeHtml(s.description)}</span><br>
-          <button data-edit-server="${s.id}">Изменить</button>
-          <button data-delete-server="${s.id}">Удалить</button>
+          <button class="btn-secondary" data-edit-server="${s.id}">Изменить</button>
+          <button class="btn-danger" data-delete-server="${s.id}">Удалить</button>
         </div>
       `
     )
@@ -156,8 +156,8 @@ async function loadArticlesAdmin() {
         <div class="card">
           <strong>${escapeHtml(a.title)}</strong> (${escapeHtml(a.slug)})
           <p>${escapeHtml(a.content)}</p>
-          <button data-edit-article="${a.id}">Изменить</button>
-          <button data-delete-article="${a.id}">Удалить</button>
+          <button class="btn-secondary" data-edit-article="${a.id}">Изменить</button>
+          <button class="btn-danger" data-delete-article="${a.id}">Удалить</button>
         </div>
       `
     )
