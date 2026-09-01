@@ -2,6 +2,7 @@ const status = document.getElementById('status');
 const content = document.getElementById('content');
 
 let games = [];
+let isSuperadmin = false;
 
 async function checkAccess() {
   // renderNav() уже дёргает /api/me для шапки — переиспользуем результат
@@ -48,6 +49,10 @@ async function loadServersAdmin() {
   serversList.innerHTML = servers
     .map((s) => {
       const displayName = s.reported_name || s.name;
+      const passwordToggle = isSuperadmin
+        ? `<button class="btn-secondary" data-toggle-infra="${s.id}">🔑 Пароль сервера</button>
+           <div data-infra-panel="${s.id}" style="display:none; margin-top:var(--spacing-sm);"></div>`
+        : '';
       return `
         <div class="card">
           <div class="card-header">
@@ -59,6 +64,7 @@ async function loadServersAdmin() {
           <span>${escapeHtml(s.description)}</span><br>
           <button class="btn-secondary" data-edit-server="${s.id}">Изменить</button>
           <button class="btn-danger" data-delete-server="${s.id}">Удалить</button>
+          ${passwordToggle}
         </div>
       `;
     })
@@ -73,6 +79,99 @@ async function loadServersAdmin() {
 
   serversList.querySelectorAll('[data-delete-server]').forEach((btn) => {
     btn.addEventListener('click', () => deleteServer(Number(btn.dataset.deleteServer)));
+  });
+
+  serversList.querySelectorAll('[data-toggle-infra]').forEach((btn) => {
+    btn.addEventListener('click', () => toggleInfraPanel(Number(btn.dataset.toggleInfra)));
+  });
+}
+
+async function toggleInfraPanel(serverId) {
+  const panel = serversList.querySelector(`[data-infra-panel="${serverId}"]`);
+  if (!panel) return;
+
+  if (panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'block';
+  panel.innerHTML = 'Загрузка...';
+
+  const response = await fetch(`/api/admin/servers/${serverId}/infra`);
+  if (!response.ok) {
+    panel.innerHTML = '<span style="color:var(--color-danger);">Не удалось загрузить</span>';
+    return;
+  }
+  const infra = await response.json();
+
+  panel.innerHTML = `
+    <div class="row">
+      <label style="flex:1 1 140px;">
+        Имя контейнера
+        <input type="text" data-infra-container="${serverId}" value="${escapeHtml(infra.dockerContainerName ?? '')}">
+      </label>
+      <label style="flex:1 1 140px;">
+        Имя мира
+        <input type="text" data-infra-world="${serverId}" value="${escapeHtml(infra.dockerWorldName ?? '')}">
+      </label>
+    </div>
+    <button type="button" class="btn-secondary" data-save-infra="${serverId}">Сохранить настройки</button>
+    <div class="row" style="margin-top:var(--spacing-sm);">
+      <label style="flex:1 1 200px;">
+        Текущий пароль
+        <input type="text" value="${escapeHtml(infra.connectPassword ?? '(не задан)')}" readonly>
+      </label>
+    </div>
+    <div class="row" style="margin-top:var(--spacing-sm);">
+      <label style="flex:1 1 200px;">
+        Новый пароль (мин. 5 символов)
+        <input type="text" data-infra-password="${serverId}" minlength="5">
+      </label>
+      <button type="button" class="btn-danger" data-change-password="${serverId}">Сменить пароль на сервере</button>
+    </div>
+    <p style="color:var(--color-text-muted); font-size:0.85rem;">
+      Смена пароля пересоздаёт контейнер — сервер на пару секунд уйдёт в оффлайн, текущие игроки отключатся.
+    </p>
+    <p data-infra-message="${serverId}"></p>
+  `;
+
+  panel.querySelector(`[data-save-infra="${serverId}"]`).addEventListener('click', async () => {
+    const containerName = panel.querySelector(`[data-infra-container="${serverId}"]`).value;
+    const worldName = panel.querySelector(`[data-infra-world="${serverId}"]`).value;
+    const msg = panel.querySelector(`[data-infra-message="${serverId}"]`);
+    const res = await fetch(`/api/admin/servers/${serverId}/infra`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dockerContainerName: containerName, dockerWorldName: worldName }),
+    });
+    const data = await res.json();
+    msg.textContent = res.ok ? 'Настройки сохранены' : data.error;
+    msg.style.color = res.ok ? 'var(--color-success)' : 'var(--color-danger)';
+  });
+
+  panel.querySelector(`[data-change-password="${serverId}"]`).addEventListener('click', async () => {
+    const password = panel.querySelector(`[data-infra-password="${serverId}"]`).value;
+    const msg = panel.querySelector(`[data-infra-message="${serverId}"]`);
+    if (!confirm('Сервер перезапустится, текущие игроки отключатся. Продолжить?')) return;
+
+    msg.textContent = 'Пересобираю контейнер...';
+    msg.style.color = 'var(--color-text-muted)';
+    const res = await fetch(`/api/admin/servers/${serverId}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msg.textContent = 'Готово, пароль сменён';
+      msg.style.color = 'var(--color-success)';
+      toggleInfraPanel(serverId);
+      toggleInfraPanel(serverId); // перезагрузить панель со свежим паролем
+    } else {
+      msg.textContent = data.error;
+      msg.style.color = 'var(--color-danger)';
+    }
   });
 }
 
@@ -381,6 +480,8 @@ gameAdminsAddBtn.addEventListener('click', async () => {
 (async () => {
   const me = await checkAccess();
   if (!me) return;
+  isSuperadmin = me.role === 'superadmin';
+
   await loadGames();
   await loadServersAdmin();
   await loadArticlesAdmin();

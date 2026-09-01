@@ -53,6 +53,10 @@ func main() {
 	mux.HandleFunc("POST /api/admin/servers/{id}/admins", requireRole("superadmin", handleAddServerAdmin(pool)))
 	mux.HandleFunc("DELETE /api/admin/servers/{id}/admins/{userId}", requireRole("superadmin", handleRemoveServerAdmin(pool)))
 
+	mux.HandleFunc("GET /api/admin/servers/{id}/infra", requireRole("superadmin", handleGetServerInfra(pool)))
+	mux.HandleFunc("PUT /api/admin/servers/{id}/infra", requireRole("superadmin", handleSetServerInfra(pool)))
+	mux.HandleFunc("PUT /api/admin/servers/{id}/password", requireRole("superadmin", handleSetServerPassword(pool)))
+
 	mux.HandleFunc("GET /auth/steam/login", handleSteamLogin)
 	mux.HandleFunc("GET /auth/steam/callback", handleSteamCallback(pool))
 

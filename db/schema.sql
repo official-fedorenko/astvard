@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS servers (
   -- путь к тому Docker-контейнера на VPS (только для игр, где мы умеем управлять
   -- игровыми админами напрямую через файл — сейчас только Valheim/adminlist.txt)
   docker_volume_path TEXT,
+  -- нужны для реальной пересборки контейнера при смене пароля подключения
+  -- (сейчас поддерживается только для Valheim)
+  docker_container_name TEXT,
+  docker_world_name TEXT,
+  connect_password TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (host, port)
 );
