@@ -1,53 +1,6 @@
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str ?? '';
-  return div.innerHTML;
-}
-
 const status = document.getElementById('status');
 const logoutBtn = document.getElementById('logout-btn');
 const content = document.getElementById('content');
-const serversList = document.getElementById('servers-list');
-const articlesList = document.getElementById('articles-list');
-
-async function loadServers() {
-  const response = await fetch('/api/servers');
-  const servers = await response.json();
-
-  serversList.innerHTML = servers
-    .map(
-      (s) => {
-        const statusText =
-          s.online === true ? '🟢 онлайн' : s.online === false ? '🔴 офлайн' : '⚪ ещё не проверялся';
-        // реальное имя, которое сообщил сам игровой сервер, приоритетнее ручного названия
-        const displayName = s.reported_name || s.name;
-        return `
-        <div class="card">
-          <strong>${escapeHtml(displayName)}</strong> (${escapeHtml(s.game_name)}) — ${statusText}<br>
-          <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
-          <span>${escapeHtml(s.description)}</span>
-        </div>
-      `;
-      }
-    )
-    .join('');
-}
-
-async function loadArticles() {
-  const response = await fetch('/api/articles');
-  const articles = await response.json();
-
-  articlesList.innerHTML = articles
-    .map(
-      (a) => `
-        <div class="card">
-          <strong>${escapeHtml(a.title)}</strong>
-          <p>${escapeHtml(a.content)}</p>
-        </div>
-      `
-    )
-    .join('');
-}
 
 async function loadMe() {
   const response = await fetch('/api/me');

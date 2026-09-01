@@ -1,1 +1,2 @@
-console.log('Astvard frontend loaded');
+loadServers();
+loadArticles();

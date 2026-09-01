@@ -1,9 +1,3 @@
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str ?? '';
-  return div.innerHTML;
-}
-
 const status = document.getElementById('status');
 const content = document.getElementById('content');
 
