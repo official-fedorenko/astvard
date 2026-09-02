@@ -440,27 +440,41 @@ const usersList = document.getElementById('users-list');
 const roleLabels = { player: 'игрок', admin: 'админ', superadmin: 'супер-админ' };
 const authMethodLabels = { email: 'Email/пароль', steam: 'Steam' };
 
-async function loadUsers() {
-  const response = await fetch('/api/admin/users');
-  if (!response.ok) return;
-  const users = await response.json();
+const usersSearch = document.getElementById('users-search');
+let allUsers = [];
 
-  usersList.innerHTML = users
-    .map(
-      (u) => `
-        <div class="card">
-          <strong>${escapeHtml(u.nickname)}</strong> — ${authMethodLabels[u.authMethod] ?? u.authMethod}<br>
-          С ${new Date(u.createdAt).toLocaleDateString('ru-RU')}<br>
-          <select data-role-for="${u.id}">
-            ${['player', 'admin', 'superadmin']
-              .map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${roleLabels[r]}</option>`)
-              .join('')}
-          </select>
-          <button class="btn-secondary" data-save-role="${u.id}">Сохранить</button>
-        </div>
-      `
-    )
-    .join('');
+function renderUsers(users) {
+  usersList.innerHTML = users.length
+    ? users
+        .map((u) => {
+          const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ');
+          const avatar = u.avatarUrl
+            ? `<img class="profile-avatar" src="${escapeHtml(u.avatarUrl)}" alt="">`
+            : '';
+          const metaParts = [fullName, authMethodLabels[u.authMethod] ?? u.authMethod, u.email].filter(Boolean);
+          const joined = new Date(u.createdAt).toLocaleDateString('ru-RU');
+
+          return `
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">${avatar}${escapeHtml(u.nickname)}</span>
+                <span class="badge badge-role-${u.role}">${roleLabels[u.role] ?? u.role}</span>
+              </div>
+              <div class="card-meta">${metaParts.map(escapeHtml).join(' · ')}</div>
+              <div class="card-meta">На сайте с ${joined}</div>
+              <div class="row" style="margin-top:var(--spacing-sm);">
+                <select data-role-for="${u.id}">
+                  ${['player', 'admin', 'superadmin']
+                    .map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${roleLabels[r]}</option>`)
+                    .join('')}
+                </select>
+                <button class="btn-secondary" data-save-role="${u.id}">Сохранить</button>
+              </div>
+            </div>
+          `;
+        })
+        .join('')
+    : '<p class="hint">Никого не нашлось</p>';
 
   usersList.querySelectorAll('[data-save-role]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -475,8 +489,27 @@ async function loadUsers() {
       btn.disabled = false;
       btn.textContent = 'Сохранено';
       setTimeout(() => (btn.textContent = 'Сохранить'), 1500);
+      const cached = allUsers.find((u) => u.id === Number(id));
+      if (cached) cached.role = select.value;
     });
   });
+}
+
+usersSearch.addEventListener('input', () => {
+  const q = usersSearch.value.trim().toLowerCase();
+  const filtered = q
+    ? allUsers.filter(
+        (u) => u.nickname.toLowerCase().includes(q) || (u.email && u.email.toLowerCase().includes(q))
+      )
+    : allUsers;
+  renderUsers(filtered);
+});
+
+async function loadUsers() {
+  const response = await fetch('/api/admin/users');
+  if (!response.ok) return;
+  allUsers = await response.json();
+  renderUsers(allUsers);
 }
 
 // ---------- Игровые админы (только superadmin) ----------

@@ -41,6 +41,10 @@ func handleAdminStats(pool *pgxpool.Pool) http.HandlerFunc {
 type adminUser struct {
 	ID         int       `json:"id"`
 	Nickname   string    `json:"nickname"`
+	FirstName  *string   `json:"firstName"`
+	LastName   *string   `json:"lastName"`
+	Email      *string   `json:"email"`
+	AvatarURL  *string   `json:"avatarUrl"`
 	Role       string    `json:"role"`
 	AuthMethod string    `json:"authMethod"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -50,7 +54,8 @@ type adminUser struct {
 func handleListUsers(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := pool.Query(r.Context(), `
-			SELECT id, nickname, role, created_at, (steam_id IS NOT NULL) AS via_steam
+			SELECT id, nickname, first_name, last_name, email, avatar_url,
+			       role, created_at, (steam_id IS NOT NULL) AS via_steam
 			FROM users
 			ORDER BY created_at DESC
 		`)
@@ -64,7 +69,8 @@ func handleListUsers(pool *pgxpool.Pool) http.HandlerFunc {
 		for rows.Next() {
 			var u adminUser
 			var viaSteam bool
-			if err := rows.Scan(&u.ID, &u.Nickname, &u.Role, &u.CreatedAt, &viaSteam); err != nil {
+			if err := rows.Scan(&u.ID, &u.Nickname, &u.FirstName, &u.LastName, &u.Email, &u.AvatarURL,
+				&u.Role, &u.CreatedAt, &viaSteam); err != nil {
 				writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
 				return
 			}

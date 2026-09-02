@@ -527,9 +527,11 @@ button:disabled,
 /* ---------- Карточка сервера ---------- */
 
 .server-address {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  width: 100%;
   padding: 4px 6px 4px 10px;
   margin-bottom: var(--spacing-sm);
   background: var(--color-bg);
@@ -539,14 +541,29 @@ button:disabled,
   font-size: 0.85rem;
 }
 
-/* мелкая кнопка-иконка (копировать) — компактнее обычных кнопок сайта */
-.copy-btn {
+.server-address span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* мелкая кнопка-иконка (копировать) — компактнее обычных кнопок сайта.
+   ".card button" (см. выше) иначе перебивает эти отступы своими — она специфичнее
+   голого ".copy-btn", поэтому тут та же комбинация класса с родителем */
+.copy-btn,
+.card .copy-btn,
+.modal-box .copy-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: auto;
-  padding: 3px 7px;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  margin: 0;
+  padding: 0;
   font-size: 0.85rem;
+  line-height: 1;
   background: transparent;
   color: var(--color-text-muted);
   border: 1px solid transparent;
