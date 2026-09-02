@@ -259,6 +259,14 @@ button:disabled,
   gap: var(--spacing-sm);
 }
 
+/* для строк, где рядом с label (текст метки + поле, колонкой) стоит отдельная
+   кнопка: align-items:center центрирует кнопку по ВСЕМУ label-блоку, из-за чего
+   она "прыгает" относительно самого поля при разной длине текста метки.
+   flex-end прижимает низ кнопки к низу поля (оба ~одной высоты) */
+.row-align-end {
+  align-items: flex-end;
+}
+
 .card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);

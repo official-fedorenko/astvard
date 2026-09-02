@@ -50,8 +50,6 @@ async function renderNav() {
     <nav class="row" style="justify-content:space-between;">
       <div class="row">
         <a href="/" class="site-logo">${escapeHtml(siteName)}</a>
-        <a href="/#servers">Сервера</a>
-        <a href="/#articles">Статьи</a>
       </div>
       <div class="row">${authLinks}</div>
     </nav>

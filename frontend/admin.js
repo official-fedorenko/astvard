@@ -171,7 +171,7 @@ async function toggleInfraPanel(serverId) {
     </div>
     <p style="color:var(--color-text-muted); font-size:0.85rem;" data-infra-public-hint="${serverId}"></p>
 
-    <div class="row" style="margin-top:var(--spacing-sm);">
+    <div class="row row-align-end" style="margin-top:var(--spacing-sm);">
       <label style="flex:1 1 200px;">
         <span data-infra-password-label="${serverId}"></span>
         <input type="text" data-infra-password="${serverId}">
