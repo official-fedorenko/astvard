@@ -13,15 +13,23 @@
     <h1 id="site-title">Astvard</h1>
     <p id="site-tagline">Портал наших игровых серверов.</p>
 
-    <section id="servers" aria-labelledby="servers-heading">
-      <h2 id="servers-heading">Наши сервера</h2>
-      <div id="servers-list">Загрузка...</div>
-    </section>
+    <!-- две колонки: статьи — основная область слева, сервера — узкая колонка справа.
+         В разметке сервера идут первыми, чтобы на телефоне (колонки складываются) они были сверху -->
+    <div class="home-layout">
+      <aside class="home-aside">
+        <section id="servers" aria-labelledby="servers-heading">
+          <h2 id="servers-heading">Наши сервера</h2>
+          <div id="servers-list">Загрузка...</div>
+        </section>
+      </aside>
 
-    <section id="articles" aria-labelledby="articles-heading">
-      <h2 id="articles-heading">Статьи</h2>
-      <div id="articles-list">Загрузка...</div>
-    </section>
+      <div class="home-main">
+        <section id="articles" aria-labelledby="articles-heading">
+          <h2 id="articles-heading">Статьи</h2>
+          <div id="articles-list">Загрузка...</div>
+        </section>
+      </div>
+    </div>
   </main>
 
   <footer id="site-footer"></footer>

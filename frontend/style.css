@@ -384,6 +384,52 @@ button:disabled,
   font-size: 0.8rem;
 }
 
+/* ---------- Главная: статьи слева, сервера колонкой справа ---------- */
+
+.home-layout {
+  display: flex;
+  flex-direction: row-reverse; /* в HTML сервера первые (для мобилки), визуально — справа */
+  gap: var(--spacing-lg);
+  align-items: flex-start;
+}
+
+.home-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-aside {
+  flex: 0 0 340px;
+  position: sticky;
+  top: var(--spacing-md);
+}
+
+.home-layout h2 {
+  margin-top: 0;
+}
+
+/* в узкой колонке карточки серверов идут одна под другой, а не сеткой */
+.home-aside .grid {
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+}
+
+@media (max-width: 860px) {
+  .home-layout {
+    flex-direction: column;
+  }
+
+  .home-aside {
+    flex: none;
+    width: 100%;
+    position: static;
+  }
+
+  .home-main h2 {
+    margin-top: var(--spacing-lg);
+  }
+}
+
 /* ---------- Админка: меню слева, содержимое справа ---------- */
 
 .admin-layout {
