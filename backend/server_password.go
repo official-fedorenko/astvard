@@ -198,6 +198,41 @@ func handleSetServerPassword(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+// handleRestartServer — superadmin: обычный "docker restart", без смены каких-либо
+// настроек (в отличие от handleSetServerPassword, который полностью пересоздаёт
+// контейнер). Нужен, когда сервер завис/подвисает или просто хочется применить
+// обновление игры/перечитать сохранение, не трогая пароль/публичность/имя.
+func handleRestartServer(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Некорректный id")
+			return
+		}
+
+		var containerName *string
+		err = pool.QueryRow(r.Context(),
+			"SELECT docker_container_name FROM servers WHERE id = $1", id,
+		).Scan(&containerName)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "Сервер не найден")
+			return
+		}
+		if containerName == nil {
+			writeError(w, http.StatusBadRequest, "Сначала настрой имя контейнера в панели «Изменить сервер»")
+			return
+		}
+
+		out, err := exec.Command("docker", "restart", *containerName).CombinedOutput()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Не удалось перезапустить контейнер: "+err.Error()+": "+string(out))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
 // dockerVolumeNameFromPath достаёт имя volume из его пути на диске
 // ("/var/lib/docker/volumes/имя/_data" -> "имя") — путь мы уже храним для adminlist.txt,
 // а для `docker run -v` нужно именно имя, а не путь монтирования

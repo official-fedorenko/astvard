@@ -210,6 +210,16 @@ async function toggleInfraPanel(serverId) {
     </div>
 
     <div class="settings-panel">
+      <button type="button" class="btn-secondary" data-restart="${serverId}" ${infra.dockerContainerName ? '' : 'disabled'}>🔄 Перезапустить сервер</button>
+      <p class="hint" style="margin-top:var(--spacing-xs);">
+        ${infra.dockerContainerName
+          ? 'Обычный docker restart — настройки не меняются (пароль, публичность, имя те же). Сервер на несколько секунд уйдёт в оффлайн, игроки отключатся.'
+          : 'Сначала укажи и сохрани имя контейнера выше.'}
+      </p>
+      <p data-restart-message="${serverId}"></p>
+    </div>
+
+    <div class="settings-panel">
       <div class="row">
         <label style="flex:1 1 200px;">
           Текущий пароль
@@ -312,6 +322,29 @@ async function toggleInfraPanel(serverId) {
       msg.style.color = 'var(--color-danger)';
     }
   });
+
+  const restartBtn = panel.querySelector(`[data-restart="${serverId}"]`);
+  if (restartBtn) {
+    restartBtn.addEventListener('click', async () => {
+      const msg = panel.querySelector(`[data-restart-message="${serverId}"]`);
+      if (!confirm('Сервер перезапустится, текущие игроки отключатся. Продолжить?')) return;
+
+      restartBtn.disabled = true;
+      msg.textContent = 'Перезапускаю...';
+      msg.style.color = 'var(--color-text-muted)';
+      const res = await fetch(`/api/admin/servers/${serverId}/restart`, { method: 'POST' });
+      restartBtn.disabled = false;
+
+      const data = await res.json();
+      if (res.ok) {
+        msg.textContent = 'Готово, перезапущен';
+        msg.style.color = 'var(--color-success)';
+      } else {
+        msg.textContent = data.error;
+        msg.style.color = 'var(--color-danger)';
+      }
+    });
+  }
 }
 
 function startEditServer(server) {
