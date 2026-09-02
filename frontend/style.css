@@ -23,6 +23,7 @@
   --font-size-base: 15px;
   --max-content-width: 420px;
   --max-page-width: 1100px;
+  --sticky-header-height: 62px;
 }
 
 * {
@@ -640,6 +641,14 @@ button:disabled,
 
   .admin-menu button.active {
     box-shadow: inset 0 -3px 0 var(--color-primary);
+  }
+}
+
+/* на десктопе шапка тоже sticky (см. #site-header) — без этого верх меню
+   прилипает на spacing-md от верха вьюпорта и уезжает под неё */
+@media (min-width: 769px) {
+  .admin-menu {
+    top: calc(var(--sticky-header-height) + var(--spacing-md));
   }
 }
 

@@ -33,6 +33,11 @@ function showAdminSection(sectionId) {
   document.querySelectorAll('.admin-menu button').forEach((b) => {
     b.classList.toggle('active', b.dataset.section === sectionId);
   });
+  // при переходе в "Сервера" из другого раздела меню всегда открываем список,
+  // а не ту подвкладку, что случайно осталась активной с прошлого раза
+  if (sectionId === 'servers-admin') {
+    showAdminSubtab(serversAdminSection, 'server-list-tab');
+  }
   try {
     localStorage.setItem(ADMIN_SECTION_KEY, sectionId);
   } catch {
