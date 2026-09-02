@@ -630,6 +630,7 @@ async function loadSettingsForm() {
   SETTING_KEYS.forEach((key) => {
     document.getElementById(`setting-${key}`).value = settings[key] ?? '';
   });
+  settingLogoPreview.src = settings.logo_url || '/logo.svg';
 }
 
 settingsForm.addEventListener('submit', async (event) => {
@@ -659,6 +660,57 @@ settingsForm.addEventListener('submit', async (event) => {
   settingsMessage.style.color = 'var(--color-success)';
   // шапка/футер читают из кэшированного промиса — сбрасываем и перерисовываем
   siteSettingsPromise = Promise.resolve(data);
+  renderNav();
+});
+
+// ---------- Логотип (только superadmin) ----------
+
+const settingLogoFile = document.getElementById('setting-logo-file');
+const settingLogoUpload = document.getElementById('setting-logo-upload');
+const settingLogoReset = document.getElementById('setting-logo-reset');
+const settingLogoPreview = document.getElementById('setting-logo-preview');
+const settingLogoMessage = document.getElementById('setting-logo-message');
+
+settingLogoUpload.addEventListener('click', async () => {
+  const file = settingLogoFile.files[0];
+  if (!file) {
+    settingLogoMessage.textContent = 'Сначала выбери файл';
+    settingLogoMessage.style.color = 'var(--color-danger)';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('logo', file);
+
+  settingLogoUpload.disabled = true;
+  const response = await fetch('/api/admin/settings/logo', { method: 'POST', body: formData });
+  settingLogoUpload.disabled = false;
+
+  const data = await response.json();
+  if (!response.ok) {
+    settingLogoMessage.textContent = data.error;
+    settingLogoMessage.style.color = 'var(--color-danger)';
+    return;
+  }
+  settingLogoMessage.textContent = 'Логотип обновлён';
+  settingLogoMessage.style.color = 'var(--color-success)';
+  settingLogoPreview.src = data.logoUrl;
+  settingLogoFile.value = '';
+  siteSettingsPromise = null; // сбрасываем кэш — шапка/футер подтянут новый логотип
+  renderNav();
+});
+
+settingLogoReset.addEventListener('click', async () => {
+  settingLogoReset.disabled = true;
+  const response = await fetch('/api/admin/settings/logo', { method: 'DELETE' });
+  settingLogoReset.disabled = false;
+
+  const data = await response.json();
+  if (!response.ok) return;
+  settingLogoMessage.textContent = 'Сброшено на стандартный';
+  settingLogoMessage.style.color = 'var(--color-success)';
+  settingLogoPreview.src = data.logoUrl;
+  siteSettingsPromise = null;
   renderNav();
 });
 

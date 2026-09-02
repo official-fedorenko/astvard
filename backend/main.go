@@ -38,6 +38,8 @@ func main() {
 	mux.HandleFunc("GET /api/articles", handleGetArticles(pool))
 	mux.HandleFunc("GET /api/settings", handleGetSettings(pool))
 	mux.HandleFunc("PUT /api/admin/settings", requireRole("superadmin", handleUpdateSettings(pool)))
+	mux.HandleFunc("POST /api/admin/settings/logo", requireRole("superadmin", handleUploadLogo(pool)))
+	mux.HandleFunc("DELETE /api/admin/settings/logo", requireRole("superadmin", handleResetLogo(pool)))
 
 	mux.HandleFunc("POST /api/admin/articles", requireRole("admin", handleCreateArticle(pool)))
 	mux.HandleFunc("PUT /api/admin/articles/{id}", requireRole("admin", handleUpdateArticle(pool)))
@@ -67,6 +69,13 @@ func main() {
 	// cleanURLFileServer сверху добавляет красивые пути (/admin вместо /admin.html)
 	frontendDir := filepath.Join("..", "frontend")
 	mux.Handle("/", cleanURLFileServer(frontendDir))
+
+	// загруженные файлы (сейчас только логотип) — отдельно от frontend/, чтобы
+	// деплой (git pull поверх frontend/) их не затирал
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+		log.Println("предупреждение: не смог создать uploads/:", err)
+	}
+	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadsDir))))
 
 	port := os.Getenv("PORT")
 	if port == "" {

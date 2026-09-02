@@ -166,6 +166,22 @@
           <button type="submit" id="settings-submit">Сохранить</button>
         </form>
         <p id="settings-message"></p>
+
+        <div class="admin-list-header">
+          <h3>Логотип</h3>
+        </div>
+        <div class="row" style="align-items:center;">
+          <img id="setting-logo-preview" src="" alt="" style="height:40px; width:40px;">
+          <div class="row row-align-end" style="flex:1;">
+            <label style="flex:1 1 200px;">
+              Файл (SVG, PNG, JPG, GIF, WEBP, ICO — до 3 МБ)
+              <input type="file" id="setting-logo-file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp,.ico">
+            </label>
+            <button type="button" id="setting-logo-upload" class="btn-secondary">Загрузить</button>
+            <button type="button" id="setting-logo-reset" class="btn-secondary">Сбросить</button>
+          </div>
+        </div>
+        <p id="setting-logo-message"></p>
       </section>
       </div>
     </div>

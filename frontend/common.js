@@ -4,6 +4,55 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// ---------- Модалка (общая) ----------
+// Простое окно поверх страницы: заголовок + произвольный HTML внутри + кнопка закрытия.
+// Закрывается по клику на подложку, на "Закрыть" или по Escape.
+
+function showModal(title, bodyHtml) {
+  document.getElementById('site-modal-overlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'site-modal-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+      <h3>${escapeHtml(title)}</h3>
+      <div class="modal-body">${bodyHtml}</div>
+      <button type="button" class="btn-secondary" data-modal-close style="margin-top:var(--spacing-md);">Закрыть</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+  overlay.querySelector('[data-modal-close]').addEventListener('click', close);
+  document.addEventListener('keydown', function onKey(event) {
+    if (event.key === 'Escape') {
+      close();
+      document.removeEventListener('keydown', onKey);
+    }
+  });
+
+  return overlay;
+}
+
+// ---------- Копирование в буфер ----------
+
+async function copyToClipboard(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    return; // буфер обмена недоступен (например, страница открыта не по https) — просто молчим
+  }
+  const original = btn.textContent;
+  btn.textContent = '✓';
+  setTimeout(() => {
+    btn.textContent = original;
+  }, 1200);
+}
+
 // Общая шапка с навигацией — один раз тут, подключается на каждой странице через
 // <header id="site-header"></header> + <script src="common.js">, дальше просто
 // вызвать renderNav(). Сама разбирается, залогинен ли человек и какая у него роль.
@@ -34,6 +83,7 @@ async function renderNav() {
     // не залогинен или сервер недоступен — просто покажем гостевые ссылки
   }
   const siteName = settings.site_name || 'Astvard';
+  const logoUrl = settings.logo_url || '/logo.svg';
 
   const authLinks = me
     ? `
@@ -49,7 +99,7 @@ async function renderNav() {
   header.innerHTML = `
     <nav class="row" style="justify-content:space-between;">
       <div class="row">
-        <a href="/" class="site-logo">${escapeHtml(siteName)}</a>
+        <a href="/" class="site-logo"><img src="${escapeHtml(logoUrl)}" class="site-logo-img" alt="">${escapeHtml(siteName)}</a>
       </div>
       <div class="row">${authLinks}</div>
     </nav>
@@ -126,6 +176,11 @@ async function loadServers() {
         ? `<p class="server-description">${escapeHtml(s.description)}</p>`
         : '';
 
+      const address = `${s.host}:${s.port}`;
+      const passwordBtn = s.connect_password
+        ? `<button type="button" class="btn-secondary password-btn" data-password="${escapeHtml(s.connect_password)}" data-server-name="${escapeHtml(displayName)}">🔑 Пароль</button>`
+        : '';
+
       return `
         <div class="card card-server" style="--game-accent:${accent};">
           <div class="card-header">
@@ -133,7 +188,11 @@ async function loadServers() {
             ${statusBadge(s.online)}
           </div>
           <div class="card-meta">${escapeHtml(s.game_name)}</div>
-          <div class="server-address">🔗 ${escapeHtml(s.host)}:${escapeHtml(s.port)}</div>
+          <div class="server-address">
+            <span>🔗 ${escapeHtml(address)}</span>
+            <button type="button" class="copy-btn" data-copy="${escapeHtml(address)}" title="Скопировать адрес">📋</button>
+          </div>
+          ${passwordBtn}
           ${descriptionLine}
           ${playersLine}
           ${statsLine}
@@ -143,6 +202,24 @@ async function loadServers() {
     .join('');
 
   container.innerHTML = `<div class="grid">${cards}</div>`;
+
+  container.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', () => copyToClipboard(btn.dataset.copy, btn));
+  });
+
+  container.querySelectorAll('.password-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const password = btn.dataset.password;
+      const overlay = showModal('Пароль подключения', `
+        <p class="hint" style="margin-bottom:var(--spacing-sm);">${escapeHtml(btn.dataset.serverName)}</p>
+        <div class="password-reveal">
+          <code>${escapeHtml(password)}</code>
+          <button type="button" class="copy-btn" data-copy="${escapeHtml(password)}" title="Скопировать пароль">📋</button>
+        </div>
+      `);
+      overlay.querySelector('.copy-btn').addEventListener('click', (event) => copyToClipboard(password, event.currentTarget));
+    });
+  });
 }
 
 const ARTICLE_PREVIEW_LENGTH = 160;

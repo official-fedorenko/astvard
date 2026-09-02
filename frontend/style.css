@@ -121,10 +121,18 @@ a {
 }
 
 .site-logo {
+  display: inline-flex;
+  align-items: center;
   font-weight: 700;
   font-size: 1.2rem;
   color: var(--color-text);
   text-decoration: none;
+  margin-right: var(--spacing-xs);
+}
+
+.site-logo-img {
+  height: 28px;
+  width: 28px;
   margin-right: var(--spacing-xs);
 }
 
@@ -462,13 +470,71 @@ button:disabled,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 4px 6px 4px 10px;
   margin-bottom: var(--spacing-sm);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 0.85rem;
+}
+
+/* мелкая кнопка-иконка (копировать) — компактнее обычных кнопок сайта */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: auto;
+  padding: 3px 7px;
+  font-size: 0.85rem;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.copy-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* ---------- Модалка ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+}
+
+.modal-box {
+  width: 100%;
+  max-width: 360px;
+  padding: var(--spacing-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.modal-box h3 {
+  margin: 0 0 var(--spacing-md);
+}
+
+.password-reveal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: 10px 10px 10px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 1rem;
 }
 
 .server-description {

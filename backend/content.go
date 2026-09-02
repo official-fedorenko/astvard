@@ -47,17 +47,19 @@ type serverWithStatus struct {
 	Online        *bool      `json:"online"`
 	PlayersOnline *int       `json:"players_online"`
 	PlayersMax    *int       `json:"players_max"`
-	ReportedName  *string    `json:"reported_name"`
-	PlayerNames   []string   `json:"player_names"`
-	CheckedAt     *time.Time `json:"checked_at"`
-	UptimePercent *float64   `json:"uptime_percent"`
-	PeakPlayers   *int       `json:"peak_players"`
+	ReportedName    *string    `json:"reported_name"`
+	PlayerNames     []string   `json:"player_names"`
+	CheckedAt       *time.Time `json:"checked_at"`
+	UptimePercent   *float64   `json:"uptime_percent"`
+	PeakPlayers     *int       `json:"peak_players"`
+	ConnectPassword *string    `json:"connect_password"`
 }
 
 func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := pool.Query(r.Context(), `
 			SELECT servers.id, servers.name, servers.host, servers.port, servers.description,
+			       servers.connect_password,
 			       games.name AS game_name, games.slug AS game_slug,
 			       latest.online, latest.players_online, latest.players_max,
 			       latest.reported_name, latest.player_names, latest.checked_at,
@@ -91,7 +93,7 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 		servers := []serverWithStatus{}
 		for rows.Next() {
 			var s serverWithStatus
-			if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.Description,
+			if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.Description, &s.ConnectPassword,
 				&s.GameName, &s.GameSlug, &s.Online, &s.PlayersOnline, &s.PlayersMax,
 				&s.ReportedName, &s.PlayerNames, &s.CheckedAt, &s.UptimePercent, &s.PeakPlayers); err != nil {
 				writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
