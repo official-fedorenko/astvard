@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS server_status (
   checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- настройки сайта, которые superadmin правит из админки ("Настройка проекта"):
+-- простой ключ -> значение, без миграций на каждое новое поле
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS articles (
   id SERIAL PRIMARY KEY,
   title TEXT NOT NULL,

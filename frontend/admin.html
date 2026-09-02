@@ -13,8 +13,18 @@
     <h1>Админка</h1>
     <p id="status">Проверяем доступ...</p>
 
-    <section id="content" style="display:none;">
-      <section id="servers-admin" aria-labelledby="servers-admin-heading">
+    <div id="content" class="admin-layout" style="display:none;">
+      <!-- меню слева: каждая кнопка показывает свой раздел справа (data-section = id раздела) -->
+      <nav class="admin-menu" aria-label="Разделы админки">
+        <button type="button" data-section="servers-admin">🎮 Сервера</button>
+        <button type="button" data-section="articles-admin">📝 Статьи</button>
+        <button type="button" data-section="users-section" data-superadmin style="display:none;">👥 Пользователи</button>
+        <button type="button" data-section="game-admins-section" data-superadmin style="display:none;">🛡️ Игровые админы</button>
+        <button type="button" data-section="settings-section" data-superadmin style="display:none;">⚙️ Настройка проекта</button>
+      </nav>
+
+      <div class="admin-content">
+      <section id="servers-admin" class="admin-section" aria-labelledby="servers-admin-heading">
         <h2 id="servers-admin-heading">Сервера</h2>
         <p style="color:var(--color-text-muted); font-size:0.9rem;">Имя можно не указывать — тогда подтянется само с реального сервера. Задай явно, если хочешь зафиксировать своё.</p>
         <form id="server-form">
@@ -47,7 +57,7 @@
         <div id="servers-list"></div>
       </section>
 
-      <section id="articles-admin" aria-labelledby="articles-admin-heading">
+      <section id="articles-admin" class="admin-section" aria-labelledby="articles-admin-heading">
         <h2 id="articles-admin-heading">Статьи</h2>
         <form id="article-form">
           <input type="hidden" id="article-id">
@@ -70,12 +80,12 @@
         <div id="articles-list"></div>
       </section>
 
-      <section id="users-section" aria-labelledby="users-heading" style="display:none;">
+      <section id="users-section" class="admin-section" aria-labelledby="users-heading">
         <h2 id="users-heading">Пользователи</h2>
         <div id="users-list"></div>
       </section>
 
-      <section id="game-admins-section" style="display:none;" aria-labelledby="game-admins-heading">
+      <section id="game-admins-section" class="admin-section" aria-labelledby="game-admins-heading">
         <h2 id="game-admins-heading">Игровые админы</h2>
         <p style="color:var(--color-text-muted); font-size:0.9rem;">
           Даёт доступ к консольным командам прямо в игре (сейчас поддерживается только Valheim —
@@ -109,7 +119,31 @@
 
         <ul id="game-admins-list" style="list-style:none; padding:0; margin-top:var(--spacing-md);"></ul>
       </section>
-    </section>
+
+      <section id="settings-section" class="admin-section" aria-labelledby="settings-heading">
+        <h2 id="settings-heading">Настройка проекта</h2>
+        <p style="color:var(--color-text-muted); font-size:0.9rem;">
+          Тексты, которые видны на всех страницах. Применяются сразу после сохранения.
+        </p>
+        <form id="settings-form">
+          <label>
+            Название сайта (логотип в шапке, заголовок главной)
+            <input type="text" id="setting-site_name" maxlength="500" required>
+          </label>
+          <label>
+            Подзаголовок на главной
+            <input type="text" id="setting-site_tagline" maxlength="500">
+          </label>
+          <label>
+            Текст в футере (пусто — просто «© год Название»)
+            <input type="text" id="setting-footer_text" maxlength="500">
+          </label>
+          <button type="submit" id="settings-submit">Сохранить</button>
+        </form>
+        <p id="settings-message"></p>
+      </section>
+      </div>
+    </div>
   </main>
 
   <footer id="site-footer"></footer>

@@ -7,17 +7,33 @@ function escapeHtml(str) {
 // Общая шапка с навигацией — один раз тут, подключается на каждой странице через
 // <header id="site-header"></header> + <script src="common.js">, дальше просто
 // вызвать renderNav(). Сама разбирается, залогинен ли человек и какая у него роль.
+// Настройки сайта (название, подзаголовок, футер) из админки. Промис кэшируется,
+// чтобы шапка, футер и главная не ходили за ними по три раза за загрузку.
+let siteSettingsPromise = null;
+function loadSiteSettings() {
+  if (!siteSettingsPromise) {
+    siteSettingsPromise = fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}));
+  }
+  return siteSettingsPromise;
+}
+
 async function renderNav() {
   const header = document.getElementById('site-header');
   if (!header) return;
 
   let me = null;
+  const [meResult, settings] = await Promise.all([
+    fetch('/api/me').catch(() => null),
+    loadSiteSettings(),
+  ]);
   try {
-    const response = await fetch('/api/me');
-    if (response.ok) me = await response.json();
+    if (meResult?.ok) me = await meResult.json();
   } catch {
     // не залогинен или сервер недоступен — просто покажем гостевые ссылки
   }
+  const siteName = settings.site_name || 'Astvard';
 
   const authLinks = me
     ? `
@@ -33,7 +49,7 @@ async function renderNav() {
   header.innerHTML = `
     <nav class="row" style="justify-content:space-between;">
       <div class="row">
-        <a href="/" class="site-logo">Astvard</a>
+        <a href="/" class="site-logo">${escapeHtml(siteName)}</a>
         <a href="/#servers">Сервера</a>
         <a href="/#articles">Статьи</a>
       </div>
@@ -51,7 +67,7 @@ async function renderNav() {
 
   const footer = document.getElementById('site-footer');
   if (footer) {
-    footer.innerHTML = `© ${new Date().getFullYear()} Astvard`;
+    footer.textContent = settings.footer_text || `© ${new Date().getFullYear()} ${siteName}`;
   }
 
   return me;

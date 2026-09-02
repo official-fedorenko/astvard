@@ -16,8 +16,45 @@ async function checkAccess() {
     return null;
   }
   status.textContent = `Ты вошёл как ${data.nickname} (${data.role})`;
-  content.style.display = 'block';
+  content.style.display = ''; // снимаем инлайновый display:none — дальше рулит CSS (.admin-layout: flex)
   return data;
+}
+
+// ---------- Меню разделов (слева) ----------
+// Одновременно виден один раздел; выбранный запоминаем в localStorage,
+// чтобы после перезагрузки открывался тот же
+
+const ADMIN_SECTION_KEY = 'astvard.admin.section';
+
+function showAdminSection(sectionId) {
+  document.querySelectorAll('.admin-section').forEach((s) => {
+    s.classList.toggle('active', s.id === sectionId);
+  });
+  document.querySelectorAll('.admin-menu button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.section === sectionId);
+  });
+  try {
+    localStorage.setItem(ADMIN_SECTION_KEY, sectionId);
+  } catch {
+    // приватный режим / отключённое хранилище — просто не запоминаем
+  }
+}
+
+function initAdminMenu() {
+  const buttons = [...document.querySelectorAll('.admin-menu button')];
+  buttons.forEach((b) => b.addEventListener('click', () => showAdminSection(b.dataset.section)));
+
+  // superadmin-разделы показываем только superadmin'у
+  if (isSuperadmin) {
+    buttons.filter((b) => b.hasAttribute('data-superadmin')).forEach((b) => (b.style.display = ''));
+  }
+
+  let saved = null;
+  try {
+    saved = localStorage.getItem(ADMIN_SECTION_KEY);
+  } catch {}
+  const visible = buttons.filter((b) => b.style.display !== 'none').map((b) => b.dataset.section);
+  showAdminSection(visible.includes(saved) ? saved : visible[0]);
 }
 
 // ---------- Сервера ----------
@@ -510,23 +547,65 @@ gameAdminsAddBtn.addEventListener('click', async () => {
   loadGameAdmins();
 });
 
+// ---------- Настройка проекта (только superadmin) ----------
+
+const settingsForm = document.getElementById('settings-form');
+const settingsMessage = document.getElementById('settings-message');
+const SETTING_KEYS = ['site_name', 'site_tagline', 'footer_text'];
+
+async function loadSettingsForm() {
+  const settings = await loadSiteSettings();
+  SETTING_KEYS.forEach((key) => {
+    document.getElementById(`setting-${key}`).value = settings[key] ?? '';
+  });
+}
+
+settingsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  const body = {};
+  SETTING_KEYS.forEach((key) => {
+    body[key] = document.getElementById(`setting-${key}`).value;
+  });
+
+  const submitBtn = document.getElementById('settings-submit');
+  submitBtn.disabled = true;
+  const response = await fetch('/api/admin/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  submitBtn.disabled = false;
+
+  const data = await response.json();
+  if (!response.ok) {
+    settingsMessage.textContent = data.error;
+    settingsMessage.style.color = 'var(--color-danger)';
+    return;
+  }
+  settingsMessage.textContent = 'Сохранено';
+  settingsMessage.style.color = 'var(--color-success)';
+  // шапка/футер читают из кэшированного промиса — сбрасываем и перерисовываем
+  siteSettingsPromise = Promise.resolve(data);
+  renderNav();
+});
+
 // ---------- Инициализация ----------
 
 (async () => {
   const me = await checkAccess();
   if (!me) return;
   isSuperadmin = me.role === 'superadmin';
+  initAdminMenu();
 
   await loadGames();
   await loadServersAdmin();
   await loadArticlesAdmin();
 
-  if (me.role === 'superadmin') {
-    usersSection.style.display = 'block';
+  if (isSuperadmin) {
     await loadUsers();
-
-    gameAdminsSection.style.display = 'block';
     await populateGameAdminsPickers();
     await loadGameAdmins();
+    await loadSettingsForm();
   }
 })();

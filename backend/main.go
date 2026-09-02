@@ -36,6 +36,8 @@ func main() {
 	mux.HandleFunc("GET /api/games", handleGetGames(pool))
 	mux.HandleFunc("GET /api/servers", handleGetServers(pool))
 	mux.HandleFunc("GET /api/articles", handleGetArticles(pool))
+	mux.HandleFunc("GET /api/settings", handleGetSettings(pool))
+	mux.HandleFunc("PUT /api/admin/settings", requireRole("superadmin", handleUpdateSettings(pool)))
 
 	mux.HandleFunc("POST /api/admin/articles", requireRole("admin", handleCreateArticle(pool)))
 	mux.HandleFunc("PUT /api/admin/articles/{id}", requireRole("admin", handleUpdateArticle(pool)))
