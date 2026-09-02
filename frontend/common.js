@@ -49,6 +49,11 @@ async function renderNav() {
     });
   }
 
+  const footer = document.getElementById('site-footer');
+  if (footer) {
+    footer.innerHTML = `© ${new Date().getFullYear()} Astvard`;
+  }
+
   return me;
 }
 
