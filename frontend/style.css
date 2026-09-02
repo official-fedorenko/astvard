@@ -88,6 +88,17 @@ a {
   margin-bottom: var(--spacing-lg);
 }
 
+/* прилипает к верху при скролле — только на десктопе: на мобильном меню может
+   переноситься на несколько строк (.admin-menu и т.п.), тогда прилипшая шапка
+   отъедала бы слишком много экрана */
+@media (min-width: 769px) {
+  #site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+}
+
 #site-header nav {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -183,6 +194,50 @@ textarea:focus {
 textarea {
   resize: vertical;
   min-height: 100px;
+}
+
+/* ---------- Автокомплит (поиск по нику в реальном времени) ---------- */
+
+.autocomplete {
+  position: relative;
+}
+
+.autocomplete-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.autocomplete-item {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+  background: var(--color-bg);
+}
+
+.autocomplete-item.empty {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.autocomplete-item.empty:hover {
+  background: none;
 }
 
 /* ---------- Кнопки ---------- */
@@ -514,6 +569,42 @@ button:disabled,
 
 .admin-content .card {
   max-width: none;
+}
+
+/* подвкладки внутри раздела (например "Существующие сервера" / "Добавить сервер") */
+.admin-subtabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-subtabs button {
+  background: transparent;
+  color: var(--color-text-muted);
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.admin-subtabs button:hover {
+  color: var(--color-text);
+}
+
+.admin-subtabs button.active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+}
+
+.admin-subtab {
+  display: none;
+}
+
+.admin-subtab.active {
+  display: block;
 }
 
 /* разделитель между формой (добавить/редактировать) и списком того, что уже есть —

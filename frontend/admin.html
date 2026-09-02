@@ -26,39 +26,49 @@
       <div class="admin-content">
       <section id="servers-admin" class="admin-section" aria-labelledby="servers-admin-heading">
         <h2 id="servers-admin-heading">Сервера</h2>
-        <p class="hint">Имя можно не указывать — тогда подтянется само с реального сервера. Задай явно, если хочешь зафиксировать своё.</p>
-        <form id="server-form">
-          <input type="hidden" id="server-id">
-          <label>
-            Игра
-            <select id="server-gameId" required></select>
-          </label>
-          <label>
-            Имя (необязательно)
-            <input type="text" id="server-name" placeholder="оставь пустым для автоподхвата">
-          </label>
-          <label>
-            Host
-            <input type="text" id="server-host" required>
-          </label>
-          <label>
-            Port
-            <input type="number" id="server-port" min="1" max="65535" required>
-          </label>
-          <label>
-            Описание
-            <input type="text" id="server-description">
-          </label>
-          <button type="submit" id="server-submit">Добавить сервер</button>
-          <button type="button" id="server-cancel" class="btn-secondary" style="display:none;">Отмена</button>
-        </form>
-        <p id="server-message"></p>
 
-        <div class="admin-list-header">
-          <h3>Текущие сервера</h3>
-          <button type="button" id="server-refresh" class="btn-secondary">Обновить статусы</button>
+        <div class="admin-subtabs">
+          <button type="button" data-subtab="server-list-tab" class="active">Существующие сервера</button>
+          <button type="button" data-subtab="server-add-tab">Добавить сервер</button>
         </div>
-        <div id="servers-list"></div>
+
+        <div id="server-add-tab" class="admin-subtab">
+          <p class="hint">Имя можно не указывать — тогда подтянется само с реального сервера. Задай явно, если хочешь зафиксировать своё.</p>
+          <form id="server-form">
+            <input type="hidden" id="server-id">
+            <label>
+              Игра
+              <select id="server-gameId" required></select>
+            </label>
+            <label>
+              Имя (необязательно)
+              <input type="text" id="server-name" placeholder="оставь пустым для автоподхвата">
+            </label>
+            <label>
+              Host
+              <input type="text" id="server-host" required>
+            </label>
+            <label>
+              Port
+              <input type="number" id="server-port" min="1" max="65535" required>
+            </label>
+            <label>
+              Описание
+              <input type="text" id="server-description">
+            </label>
+            <button type="submit" id="server-submit">Добавить сервер</button>
+            <button type="button" id="server-cancel" class="btn-secondary" style="display:none;">Отмена</button>
+          </form>
+          <p id="server-message"></p>
+        </div>
+
+        <div id="server-list-tab" class="admin-subtab active">
+          <div class="row" style="justify-content:space-between; margin-bottom:var(--spacing-sm);">
+            <h3>Текущие сервера</h3>
+            <button type="button" id="server-refresh" class="btn-secondary">Обновить статусы</button>
+          </div>
+          <div id="servers-list"></div>
+        </div>
       </section>
 
       <section id="articles-admin" class="admin-section" aria-labelledby="articles-admin-heading">
@@ -121,7 +131,10 @@
         <div class="row row-align-end" style="margin-top:var(--spacing-md);">
           <label style="flex:1 1 200px;">
             Пользователь (только Steam-аккаунты)
-            <select id="game-admins-user"></select>
+            <div class="autocomplete" id="game-admins-user-autocomplete">
+              <input type="text" id="game-admins-user-search" placeholder="Начни вводить ник..." autocomplete="off">
+              <ul id="game-admins-user-results" class="autocomplete-list" hidden></ul>
+            </div>
           </label>
           <button type="button" id="game-admins-add">Назначить админом</button>
         </div>

@@ -57,8 +57,23 @@ function initAdminMenu() {
   showAdminSection(visible.includes(saved) ? saved : visible[0]);
 }
 
+// ---------- Подвкладки внутри раздела (например "Существующие" / "Добавить") ----------
+// root — контейнер, где рядом лежат .admin-subtabs (кнопки) и .admin-subtab (панели)
+
+function showAdminSubtab(root, subtabId) {
+  root.querySelectorAll('.admin-subtab').forEach((el) => el.classList.toggle('active', el.id === subtabId));
+  root.querySelectorAll('.admin-subtabs button').forEach((b) => b.classList.toggle('active', b.dataset.subtab === subtabId));
+}
+
+function initAdminSubtabs(root) {
+  root.querySelectorAll('.admin-subtabs button').forEach((b) => {
+    b.addEventListener('click', () => showAdminSubtab(root, b.dataset.subtab));
+  });
+}
+
 // ---------- Сервера ----------
 
+const serversAdminSection = document.getElementById('servers-admin');
 const serverForm = document.getElementById('server-form');
 const serverIdInput = document.getElementById('server-id');
 const serverGameSelect = document.getElementById('server-gameId');
@@ -246,6 +261,7 @@ async function toggleInfraPanel(serverId) {
 }
 
 function startEditServer(server) {
+  showAdminSubtab(serversAdminSection, 'server-add-tab');
   serverIdInput.value = server.id;
   serverGameSelect.value = String(games.find((g) => g.slug === server.game_slug)?.id ?? '');
   serverNameInput.value = server.name ?? '';
@@ -263,7 +279,10 @@ function resetServerForm() {
   serverCancelBtn.style.display = 'none';
 }
 
-serverCancelBtn.addEventListener('click', resetServerForm);
+serverCancelBtn.addEventListener('click', () => {
+  resetServerForm();
+  showAdminSubtab(serversAdminSection, 'server-list-tab');
+});
 
 serverForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -293,6 +312,7 @@ serverForm.addEventListener('submit', async (event) => {
 
   serverMessage.textContent = '';
   resetServerForm();
+  showAdminSubtab(serversAdminSection, 'server-list-tab');
   loadServersAdmin();
 });
 
@@ -461,11 +481,14 @@ const gameAdminsServerSelect = document.getElementById('game-admins-server');
 const gameAdminsPathWarning = document.getElementById('game-admins-path-warning');
 const gameAdminsPathInput = document.getElementById('game-admins-path-input');
 const gameAdminsPathSaveBtn = document.getElementById('game-admins-path-save');
-const gameAdminsUserSelect = document.getElementById('game-admins-user');
+const gameAdminsUserSearch = document.getElementById('game-admins-user-search');
+const gameAdminsUserResults = document.getElementById('game-admins-user-results');
 const gameAdminsAddBtn = document.getElementById('game-admins-add');
 const gameAdminsList = document.getElementById('game-admins-list');
 
 let steamUsers = [];
+let gameAdminsSelectedUserId = null;
+const GAME_ADMINS_SEARCH_LIMIT = 8;
 
 async function populateGameAdminsPickers() {
   const serversResponse = await fetch('/api/servers');
@@ -477,10 +500,53 @@ async function populateGameAdminsPickers() {
   const usersResponse = await fetch('/api/admin/users');
   const allUsers = await usersResponse.json();
   steamUsers = allUsers.filter((u) => u.authMethod === 'steam');
-  gameAdminsUserSelect.innerHTML = steamUsers
-    .map((u) => `<option value="${u.id}">${escapeHtml(u.nickname)}</option>`)
-    .join('');
 }
+
+// ---------- Поиск пользователя по нику в реальном времени ----------
+
+function renderGameAdminsUserResults(query) {
+  const matches = steamUsers
+    .filter((u) => u.nickname.toLowerCase().includes(query.toLowerCase()))
+    .slice(0, GAME_ADMINS_SEARCH_LIMIT);
+
+  if (matches.length === 0) {
+    gameAdminsUserResults.innerHTML = '<li class="autocomplete-item empty">Никого не нашлось</li>';
+  } else {
+    gameAdminsUserResults.innerHTML = matches
+      .map((u) => `<li class="autocomplete-item" data-user-id="${u.id}">${escapeHtml(u.nickname)}</li>`)
+      .join('');
+  }
+  gameAdminsUserResults.hidden = false;
+}
+
+gameAdminsUserSearch.addEventListener('input', () => {
+  gameAdminsSelectedUserId = null; // поменял текст руками — выбор из списка больше не действует
+  const query = gameAdminsUserSearch.value.trim();
+  if (!query) {
+    gameAdminsUserResults.hidden = true;
+    return;
+  }
+  renderGameAdminsUserResults(query);
+});
+
+gameAdminsUserSearch.addEventListener('focus', () => {
+  if (gameAdminsUserSearch.value.trim()) renderGameAdminsUserResults(gameAdminsUserSearch.value.trim());
+});
+
+gameAdminsUserResults.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-user-id]');
+  if (!item) return;
+  gameAdminsSelectedUserId = Number(item.dataset.userId);
+  gameAdminsUserSearch.value = item.textContent;
+  gameAdminsUserResults.hidden = true;
+});
+
+// закрываем список при клике вне поля поиска — иначе так и висит открытым
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('#game-admins-user-autocomplete')) {
+    gameAdminsUserResults.hidden = true;
+  }
+});
 
 async function loadGameAdmins() {
   const serverId = gameAdminsServerSelect.value;
@@ -534,16 +600,17 @@ gameAdminsPathSaveBtn.addEventListener('click', async () => {
 
 gameAdminsAddBtn.addEventListener('click', async () => {
   const serverId = gameAdminsServerSelect.value;
-  const userId = Number(gameAdminsUserSelect.value);
-  if (!serverId || !userId) return;
+  if (!serverId || !gameAdminsSelectedUserId) return;
 
   gameAdminsAddBtn.disabled = true;
   await fetch(`/api/admin/servers/${serverId}/admins`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userId: gameAdminsSelectedUserId }),
   });
   gameAdminsAddBtn.disabled = false;
+  gameAdminsSelectedUserId = null;
+  gameAdminsUserSearch.value = '';
   loadGameAdmins();
 });
 
@@ -597,6 +664,7 @@ settingsForm.addEventListener('submit', async (event) => {
   if (!me) return;
   isSuperadmin = me.role === 'superadmin';
   initAdminMenu();
+  initAdminSubtabs(serversAdminSection);
 
   await loadGames();
   await loadServersAdmin();
