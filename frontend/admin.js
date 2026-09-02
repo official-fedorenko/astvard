@@ -670,6 +670,13 @@ const settingLogoUpload = document.getElementById('setting-logo-upload');
 const settingLogoReset = document.getElementById('setting-logo-reset');
 const settingLogoPreview = document.getElementById('setting-logo-preview');
 const settingLogoMessage = document.getElementById('setting-logo-message');
+const settingLogoFilename = document.getElementById('setting-logo-filename');
+
+settingLogoFile.addEventListener('change', () => {
+  const file = settingLogoFile.files[0];
+  settingLogoFilename.textContent = file ? `Выбран: ${file.name}` : '';
+  settingLogoFilename.hidden = !file;
+});
 
 settingLogoUpload.addEventListener('click', async () => {
   const file = settingLogoFile.files[0];
@@ -696,6 +703,7 @@ settingLogoUpload.addEventListener('click', async () => {
   settingLogoMessage.style.color = 'var(--color-success)';
   settingLogoPreview.src = data.logoUrl;
   settingLogoFile.value = '';
+  settingLogoFilename.hidden = true;
   siteSettingsPromise = null; // сбрасываем кэш — шапка/футер подтянут новый логотип
   renderNav();
 });

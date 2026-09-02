@@ -170,15 +170,17 @@
         <div class="admin-list-header">
           <h3>Логотип</h3>
         </div>
-        <div class="row" style="align-items:center;">
-          <img id="setting-logo-preview" src="" alt="" style="height:40px; width:40px;">
-          <div class="row row-align-end" style="flex:1;">
-            <label style="flex:1 1 200px;">
-              Файл (SVG, PNG, JPG, GIF, WEBP, ICO — до 3 МБ)
-              <input type="file" id="setting-logo-file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp,.ico">
-            </label>
-            <button type="button" id="setting-logo-upload" class="btn-secondary">Загрузить</button>
-            <button type="button" id="setting-logo-reset" class="btn-secondary">Сбросить</button>
+        <div class="logo-uploader">
+          <img id="setting-logo-preview" class="logo-uploader-preview" src="" alt="">
+          <div class="logo-uploader-body">
+            <p class="hint" style="margin:0 0 var(--spacing-sm);">SVG, PNG, JPG, GIF, WEBP, ICO — до 3 МБ</p>
+            <div class="row">
+              <label class="btn btn-secondary" for="setting-logo-file">Выбрать файл</label>
+              <input type="file" id="setting-logo-file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp,.ico" hidden>
+              <button type="button" id="setting-logo-upload" class="btn-secondary">Загрузить</button>
+              <button type="button" id="setting-logo-reset" class="btn-secondary">Сбросить</button>
+            </div>
+            <p id="setting-logo-filename" class="hint" style="margin:var(--spacing-xs) 0 0;" hidden></p>
           </div>
         </div>
         <p id="setting-logo-message"></p>
