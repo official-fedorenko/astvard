@@ -26,7 +26,7 @@
       <div class="admin-content">
       <section id="servers-admin" class="admin-section" aria-labelledby="servers-admin-heading">
         <h2 id="servers-admin-heading">Сервера</h2>
-        <p style="color:var(--color-text-muted); font-size:0.9rem;">Имя можно не указывать — тогда подтянется само с реального сервера. Задай явно, если хочешь зафиксировать своё.</p>
+        <p class="hint">Имя можно не указывать — тогда подтянется само с реального сервера. Задай явно, если хочешь зафиксировать своё.</p>
         <form id="server-form">
           <input type="hidden" id="server-id">
           <label>
@@ -53,7 +53,11 @@
           <button type="button" id="server-cancel" class="btn-secondary" style="display:none;">Отмена</button>
         </form>
         <p id="server-message"></p>
-        <button type="button" id="server-refresh" class="btn-secondary">Обновить статусы</button>
+
+        <div class="admin-list-header">
+          <h3>Текущие сервера</h3>
+          <button type="button" id="server-refresh" class="btn-secondary">Обновить статусы</button>
+        </div>
         <div id="servers-list"></div>
       </section>
 
@@ -77,17 +81,22 @@
           <button type="button" id="article-cancel" class="btn-secondary" style="display:none;">Отмена</button>
         </form>
         <p id="article-message"></p>
+
+        <div class="admin-list-header">
+          <h3>Текущие статьи</h3>
+        </div>
         <div id="articles-list"></div>
       </section>
 
       <section id="users-section" class="admin-section" aria-labelledby="users-heading">
         <h2 id="users-heading">Пользователи</h2>
+        <p class="hint">Смена роли применяется сразу после сохранения.</p>
         <div id="users-list"></div>
       </section>
 
       <section id="game-admins-section" class="admin-section" aria-labelledby="game-admins-heading">
         <h2 id="game-admins-heading">Игровые админы</h2>
-        <p style="color:var(--color-text-muted); font-size:0.9rem;">
+        <p class="hint">
           Даёт доступ к консольным командам прямо в игре (сейчас поддерживается только Valheim —
           пишет SteamID в adminlist.txt на сервере). Работает только для аккаунтов, вошедших через Steam.
         </p>
@@ -117,12 +126,15 @@
           <button type="button" id="game-admins-add">Назначить админом</button>
         </div>
 
-        <ul id="game-admins-list" style="list-style:none; padding:0; margin-top:var(--spacing-md);"></ul>
+        <div class="admin-list-header">
+          <h3>Назначенные админы</h3>
+        </div>
+        <ul id="game-admins-list" style="list-style:none; padding:0;"></ul>
       </section>
 
       <section id="settings-section" class="admin-section" aria-labelledby="settings-heading">
         <h2 id="settings-heading">Настройка проекта</h2>
-        <p style="color:var(--color-text-muted); font-size:0.9rem;">
+        <p class="hint">
           Тексты, которые видны на всех страницах. Применяются сразу после сохранения.
         </p>
         <form id="settings-form">
