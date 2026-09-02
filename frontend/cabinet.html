@@ -13,24 +13,30 @@
     <h1>Личный кабинет</h1>
     <p id="status">Проверяем вход...</p>
 
-    <section id="content" style="display:none;">
-      <div id="profile-card" class="card" style="max-width:420px;"></div>
+    <div id="content" style="display:none;">
+      <div id="profile-card"></div>
 
       <section id="admin-stats" aria-labelledby="admin-stats-heading" style="display:none;">
         <h2 id="admin-stats-heading">Сводка по сайту</h2>
         <div id="admin-stats-list"></div>
       </section>
 
-      <section id="servers" aria-labelledby="servers-heading">
-        <h2 id="servers-heading">Наши сервера</h2>
-        <div id="servers-list"></div>
-      </section>
+      <div class="home-layout">
+        <aside class="home-aside">
+          <section id="servers" aria-labelledby="servers-heading">
+            <h2 id="servers-heading">Наши сервера</h2>
+            <div id="servers-list"></div>
+          </section>
+        </aside>
 
-      <section id="articles" aria-labelledby="articles-heading">
-        <h2 id="articles-heading">Статьи</h2>
-        <div id="articles-list"></div>
-      </section>
-    </section>
+        <div class="home-main">
+          <section id="articles" aria-labelledby="articles-heading">
+            <h2 id="articles-heading">Статьи</h2>
+            <div id="articles-list"></div>
+          </section>
+        </div>
+      </div>
+    </div>
   </main>
 
   <footer id="site-footer"></footer>

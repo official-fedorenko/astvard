@@ -402,6 +402,60 @@ button:disabled,
   color: var(--color-text-muted);
 }
 
+.badge-role-player {
+  background: rgba(153, 153, 153, 0.15);
+  color: var(--color-text-muted);
+}
+
+.badge-role-admin {
+  background: rgba(108, 204, 255, 0.15);
+  color: var(--color-primary);
+}
+
+.badge-role-superadmin {
+  background: rgba(230, 162, 60, 0.15);
+  color: #e6a23c;
+}
+
+/* ---------- Профиль (кабинет) ---------- */
+
+.profile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: var(--spacing-sm);
+}
+
+/* ---------- Плитки статистики ---------- */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--spacing-md);
+  max-width: var(--max-page-width);
+}
+
+.stat-tile {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.stat-label {
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
 /* ---------- Карточка сервера ---------- */
 
 .server-address {

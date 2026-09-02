@@ -9,17 +9,21 @@ const authMethodLabels = { email: 'Email/пароль', steam: 'Steam' };
 
 function renderProfileCard(data) {
   const avatar = data.avatarUrl
-    ? `<img src="${escapeHtml(data.avatarUrl)}" alt="" width="64" height="64" style="border-radius:8px; vertical-align:middle; margin-right:12px;">`
+    ? `<img class="profile-avatar" src="${escapeHtml(data.avatarUrl)}" alt="">`
     : '';
-  const emailLine = data.email ? `<br>Email: ${escapeHtml(data.email)}` : '';
   const joined = new Date(data.createdAt).toLocaleDateString('ru-RU');
+  const metaParts = [`Вход через ${authMethodLabels[data.authMethod] ?? data.authMethod}`];
+  if (data.email) metaParts.push(escapeHtml(data.email));
+  metaParts.push(`на сайте с ${joined}`);
 
   profileCard.innerHTML = `
-    ${avatar}
-    <strong style="font-size:1.1rem;">${escapeHtml(data.nickname)}</strong><br>
-    Роль: ${roleLabels[data.role] ?? data.role}<br>
-    Вход через: ${authMethodLabels[data.authMethod] ?? data.authMethod}${emailLine}<br>
-    На сайте с: ${joined}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">${avatar}${escapeHtml(data.nickname)}</span>
+        <span class="badge badge-role-${data.role}">${roleLabels[data.role] ?? data.role}</span>
+      </div>
+      <div class="card-meta">${metaParts.join(' · ')}</div>
+    </div>
   `;
 }
 
@@ -30,10 +34,19 @@ async function loadAdminStats() {
 
   adminStats.style.display = 'block';
   adminStatsList.innerHTML = `
-    <div class="card" style="max-width:420px;">
-      Пользователей: ${data.users}<br>
-      Серверов: ${data.servers} (онлайн: ${data.onlineServers})<br>
-      Статей: ${data.articles}
+    <div class="stat-grid">
+      <div class="stat-tile">
+        <div class="stat-value">${data.users}</div>
+        <div class="stat-label">Пользователей</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-value">${data.servers}</div>
+        <div class="stat-label">Серверов (${data.onlineServers} онлайн)</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-value">${data.articles}</div>
+        <div class="stat-label">Статей</div>
+      </div>
     </div>
   `;
 }
