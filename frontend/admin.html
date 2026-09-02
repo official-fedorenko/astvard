@@ -113,22 +113,15 @@
           пишет SteamID в adminlist.txt на сервере). Работает только для аккаунтов, вошедших через Steam.
         </p>
 
-        <div class="row">
-          <label style="flex:1 1 200px;">
+        <div class="settings-panel">
+          <label>
             Сервер
             <select id="game-admins-server"></select>
           </label>
+          <p class="hint" id="game-admins-path-display" style="margin:var(--spacing-sm) 0 0;"></p>
         </div>
 
         <div id="game-admins-path-warning" style="display:none;"></div>
-
-        <div class="row row-align-end" style="margin-top:var(--spacing-sm);">
-          <label style="flex:1 1 200px;">
-            Путь к тому Docker (superadmin)
-            <input type="text" id="game-admins-path-input" placeholder="/var/lib/docker/volumes/.../_data">
-          </label>
-          <button type="button" id="game-admins-path-save" class="btn-secondary">Сохранить путь</button>
-        </div>
 
         <div class="row row-align-end" style="margin-top:var(--spacing-md);">
           <label style="flex:1 1 200px;">

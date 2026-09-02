@@ -253,6 +253,38 @@ input[type="file"]::file-selector-button:hover {
   min-width: 0;
 }
 
+/* ---------- Шаблон панели настроек (форма внутри карточки) ---------- */
+/* тот же визуальный язык, что у .asset-uploader (фон/рамка/радиус/паддинг), но
+   блочная раскладка под формы — переиспользуется для "Изменить сервер",
+   блока "Игровые админы" и любых будущих панелей конфигурации, чтобы такие
+   блоки выглядели одинаково по всей админке, а не каждый по-своему */
+.settings-panel {
+  padding: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  max-width: var(--max-page-width);
+}
+
+.settings-panel + .settings-panel {
+  margin-top: var(--spacing-md);
+}
+
+.settings-panel-divider {
+  margin: var(--spacing-md) 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+
+/* блок, которым сейчас нельзя пользоваться (например управление контейнером не
+   поддержано для этой игры) — показываем прямо в форме, а не молча прячем или
+   даём заполнить и только потом ругаемся при сохранении */
+.settings-panel-disabled {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
 input:focus,
 select:focus,
 textarea:focus {

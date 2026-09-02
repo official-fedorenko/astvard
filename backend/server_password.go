@@ -15,14 +15,18 @@ import (
 var dockerNameRe = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,64}$`)
 
 type serverInfra struct {
+	GameSlug            string  `json:"gameSlug"`
 	DockerContainerName *string `json:"dockerContainerName"`
 	DockerWorldName     *string `json:"dockerWorldName"`
+	DockerVolumePath    *string `json:"dockerVolumePath"`
 	ConnectPassword     *string `json:"connectPassword"`
 	IsPublic            bool    `json:"isPublic"`
 	WorldSeed           *string `json:"worldSeed"`
 }
 
-// handleGetServerInfra — только superadmin: текущие настройки контейнера и пароль подключения
+// handleGetServerInfra — только superadmin: реальное состояние сервера — вся информация,
+// нужная панели "Изменить сервер", одним запросом (gameSlug — решить, поддерживается ли
+// управление контейнером вообще; остальное — что уже настроено)
 func handleGetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(r.PathValue("id"))
@@ -32,9 +36,13 @@ func handleGetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		var infra serverInfra
-		err = pool.QueryRow(r.Context(),
-			"SELECT docker_container_name, docker_world_name, connect_password, is_public, world_seed FROM servers WHERE id = $1", id,
-		).Scan(&infra.DockerContainerName, &infra.DockerWorldName, &infra.ConnectPassword, &infra.IsPublic, &infra.WorldSeed)
+		err = pool.QueryRow(r.Context(), `
+			SELECT games.slug, servers.docker_container_name, servers.docker_world_name,
+			       servers.docker_volume_path, servers.connect_password, servers.is_public, servers.world_seed
+			FROM servers JOIN games ON games.id = servers.game_id
+			WHERE servers.id = $1
+		`, id).Scan(&infra.GameSlug, &infra.DockerContainerName, &infra.DockerWorldName,
+			&infra.DockerVolumePath, &infra.ConnectPassword, &infra.IsPublic, &infra.WorldSeed)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "Сервер не найден")
 			return
@@ -47,11 +55,14 @@ func handleGetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 type infraConfigRequest struct {
 	DockerContainerName string `json:"dockerContainerName"`
 	DockerWorldName     string `json:"dockerWorldName"`
+	DockerVolumePath    string `json:"dockerVolumePath"`
 	WorldSeed           string `json:"worldSeed"`
 }
 
-// handleSetServerInfra — только метаданные (имя контейнера/мира), без перезапуска —
-// нужно настроить один раз перед первой сменой пароля
+// handleSetServerInfra — только метаданные (имя контейнера/мира/путь к тому/сид), без
+// пересоздания контейнера — нужно настроить один раз перед первым применением пароля.
+// Путь к тому — тот же, что использует раздел "Игровые админы" для adminlist.txt
+// (одно и то же поле servers.docker_volume_path, настраивается тут в одном месте).
 func handleSetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(r.PathValue("id"))
@@ -73,6 +84,16 @@ func handleSetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		volumePath := strings.TrimSpace(req.DockerVolumePath)
+		if volumePath != "" && !strings.HasPrefix(volumePath, "/var/lib/docker/volumes/") {
+			writeError(w, http.StatusBadRequest, "Путь к тому должен начинаться с /var/lib/docker/volumes/")
+			return
+		}
+		var volumePathValue any
+		if volumePath != "" {
+			volumePathValue = volumePath
+		}
+
 		worldSeed := strings.TrimSpace(req.WorldSeed)
 		if len(worldSeed) > 100 {
 			writeError(w, http.StatusBadRequest, "Сид слишком длинный (макс. 100 символов)")
@@ -84,8 +105,8 @@ func handleSetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		tag, err := pool.Exec(r.Context(),
-			"UPDATE servers SET docker_container_name = $1, docker_world_name = $2, world_seed = $3 WHERE id = $4",
-			containerName, worldName, worldSeedValue, id,
+			"UPDATE servers SET docker_container_name = $1, docker_world_name = $2, docker_volume_path = $3, world_seed = $4 WHERE id = $5",
+			containerName, worldName, volumePathValue, worldSeedValue, id,
 		)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
@@ -147,7 +168,7 @@ func handleSetServerPassword(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 		if volumePath == nil || containerName == nil || worldName == nil {
-			writeError(w, http.StatusBadRequest, "Сначала настрой имя контейнера, мира и путь к тому ниже")
+			writeError(w, http.StatusBadRequest, "Сначала заполни и сохрани имя контейнера, мира и путь к тому выше")
 			return
 		}
 

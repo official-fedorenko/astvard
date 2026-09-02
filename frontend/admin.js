@@ -107,9 +107,11 @@ async function loadServersAdmin() {
   serversList.innerHTML = servers
     .map((s) => {
       const displayName = s.reported_name || s.name;
-      const passwordToggle = isSuperadmin
-        ? `<button class="btn-secondary" data-toggle-infra="${s.id}">🔑 Пароль сервера</button>
-           <div data-infra-panel="${s.id}" style="display:none; margin-top:var(--spacing-sm);"></div>`
+      // "Изменить информацию" — карточка каталога (это правят все admin);
+      // "Изменить сервер" — реальная инфраструктура на VPS (только superadmin)
+      const serverToggle = isSuperadmin
+        ? `<button class="btn-secondary" data-toggle-infra="${s.id}">🖥️ Изменить сервер</button>
+           <div data-infra-panel="${s.id}" style="display:none;"></div>`
         : '';
       return `
         <div class="card">
@@ -120,9 +122,9 @@ async function loadServersAdmin() {
           <div class="card-meta">${escapeHtml(s.game_name)}</div>
           <code>${escapeHtml(s.host)}:${escapeHtml(s.port)}</code><br>
           <span>${escapeHtml(s.description)}</span><br>
-          <button class="btn-secondary" data-edit-server="${s.id}">Изменить</button>
+          <button class="btn-secondary" data-edit-server="${s.id}">Изменить информацию</button>
           <button class="btn-danger" data-delete-server="${s.id}">Удалить</button>
-          ${passwordToggle}
+          ${serverToggle}
         </div>
       `;
     })
@@ -154,58 +156,89 @@ async function toggleInfraPanel(serverId) {
   }
 
   panel.style.display = 'block';
-  panel.innerHTML = 'Загрузка...';
+  panel.innerHTML = '<div class="settings-panel">Загрузка...</div>';
 
   const response = await fetch(`/api/admin/servers/${serverId}/infra`);
   if (!response.ok) {
-    panel.innerHTML = '<span style="color:var(--color-danger);">Не удалось загрузить</span>';
+    panel.innerHTML = '<div class="settings-panel"><span style="color:var(--color-danger);">Не удалось загрузить</span></div>';
     return;
   }
   const infra = await response.json();
 
+  // управление реальным контейнером сделано только для Valheim — не даём заполнить
+  // поля впустую и наткнуться на ошибку при сохранении, а сразу объясняем, почему нельзя
+  if (infra.gameSlug !== 'valheim') {
+    panel.innerHTML = `
+      <div class="settings-panel">
+        <p class="settings-panel-disabled">
+          Управление контейнером (пароль, публичность, сид мира) пока поддержано только для Valheim.
+          Для этой игры доступно только редактирование карточки — кнопка "Изменить информацию".
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  // применить пароль/видимость можно только когда сервер привязан к реальному контейнеру —
+  // без этого кнопка ниже неактивна, а не просто падает с ошибкой после нажатия
+  const ready = Boolean(infra.dockerContainerName && infra.dockerWorldName && infra.dockerVolumePath);
+
   panel.innerHTML = `
-    <div class="row">
-      <label style="flex:1 1 140px;">
-        Имя контейнера
-        <input type="text" data-infra-container="${serverId}" value="${escapeHtml(infra.dockerContainerName ?? '')}">
-      </label>
-      <label style="flex:1 1 140px;">
-        Имя мира
-        <input type="text" data-infra-world="${serverId}" value="${escapeHtml(infra.dockerWorldName ?? '')}">
-      </label>
-      <label style="flex:1 1 140px;">
-        Сид мира (видно только админам)
-        <input type="text" data-infra-seed="${serverId}" value="${escapeHtml(infra.worldSeed ?? '')}">
-      </label>
+    <div class="settings-panel">
+      <div class="row">
+        <label style="flex:1 1 160px;">
+          Имя контейнера
+          <input type="text" data-infra-container="${serverId}" value="${escapeHtml(infra.dockerContainerName ?? '')}" placeholder="astvard-valheim-N">
+        </label>
+        <label style="flex:1 1 160px;">
+          Имя мира
+          <input type="text" data-infra-world="${serverId}" value="${escapeHtml(infra.dockerWorldName ?? '')}" placeholder="Randheim">
+        </label>
+      </div>
+      <div class="row" style="margin-top:var(--spacing-sm);">
+        <label style="flex:2 1 260px;">
+          Путь к тому Docker (для adminlist.txt и пересборки контейнера)
+          <input type="text" data-infra-path="${serverId}" value="${escapeHtml(infra.dockerVolumePath ?? '')}" placeholder="/var/lib/docker/volumes/.../_data">
+        </label>
+        <label style="flex:1 1 160px;">
+          Сид мира (видно только админам)
+          <input type="text" data-infra-seed="${serverId}" value="${escapeHtml(infra.worldSeed ?? '')}">
+        </label>
+      </div>
+      <button type="button" class="btn-secondary" data-save-infra="${serverId}" style="margin-top:var(--spacing-sm);">Сохранить настройки</button>
+      <p data-infra-message="${serverId}"></p>
     </div>
-    <button type="button" class="btn-secondary" data-save-infra="${serverId}">Сохранить настройки</button>
 
-    <div class="row" style="margin-top:var(--spacing-md);">
-      <label style="flex:1 1 200px;">
-        Текущий пароль
-        <input type="text" value="${escapeHtml(infra.connectPassword ?? '(не задан)')}" readonly>
-      </label>
-    </div>
+    <div class="settings-panel">
+      <div class="row">
+        <label style="flex:1 1 200px;">
+          Текущий пароль
+          <input type="text" value="${escapeHtml(infra.connectPassword ?? '(не задан)')}" readonly>
+        </label>
+      </div>
 
-    <div class="row" style="margin-top:var(--spacing-sm);">
-      <label class="row" style="flex:none; gap:var(--spacing-xs);">
-        <input type="checkbox" data-infra-public="${serverId}" ${infra.isPublic ? 'checked' : ''}>
-        Публичный (виден в браузере серверов Steam)
-      </label>
-    </div>
-    <p style="color:var(--color-text-muted); font-size:0.85rem;" data-infra-public-hint="${serverId}"></p>
+      <div class="row" style="margin-top:var(--spacing-sm);">
+        <label class="row" style="flex:none; gap:var(--spacing-xs);">
+          <input type="checkbox" data-infra-public="${serverId}" ${infra.isPublic ? 'checked' : ''}>
+          Публичный (виден в браузере серверов Steam)
+        </label>
+      </div>
+      <p class="hint" data-infra-public-hint="${serverId}"></p>
 
-    <div class="row row-align-end" style="margin-top:var(--spacing-sm);">
-      <label style="flex:1 1 200px;">
-        <span data-infra-password-label="${serverId}"></span>
-        <input type="text" data-infra-password="${serverId}">
-      </label>
-      <button type="button" class="btn-danger" data-change-password="${serverId}">Применить на сервере</button>
+      <div class="row row-align-end" style="margin-top:var(--spacing-sm);">
+        <label style="flex:1 1 200px;">
+          <span data-infra-password-label="${serverId}"></span>
+          <input type="text" data-infra-password="${serverId}" ${ready ? '' : 'disabled'}>
+        </label>
+        <button type="button" class="btn-danger" data-change-password="${serverId}" ${ready ? '' : 'disabled'}>Применить на сервере</button>
+      </div>
+      <p class="hint">
+        ${ready
+          ? 'Применение пересоздаёт контейнер — сервер на пару секунд уйдёт в оффлайн, текущие игроки отключатся.'
+          : 'Сначала заполни и сохрани имя контейнера, мира и путь к тому выше — до этого применить нельзя.'}
+      </p>
+      <p data-infra-apply-message="${serverId}"></p>
     </div>
-    <p style="color:var(--color-text-muted); font-size:0.85rem;">
-      Применение пересоздаёт контейнер — сервер на пару секунд уйдёт в оффлайн, текущие игроки отключатся.
-    </p>
-    <p data-infra-message="${serverId}"></p>
   `;
 
   const publicCheckbox = panel.querySelector(`[data-infra-public="${serverId}"]`);
@@ -227,22 +260,33 @@ async function toggleInfraPanel(serverId) {
   panel.querySelector(`[data-save-infra="${serverId}"]`).addEventListener('click', async () => {
     const containerName = panel.querySelector(`[data-infra-container="${serverId}"]`).value;
     const worldName = panel.querySelector(`[data-infra-world="${serverId}"]`).value;
+    const volumePath = panel.querySelector(`[data-infra-path="${serverId}"]`).value;
     const worldSeed = panel.querySelector(`[data-infra-seed="${serverId}"]`).value;
     const msg = panel.querySelector(`[data-infra-message="${serverId}"]`);
     const res = await fetch(`/api/admin/servers/${serverId}/infra`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dockerContainerName: containerName, dockerWorldName: worldName, worldSeed }),
+      body: JSON.stringify({
+        dockerContainerName: containerName,
+        dockerWorldName: worldName,
+        dockerVolumePath: volumePath,
+        worldSeed,
+      }),
     });
     const data = await res.json();
-    msg.textContent = res.ok ? 'Настройки сохранены' : data.error;
-    msg.style.color = res.ok ? 'var(--color-success)' : 'var(--color-danger)';
+    if (res.ok) {
+      toggleInfraPanel(serverId);
+      toggleInfraPanel(serverId); // перезагрузить панель — пересчитать, разблокировалась ли кнопка "Применить"
+    } else {
+      msg.textContent = data.error;
+      msg.style.color = 'var(--color-danger)';
+    }
   });
 
   panel.querySelector(`[data-change-password="${serverId}"]`).addEventListener('click', async () => {
     const password = panel.querySelector(`[data-infra-password="${serverId}"]`).value;
     const isPublic = publicCheckbox.checked;
-    const msg = panel.querySelector(`[data-infra-message="${serverId}"]`);
+    const msg = panel.querySelector(`[data-infra-apply-message="${serverId}"]`);
     if (isPublic && password.length < 5) {
       msg.textContent = 'Для публичного сервера нужен пароль от 5 символов';
       msg.style.color = 'var(--color-danger)';
@@ -522,8 +566,7 @@ async function loadUsers() {
 const gameAdminsSection = document.getElementById('game-admins-section');
 const gameAdminsServerSelect = document.getElementById('game-admins-server');
 const gameAdminsPathWarning = document.getElementById('game-admins-path-warning');
-const gameAdminsPathInput = document.getElementById('game-admins-path-input');
-const gameAdminsPathSaveBtn = document.getElementById('game-admins-path-save');
+const gameAdminsPathDisplay = document.getElementById('game-admins-path-display');
 const gameAdminsUserSearch = document.getElementById('game-admins-user-search');
 const gameAdminsUserResults = document.getElementById('game-admins-user-results');
 const gameAdminsAddBtn = document.getElementById('game-admins-add');
@@ -599,13 +642,15 @@ async function loadGameAdmins() {
   if (!response.ok) return;
   const data = await response.json();
 
+  // путь к тому теперь настраивается в одном месте — на карточке сервера,
+  // кнопка "Изменить сервер" (там же контейнер/мир/сид). Здесь только читаем.
   if (data.dockerVolumePath) {
     gameAdminsPathWarning.style.display = 'none';
-    gameAdminsPathInput.value = data.dockerVolumePath;
+    gameAdminsPathDisplay.textContent = `Том Docker: ${data.dockerVolumePath}`;
   } else {
     gameAdminsPathWarning.style.display = 'block';
-    gameAdminsPathWarning.innerHTML = `<p style="color:var(--color-danger);">Для этого сервера ещё не указан путь к тому — назначение админов не применится к реальному серверу, пока не сохранишь путь ниже.</p>`;
-    gameAdminsPathInput.value = '';
+    gameAdminsPathWarning.innerHTML = `<p style="color:var(--color-danger);">Для этого сервера ещё не указан путь к тому — назначение админов не применится к реальному серверу, пока не настроишь его в карточке сервера ("Сервера" → "Изменить сервер").</p>`;
+    gameAdminsPathDisplay.textContent = 'Том Docker не настроен';
   }
 
   gameAdminsList.innerHTML = data.admins
@@ -628,18 +673,6 @@ async function loadGameAdmins() {
 }
 
 gameAdminsServerSelect.addEventListener('change', loadGameAdmins);
-
-gameAdminsPathSaveBtn.addEventListener('click', async () => {
-  const serverId = gameAdminsServerSelect.value;
-  gameAdminsPathSaveBtn.disabled = true;
-  const response = await fetch(`/api/admin/servers/${serverId}/docker-path`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dockerVolumePath: gameAdminsPathInput.value }),
-  });
-  gameAdminsPathSaveBtn.disabled = false;
-  if (response.ok) loadGameAdmins();
-});
 
 gameAdminsAddBtn.addEventListener('click', async () => {
   const serverId = gameAdminsServerSelect.value;
