@@ -124,15 +124,15 @@ a {
   display: inline-flex;
   align-items: center;
   font-weight: 700;
-  font-size: 1.2rem;
+  font-size: 1.7rem;
   color: var(--color-text);
   text-decoration: none;
   margin-right: var(--spacing-xs);
 }
 
 .site-logo-img {
-  height: 28px;
-  width: 28px;
+  height: 32px;
+  width: 32px;
   margin-right: var(--spacing-xs);
 }
 
@@ -224,20 +224,21 @@ input[type="file"]::file-selector-button:hover {
   background: var(--color-surface);
 }
 
-/* ---------- Единый блок загрузки логотипа ---------- */
+/* ---------- Единый блок загрузки картинки (логотип, фавиконка) ---------- */
 
-.logo-uploader {
+.asset-uploader {
   display: flex;
   gap: var(--spacing-md);
   align-items: center;
   padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   max-width: var(--max-page-width);
 }
 
-.logo-uploader-preview {
+.asset-uploader-preview {
   flex-shrink: 0;
   width: 48px;
   height: 48px;
@@ -247,7 +248,7 @@ input[type="file"]::file-selector-button:hover {
   border-radius: var(--radius-sm);
 }
 
-.logo-uploader-body {
+.asset-uploader-body {
   flex: 1;
   min-width: 0;
 }

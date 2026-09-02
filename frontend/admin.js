@@ -630,7 +630,8 @@ async function loadSettingsForm() {
   SETTING_KEYS.forEach((key) => {
     document.getElementById(`setting-${key}`).value = settings[key] ?? '';
   });
-  settingLogoPreview.src = settings.logo_url || '/logo.svg';
+  document.getElementById('setting-logo-preview').src = settings.logo_url || '/logo.svg';
+  document.getElementById('setting-favicon-preview').src = settings.favicon_url || '/logo.svg';
 }
 
 settingsForm.addEventListener('submit', async (event) => {
@@ -663,64 +664,76 @@ settingsForm.addEventListener('submit', async (event) => {
   renderNav();
 });
 
-// ---------- Логотип (только superadmin) ----------
+// ---------- Загрузчик картинок (логотип, фавиконка — только superadmin) ----------
+// Общая логика на оба блока: превью выбранного файла ещё до отправки (локально,
+// через object URL), отправка на /api/admin/settings/<kind>, сброс на дефолт.
 
-const settingLogoFile = document.getElementById('setting-logo-file');
-const settingLogoUpload = document.getElementById('setting-logo-upload');
-const settingLogoReset = document.getElementById('setting-logo-reset');
-const settingLogoPreview = document.getElementById('setting-logo-preview');
-const settingLogoMessage = document.getElementById('setting-logo-message');
-const settingLogoFilename = document.getElementById('setting-logo-filename');
+function initAssetUploader(kind) {
+  const fileInput = document.getElementById(`setting-${kind}-file`);
+  const uploadBtn = document.getElementById(`setting-${kind}-upload`);
+  const resetBtn = document.getElementById(`setting-${kind}-reset`);
+  const preview = document.getElementById(`setting-${kind}-preview`);
+  const message = document.getElementById(`setting-${kind}-message`);
+  const filenameEl = document.getElementById(`setting-${kind}-filename`);
 
-settingLogoFile.addEventListener('change', () => {
-  const file = settingLogoFile.files[0];
-  settingLogoFilename.textContent = file ? `Выбран: ${file.name}` : '';
-  settingLogoFilename.hidden = !file;
-});
+  let objectUrl = null;
 
-settingLogoUpload.addEventListener('click', async () => {
-  const file = settingLogoFile.files[0];
-  if (!file) {
-    settingLogoMessage.textContent = 'Сначала выбери файл';
-    settingLogoMessage.style.color = 'var(--color-danger)';
-    return;
-  }
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    filenameEl.textContent = file ? `Выбран: ${file.name}` : '';
+    filenameEl.hidden = !file;
 
-  const formData = new FormData();
-  formData.append('logo', file);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    if (file) {
+      objectUrl = URL.createObjectURL(file);
+      preview.src = objectUrl; // локальное превью — до реальной загрузки на сервер
+    }
+  });
 
-  settingLogoUpload.disabled = true;
-  const response = await fetch('/api/admin/settings/logo', { method: 'POST', body: formData });
-  settingLogoUpload.disabled = false;
+  uploadBtn.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    if (!file) {
+      message.textContent = 'Сначала выбери файл';
+      message.style.color = 'var(--color-danger)';
+      return;
+    }
 
-  const data = await response.json();
-  if (!response.ok) {
-    settingLogoMessage.textContent = data.error;
-    settingLogoMessage.style.color = 'var(--color-danger)';
-    return;
-  }
-  settingLogoMessage.textContent = 'Логотип обновлён';
-  settingLogoMessage.style.color = 'var(--color-success)';
-  settingLogoPreview.src = data.logoUrl;
-  settingLogoFile.value = '';
-  settingLogoFilename.hidden = true;
-  siteSettingsPromise = null; // сбрасываем кэш — шапка/футер подтянут новый логотип
-  renderNav();
-});
+    const formData = new FormData();
+    formData.append('file', file);
 
-settingLogoReset.addEventListener('click', async () => {
-  settingLogoReset.disabled = true;
-  const response = await fetch('/api/admin/settings/logo', { method: 'DELETE' });
-  settingLogoReset.disabled = false;
+    uploadBtn.disabled = true;
+    const response = await fetch(`/api/admin/settings/${kind}`, { method: 'POST', body: formData });
+    uploadBtn.disabled = false;
 
-  const data = await response.json();
-  if (!response.ok) return;
-  settingLogoMessage.textContent = 'Сброшено на стандартный';
-  settingLogoMessage.style.color = 'var(--color-success)';
-  settingLogoPreview.src = data.logoUrl;
-  siteSettingsPromise = null;
-  renderNav();
-});
+    const data = await response.json();
+    if (!response.ok) {
+      message.textContent = data.error;
+      message.style.color = 'var(--color-danger)';
+      return;
+    }
+    message.textContent = 'Обновлено';
+    message.style.color = 'var(--color-success)';
+    preview.src = data.url;
+    fileInput.value = '';
+    filenameEl.hidden = true;
+    siteSettingsPromise = null; // сбрасываем кэш — шапка/футер/фавиконка подтянут новое
+    renderNav();
+  });
+
+  resetBtn.addEventListener('click', async () => {
+    resetBtn.disabled = true;
+    const response = await fetch(`/api/admin/settings/${kind}`, { method: 'DELETE' });
+    resetBtn.disabled = false;
+
+    const data = await response.json();
+    if (!response.ok) return;
+    message.textContent = 'Сброшено на стандартное';
+    message.style.color = 'var(--color-success)';
+    preview.src = data.url;
+    siteSettingsPromise = null;
+    renderNav();
+  });
+}
 
 // ---------- Инициализация ----------
 
@@ -739,6 +752,8 @@ settingLogoReset.addEventListener('click', async () => {
     await loadUsers();
     await populateGameAdminsPickers();
     await loadGameAdmins();
+    initAssetUploader('logo');
+    initAssetUploader('favicon');
     await loadSettingsForm();
   }
 })();

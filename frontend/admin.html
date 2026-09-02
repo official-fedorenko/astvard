@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Админка — Astvard</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="icon" id="site-favicon" href="/logo.svg">
 </head>
 <body>
   <header id="site-header"></header>
@@ -170,10 +171,10 @@
         <div class="admin-list-header">
           <h3>Логотип</h3>
         </div>
-        <div class="logo-uploader">
-          <img id="setting-logo-preview" class="logo-uploader-preview" src="" alt="">
-          <div class="logo-uploader-body">
-            <p class="hint" style="margin:0 0 var(--spacing-sm);">SVG, PNG, JPG, GIF, WEBP, ICO — до 3 МБ</p>
+        <div class="asset-uploader">
+          <img id="setting-logo-preview" class="asset-uploader-preview" src="" alt="">
+          <div class="asset-uploader-body">
+            <p class="hint" style="margin:0 0 var(--spacing-sm);">SVG, PNG, JPG, GIF, WEBP, ICO — до 3 МБ. Логотип в шапке и на главной.</p>
             <div class="row">
               <label class="btn btn-secondary" for="setting-logo-file">Выбрать файл</label>
               <input type="file" id="setting-logo-file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp,.ico" hidden>
@@ -181,6 +182,23 @@
               <button type="button" id="setting-logo-reset" class="btn-secondary">Сбросить</button>
             </div>
             <p id="setting-logo-filename" class="hint" style="margin:var(--spacing-xs) 0 0;" hidden></p>
+          </div>
+        </div>
+
+        <div class="admin-list-header">
+          <h3>Фавиконка</h3>
+        </div>
+        <div class="asset-uploader">
+          <img id="setting-favicon-preview" class="asset-uploader-preview" src="" alt="">
+          <div class="asset-uploader-body">
+            <p class="hint" style="margin:0 0 var(--spacing-sm);">SVG, PNG, JPG, GIF, WEBP, ICO — до 3 МБ. Иконка вкладки браузера.</p>
+            <div class="row">
+              <label class="btn btn-secondary" for="setting-favicon-file">Выбрать файл</label>
+              <input type="file" id="setting-favicon-file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp,.ico" hidden>
+              <button type="button" id="setting-favicon-upload" class="btn-secondary">Загрузить</button>
+              <button type="button" id="setting-favicon-reset" class="btn-secondary">Сбросить</button>
+            </div>
+            <p id="setting-favicon-filename" class="hint" style="margin:var(--spacing-xs) 0 0;" hidden></p>
           </div>
         </div>
         <p id="setting-logo-message"></p>

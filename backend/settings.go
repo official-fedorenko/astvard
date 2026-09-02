@@ -15,6 +15,7 @@ var settingDefaults = map[string]string{
 	"site_tagline": "Портал наших игровых серверов.",
 	"footer_text":  "",
 	"logo_url":     "/logo.svg",
+	"favicon_url":  "/logo.svg",
 }
 
 const settingMaxLen = 500

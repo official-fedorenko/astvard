@@ -38,8 +38,10 @@ func main() {
 	mux.HandleFunc("GET /api/articles", handleGetArticles(pool))
 	mux.HandleFunc("GET /api/settings", handleGetSettings(pool))
 	mux.HandleFunc("PUT /api/admin/settings", requireRole("superadmin", handleUpdateSettings(pool)))
-	mux.HandleFunc("POST /api/admin/settings/logo", requireRole("superadmin", handleUploadLogo(pool)))
-	mux.HandleFunc("DELETE /api/admin/settings/logo", requireRole("superadmin", handleResetLogo(pool)))
+	mux.HandleFunc("POST /api/admin/settings/logo", requireRole("superadmin", handleUploadAsset(pool, "logo")))
+	mux.HandleFunc("DELETE /api/admin/settings/logo", requireRole("superadmin", handleResetAsset(pool, "logo")))
+	mux.HandleFunc("POST /api/admin/settings/favicon", requireRole("superadmin", handleUploadAsset(pool, "favicon")))
+	mux.HandleFunc("DELETE /api/admin/settings/favicon", requireRole("superadmin", handleResetAsset(pool, "favicon")))
 
 	mux.HandleFunc("POST /api/admin/articles", requireRole("admin", handleCreateArticle(pool)))
 	mux.HandleFunc("PUT /api/admin/articles/{id}", requireRole("admin", handleUpdateArticle(pool)))

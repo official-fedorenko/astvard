@@ -85,6 +85,9 @@ async function renderNav() {
   const siteName = settings.site_name || 'Astvard';
   const logoUrl = settings.logo_url || '/logo.svg';
 
+  const faviconLink = document.getElementById('site-favicon');
+  if (faviconLink) faviconLink.href = settings.favicon_url || '/logo.svg';
+
   const authLinks = me
     ? `
       <a href="/cabinet" class="btn btn-secondary">Кабинет</a>
