@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS servers (
   -- публичный сервер виден в браузере серверов Steam и обязан иметь пароль (мин. 5 симв.);
   -- приватный не регистрируется в Steam и может быть без пароля вообще
   is_public BOOLEAN NOT NULL DEFAULT true,
+  -- сид мира (Valheim и т.п.) — видно только админам/суперадминам, обычным игрокам не отдаём
+  world_seed TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (host, port)
 );

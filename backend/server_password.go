@@ -19,6 +19,7 @@ type serverInfra struct {
 	DockerWorldName     *string `json:"dockerWorldName"`
 	ConnectPassword     *string `json:"connectPassword"`
 	IsPublic            bool    `json:"isPublic"`
+	WorldSeed           *string `json:"worldSeed"`
 }
 
 // handleGetServerInfra — только superadmin: текущие настройки контейнера и пароль подключения
@@ -32,8 +33,8 @@ func handleGetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var infra serverInfra
 		err = pool.QueryRow(r.Context(),
-			"SELECT docker_container_name, docker_world_name, connect_password, is_public FROM servers WHERE id = $1", id,
-		).Scan(&infra.DockerContainerName, &infra.DockerWorldName, &infra.ConnectPassword, &infra.IsPublic)
+			"SELECT docker_container_name, docker_world_name, connect_password, is_public, world_seed FROM servers WHERE id = $1", id,
+		).Scan(&infra.DockerContainerName, &infra.DockerWorldName, &infra.ConnectPassword, &infra.IsPublic, &infra.WorldSeed)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "Сервер не найден")
 			return
@@ -46,6 +47,7 @@ func handleGetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 type infraConfigRequest struct {
 	DockerContainerName string `json:"dockerContainerName"`
 	DockerWorldName     string `json:"dockerWorldName"`
+	WorldSeed           string `json:"worldSeed"`
 }
 
 // handleSetServerInfra — только метаданные (имя контейнера/мира), без перезапуска —
@@ -71,9 +73,19 @@ func handleSetServerInfra(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		worldSeed := strings.TrimSpace(req.WorldSeed)
+		if len(worldSeed) > 100 {
+			writeError(w, http.StatusBadRequest, "Сид слишком длинный (макс. 100 символов)")
+			return
+		}
+		var worldSeedValue any
+		if worldSeed != "" {
+			worldSeedValue = worldSeed
+		}
+
 		tag, err := pool.Exec(r.Context(),
-			"UPDATE servers SET docker_container_name = $1, docker_world_name = $2 WHERE id = $3",
-			containerName, worldName, id,
+			"UPDATE servers SET docker_container_name = $1, docker_world_name = $2, world_seed = $3 WHERE id = $4",
+			containerName, worldName, worldSeedValue, id,
 		)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")

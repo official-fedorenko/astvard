@@ -173,6 +173,10 @@ async function toggleInfraPanel(serverId) {
         Имя мира
         <input type="text" data-infra-world="${serverId}" value="${escapeHtml(infra.dockerWorldName ?? '')}">
       </label>
+      <label style="flex:1 1 140px;">
+        Сид мира (видно только админам)
+        <input type="text" data-infra-seed="${serverId}" value="${escapeHtml(infra.worldSeed ?? '')}">
+      </label>
     </div>
     <button type="button" class="btn-secondary" data-save-infra="${serverId}">Сохранить настройки</button>
 
@@ -223,11 +227,12 @@ async function toggleInfraPanel(serverId) {
   panel.querySelector(`[data-save-infra="${serverId}"]`).addEventListener('click', async () => {
     const containerName = panel.querySelector(`[data-infra-container="${serverId}"]`).value;
     const worldName = panel.querySelector(`[data-infra-world="${serverId}"]`).value;
+    const worldSeed = panel.querySelector(`[data-infra-seed="${serverId}"]`).value;
     const msg = panel.querySelector(`[data-infra-message="${serverId}"]`);
     const res = await fetch(`/api/admin/servers/${serverId}/infra`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dockerContainerName: containerName, dockerWorldName: worldName }),
+      body: JSON.stringify({ dockerContainerName: containerName, dockerWorldName: worldName, worldSeed }),
     });
     const data = await res.json();
     msg.textContent = res.ok ? 'Настройки сохранены' : data.error;

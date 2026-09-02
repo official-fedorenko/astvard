@@ -180,8 +180,13 @@ async function loadServers() {
         : '';
 
       const address = `${s.host}:${s.port}`;
-      const passwordBtn = s.connect_password
-        ? `<button type="button" class="btn-secondary password-btn" data-password="${escapeHtml(s.connect_password)}" data-server-name="${escapeHtml(displayName)}">🔑 Пароль</button>`
+      // сид отдаётся сервером только админам (см. backend/content.go) — обычный игрок
+      // просто не получит поле world_seed, кнопка сама решает, что вообще показывать
+      const infoBtn = s.connect_password || s.world_seed
+        ? `<button type="button" class="btn-secondary info-btn"
+             data-password="${escapeHtml(s.connect_password ?? '')}"
+             data-seed="${escapeHtml(s.world_seed ?? '')}"
+             data-server-name="${escapeHtml(displayName)}">ℹ️ Информация</button>`
         : '';
 
       return `
@@ -195,7 +200,7 @@ async function loadServers() {
             <span>🔗 ${escapeHtml(address)}</span>
             <button type="button" class="copy-btn" data-copy="${escapeHtml(address)}" title="Скопировать адрес">📋</button>
           </div>
-          ${passwordBtn}
+          ${infoBtn}
           ${descriptionLine}
           ${playersLine}
           ${statsLine}
@@ -210,17 +215,37 @@ async function loadServers() {
     btn.addEventListener('click', () => copyToClipboard(btn.dataset.copy, btn));
   });
 
-  container.querySelectorAll('.password-btn').forEach((btn) => {
+  container.querySelectorAll('.info-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const password = btn.dataset.password;
-      const overlay = showModal('Пароль подключения', `
-        <p class="hint" style="margin-bottom:var(--spacing-sm);">${escapeHtml(btn.dataset.serverName)}</p>
-        <div class="password-reveal">
-          <code>${escapeHtml(password)}</code>
-          <button type="button" class="copy-btn" data-copy="${escapeHtml(password)}" title="Скопировать пароль">📋</button>
-        </div>
-      `);
-      overlay.querySelector('.copy-btn').addEventListener('click', (event) => copyToClipboard(password, event.currentTarget));
+      const seed = btn.dataset.seed;
+
+      const passwordRow = password
+        ? `
+          <p class="hint" style="margin-bottom:4px;">Пароль</p>
+          <div class="password-reveal">
+            <code>${escapeHtml(password)}</code>
+            <button type="button" class="copy-btn" data-copy="${escapeHtml(password)}" title="Скопировать пароль">📋</button>
+          </div>
+        `
+        : '<p class="hint">Пароль не установлен</p>';
+
+      // seed сюда попадает только для админов — see backend/content.go (world_seed отдаётся
+      // только при роли admin+), так что отдельно проверять роль на фронте не нужно
+      const seedRow = seed
+        ? `
+          <p class="hint" style="margin:var(--spacing-md) 0 4px;">Сид мира (видно только админам)</p>
+          <div class="password-reveal">
+            <code>${escapeHtml(seed)}</code>
+            <button type="button" class="copy-btn" data-copy="${escapeHtml(seed)}" title="Скопировать сид">📋</button>
+          </div>
+        `
+        : '';
+
+      const overlay = showModal(btn.dataset.serverName, passwordRow + seedRow);
+      overlay.querySelectorAll('.copy-btn').forEach((copyBtn) => {
+        copyBtn.addEventListener('click', (event) => copyToClipboard(copyBtn.dataset.copy, event.currentTarget));
+      });
     });
   });
 }

@@ -53,13 +53,14 @@ type serverWithStatus struct {
 	UptimePercent   *float64   `json:"uptime_percent"`
 	PeakPlayers     *int       `json:"peak_players"`
 	ConnectPassword *string    `json:"connect_password"`
+	WorldSeed       *string    `json:"world_seed,omitempty"`
 }
 
 func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := pool.Query(r.Context(), `
 			SELECT servers.id, servers.name, servers.host, servers.port, servers.description,
-			       servers.connect_password,
+			       servers.connect_password, servers.world_seed,
 			       games.name AS game_name, games.slug AS game_slug,
 			       latest.online, latest.players_online, latest.players_max,
 			       latest.reported_name, latest.player_names, latest.checked_at,
@@ -93,7 +94,7 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 		servers := []serverWithStatus{}
 		for rows.Next() {
 			var s serverWithStatus
-			if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.Description, &s.ConnectPassword,
+			if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.Description, &s.ConnectPassword, &s.WorldSeed,
 				&s.GameName, &s.GameSlug, &s.Online, &s.PlayersOnline, &s.PlayersMax,
 				&s.ReportedName, &s.PlayerNames, &s.CheckedAt, &s.UptimePercent, &s.PeakPlayers); err != nil {
 				writeError(w, http.StatusInternalServerError, "Внутренняя ошибка сервера")
@@ -101,6 +102,15 @@ func handleGetServers(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 			servers = append(servers, s)
 		}
+
+		// сид мира видят только админы — обычным игрокам стираем перед отправкой
+		claims := optionalClaims(r)
+		if claims == nil || !hasRole(claims.Role, "admin") {
+			for i := range servers {
+				servers[i].WorldSeed = nil
+			}
+		}
+
 		writeJSON(w, http.StatusOK, servers)
 	}
 }
