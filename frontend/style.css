@@ -400,6 +400,26 @@ button:disabled,
   background: var(--color-danger-hover);
 }
 
+/* значок Steam в шапке (гостям, рядом с "Войти") — фирменный синий Steam,
+   а не общий цвет темы, чтобы значок сразу узнавался как логотип Steam */
+.btn-steam {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  color: #66c0f4;
+  background: #1b2838;
+  border: 1px solid #2a475e;
+  border-radius: var(--radius-sm);
+}
+
+.btn-steam:hover {
+  background: #2a475e;
+}
+
 /* ---------- Переиспользуемые блоки ---------- */
 
 .honeypot {
