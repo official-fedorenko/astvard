@@ -16,7 +16,7 @@ form.addEventListener('submit', async (event) => {
 
   if (password !== passwordConfirm) {
     message.textContent = 'Пароли не совпадают';
-    message.style.color = '#e66';
+    message.style.color = 'var(--color-danger)';
     return;
   }
 
@@ -41,7 +41,7 @@ form.addEventListener('submit', async (event) => {
 
     if (!response.ok) {
       message.textContent = data.error;
-      message.style.color = '#e66';
+      message.style.color = 'var(--color-danger)';
       return;
     }
 
@@ -58,9 +58,9 @@ form.addEventListener('submit', async (event) => {
     }
 
     message.textContent = 'Аккаунт создан, но автоматический вход не удался — попробуй войти вручную.';
-    message.style.color = '#e66';
+    message.style.color = 'var(--color-danger)';
   } catch (err) {
     message.textContent = 'Не удалось связаться с сервером';
-    message.style.color = '#e66';
+    message.style.color = 'var(--color-danger)';
   }
 });

@@ -210,7 +210,7 @@ async function toggleInfraPanel(serverId) {
     </div>
 
     <div class="settings-panel">
-      <button type="button" class="btn-secondary" data-restart="${serverId}" ${infra.dockerContainerName ? '' : 'disabled'}>🔄 Перезапустить сервер</button>
+      <button type="button" class="btn-danger" data-restart="${serverId}" ${infra.dockerContainerName ? '' : 'disabled'}>🔄 Перезапустить сервер</button>
       <p class="hint" style="margin-top:var(--spacing-xs);">
         ${infra.dockerContainerName
           ? 'Обычный docker restart — настройки не меняются (пароль, публичность, имя те же). Сервер на несколько секунд уйдёт в оффлайн, игроки отключатся.'
@@ -393,7 +393,7 @@ serverForm.addEventListener('submit', async (event) => {
 
   if (!response.ok) {
     serverMessage.textContent = data.error;
-    serverMessage.style.color = '#e66';
+    serverMessage.style.color = 'var(--color-danger)';
     return;
   }
 
@@ -500,7 +500,7 @@ articleForm.addEventListener('submit', async (event) => {
 
   if (!response.ok) {
     articleMessage.textContent = data.error;
-    articleMessage.style.color = '#e66';
+    articleMessage.style.color = 'var(--color-danger)';
     return;
   }
 

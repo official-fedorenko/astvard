@@ -5,7 +5,7 @@ const message = document.getElementById('message');
 
 if (new URLSearchParams(window.location.search).get('error') === 'steam') {
   message.textContent = 'Не удалось войти через Steam, попробуй ещё раз';
-  message.style.color = '#e66';
+  message.style.color = 'var(--color-danger)';
 }
 
 form.addEventListener('submit', async (event) => {
@@ -27,13 +27,13 @@ form.addEventListener('submit', async (event) => {
 
     if (!response.ok) {
       message.textContent = data.error;
-      message.style.color = '#e66';
+      message.style.color = 'var(--color-danger)';
       return;
     }
 
     window.location.href = 'cabinet';
   } catch (err) {
     message.textContent = 'Не удалось связаться с сервером';
-    message.style.color = '#e66';
+    message.style.color = 'var(--color-danger)';
   }
 });
