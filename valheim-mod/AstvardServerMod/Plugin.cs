@@ -34,8 +34,6 @@ namespace AstvardServerMod
         internal static GameObject TerrainHint;
         internal static GameObject RadiusInput;
         internal static GameObject HeightInput;
-        internal static GameObject SmoothInput;
-        internal static GameObject SmoothPowerInput;
         internal static GameObject ApplyButton;
         internal static GameObject BackButton;
 
@@ -153,7 +151,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            TerrainHint = MakeText(gui, "Радиус, высота, скос (м), smooth.\n0 = уровень игрока.");
+            TerrainHint = MakeText(gui, "Радиус (м) и высота.\n0 = уровень игрока.\nКрая сшиваются автоматически.");
 
             RadiusInput = gui.CreateInputField(
                 Panel.transform,
@@ -167,17 +165,6 @@ namespace AstvardServerMod
                 InputField.ContentType.DecimalNumber, "высота, напр. 0", 16, 160f, 32f);
             AddFixedSize(HeightInput, 160f, 32f);
 
-            SmoothInput = gui.CreateInputField(
-                Panel.transform,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "скос, м (0 = нет)", 16, 160f, 32f);
-            AddFixedSize(SmoothInput, 160f, 32f);
-
-            SmoothPowerInput = gui.CreateInputField(
-                Panel.transform,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "smooth 0-5 (0 = нет)", 16, 160f, 32f);
-            AddFixedSize(SmoothPowerInput, 160f, 32f);
 
             ApplyButton = MakeButton(gui, "Применить", ApplyTerrainLevel);
 
@@ -231,21 +218,10 @@ namespace AstvardServerMod
             var playerPos = player.transform.position;
             var target = new Vector3(playerPos.x, playerPos.y + heightOffset, playerPos.z);
 
-            // DoOperation is private but is the same entry point the vanilla hoe
-            // ends up in — it applies + saves + syncs the change.
-            var doOperation = AccessTools.Method(typeof(TerrainComp), "DoOperation");
-            if (doOperation == null)
-            {
-                Log.LogError("[AstvardServerMod] TerrainComp.DoOperation not found.");
-                return;
-            }
-
-            // Width of the sloped border, in metres. The engine's own m_smooth is
-            // capped at ±1 m (see TerrainComp.SmoothTerrain), far too little for a
-            // visible slope, so the border is built from concentric level passes
-            // instead — each one gets its own ±8 m budget.
-            var slopeWidth = Mathf.Clamp(ParseField(SmoothInput, 0f), 0f, 32f);
-            var reach = radius + slopeWidth;
+            // The blend band is derived from the radius — a bigger platform gets a
+            // longer run-out, so the user only has to pick radius and height.
+            var blend = Mathf.Clamp(radius * 0.75f, 4f, 24f);
+            var reach = radius + blend;
 
             // Each zone keeps its own heightmap, so an operation spilling over a
             // zone border has to be handed to every TerrainComp it touches —
@@ -257,82 +233,98 @@ namespace AstvardServerMod
                 return;
             }
 
-            if (slopeWidth > 0f)
-            {
-                var outerHeight = SampleGroundHeight(target, reach);
-                var steps = Mathf.Clamp(Mathf.RoundToInt(slopeWidth / 2f), 1, 8);
-
-                // Outermost ring first — each following pass overwrites the middle
-                // of the previous one, leaving a staircase that slopes inwards.
-                for (var i = steps; i >= 1; i--)
-                {
-                    var t = i / (float)steps;
-                    var ringRadius = radius + slopeWidth * t;
-                    var ringHeight = Mathf.Lerp(target.y, outerHeight, t);
-                    var ringPos = new Vector3(target.x, ringHeight, target.z);
-                    foreach (var c in comps) ApplyLevelPass(doOperation, c, ringPos, ringRadius);
-                }
-            }
-
-            foreach (var c in comps) ApplyLevelPass(doOperation, c, target, radius);
-
-            // Engine-side smoothing, applied last so LevelTerrain doesn't wipe
-            // m_smoothDelta. Only ±1 m, but that's enough to round off the steps.
-            var smoothPower = Mathf.Clamp(ParseField(SmoothPowerInput, 0f), 0f, 5f);
-            if (smoothPower > 0f)
-            {
-                var smoothSettings = new TerrainOp.Settings
-                {
-                    m_level = false,
-                    m_smooth = true,
-                    m_smoothRadius = reach,
-                    m_smoothPower = smoothPower,
-                    m_square = _terrainSquare,
-                };
-                foreach (var c in comps) doOperation.Invoke(c, new object[] { target, smoothSettings });
-            }
+            var save = AccessTools.Method(typeof(TerrainComp), "Save");
+            foreach (var c in comps) BlendLevel(c, target, radius, blend);
+            foreach (var c in comps) save.Invoke(c, null);
 
             RebuildHeightmaps(target, reach);
 
             Log.LogInfo($"[AstvardServerMod] Level {(_terrainSquare ? "square" : "circle")} " +
-                        $"r={radius} h={heightOffset:F1} slope={slopeWidth} smooth={smoothPower} " +
+                        $"r={radius} h={heightOffset:F1} blend={blend:F1} " +
                         $"zones={comps.Count} at {target}");
         }
 
-        private static void ApplyLevelPass(System.Reflection.MethodInfo doOperation, TerrainComp comp,
-            Vector3 pos, float radius)
-        {
-            var settings = new TerrainOp.Settings
-            {
-                m_level = true,
-                m_levelRadius = radius,
-                m_square = _terrainSquare,
-                m_levelOffset = 0f,
-            };
-            doOperation.Invoke(comp, new object[] { pos, settings });
-        }
+        private static readonly System.Reflection.FieldInfo FHmap = AccessTools.Field(typeof(TerrainComp), "m_hmap");
+        private static readonly System.Reflection.FieldInfo FLevelDelta = AccessTools.Field(typeof(TerrainComp), "m_levelDelta");
+        private static readonly System.Reflection.FieldInfo FSmoothDelta = AccessTools.Field(typeof(TerrainComp), "m_smoothDelta");
+        private static readonly System.Reflection.FieldInfo FModified = AccessTools.Field(typeof(TerrainComp), "m_modifiedHeight");
+        private static readonly System.Reflection.FieldInfo FWidth = AccessTools.Field(typeof(TerrainComp), "m_width");
+        private static readonly System.Reflection.FieldInfo FOperations = AccessTools.Field(typeof(TerrainComp), "m_operations");
+        private static readonly System.Reflection.FieldInfo FLastOpPoint = AccessTools.Field(typeof(TerrainComp), "m_lastOpPoint");
+        private static readonly System.Reflection.FieldInfo FLastOpRadius = AccessTools.Field(typeof(TerrainComp), "m_lastOpRadius");
 
-        /// <summary>Average ground height on a circle, so the slope meets the real terrain.</summary>
-        private static float SampleGroundHeight(Vector3 center, float radius)
+        /// <summary>
+        /// Levels the inner disc and blends outwards per vertex: every point in the
+        /// outer band is pulled towards the flat height only as far as its distance
+        /// allows, ending at the terrain's own height. The engine's LevelTerrain can
+        /// only stamp one flat height over a whole radius, which is why the border
+        /// had to be faked with rings before — writing the height deltas ourselves
+        /// gives a continuous slope that meets whatever is already there.
+        /// </summary>
+        private static void BlendLevel(TerrainComp comp, Vector3 worldTarget, float radius, float blend)
         {
-            var zone = ZoneSystem.instance;
-            if (zone == null) return center.y;
+            var hmap = FHmap.GetValue(comp) as Heightmap;
+            var levelDelta = FLevelDelta.GetValue(comp) as float[];
+            var smoothDelta = FSmoothDelta.GetValue(comp) as float[];
+            var modified = FModified.GetValue(comp) as bool[];
+            if (hmap == null || levelDelta == null || smoothDelta == null || modified == null) return;
 
-            var sum = 0f;
-            var hits = 0;
-            for (var i = 0; i < 8; i++)
+            var width = (int)FWidth.GetValue(comp);
+            var size = width + 1;
+            var scale = hmap.m_scale;
+            if (scale <= 0f) return;
+
+            hmap.WorldToVertex(worldTarget, out var cx, out var cy);
+            // Heights inside a heightmap are relative to its own transform.
+            var localTargetY = worldTarget.y - comp.transform.position.y;
+
+            var reach = radius + blend;
+            var reachVerts = Mathf.CeilToInt(reach / scale);
+
+            for (var i = cy - reachVerts; i <= cy + reachVerts; i++)
             {
-                var angle = i * Mathf.PI * 2f / 8f;
-                var probe = center + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
-                if (zone.GetGroundHeight(probe, out var height))
+                if (i < 0 || i >= size) continue;
+                for (var j = cx - reachVerts; j <= cx + reachVerts; j++)
                 {
-                    sum += height;
-                    hits++;
+                    if (j < 0 || j >= size) continue;
+
+                    var dx = j - cx;
+                    var dz = i - cy;
+                    // Chebyshev distance gives square platforms, Euclidean round ones.
+                    var distance = (_terrainSquare
+                        ? Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dz))
+                        : Mathf.Sqrt(dx * dx + dz * dz)) * scale;
+
+                    if (distance > reach) continue;
+
+                    var index = i * size + j;
+                    var current = hmap.GetHeight(j, i);
+
+                    float desired;
+                    if (distance <= radius)
+                    {
+                        desired = localTargetY;
+                    }
+                    else
+                    {
+                        var t = Mathf.SmoothStep(0f, 1f, (distance - radius) / blend);
+                        desired = Mathf.Lerp(localTargetY, current, t);
+                    }
+
+                    // Same bookkeeping LevelTerrain does: fold in and clear any
+                    // pending smooth delta, then clamp to the engine's ±8 m budget.
+                    var delta = desired - current + smoothDelta[index];
+                    smoothDelta[index] = 0f;
+                    levelDelta[index] = Mathf.Clamp(levelDelta[index] + delta, -8f, 8f);
+                    modified[index] = true;
                 }
             }
 
-            return hits > 0 ? sum / hits : center.y;
+            FOperations.SetValue(comp, (int)FOperations.GetValue(comp) + 1);
+            FLastOpPoint.SetValue(comp, worldTarget);
+            FLastOpRadius.SetValue(comp, reach);
         }
+
 
         /// <summary>Every TerrainComp whose zone is touched by the given reach, created if missing.</summary>
         private static List<TerrainComp> CollectTerrainComps(Vector3 center, float reach)
@@ -444,8 +436,6 @@ namespace AstvardServerMod
             SetActive(TerrainHint, admin && MenuState == StateTerrainForm);
             SetActive(RadiusInput, admin && MenuState == StateTerrainForm);
             SetActive(HeightInput, admin && MenuState == StateTerrainForm);
-            SetActive(SmoothInput, admin && MenuState == StateTerrainForm);
-            SetActive(SmoothPowerInput, admin && MenuState == StateTerrainForm);
             SetActive(ApplyButton, admin && MenuState == StateTerrainForm);
 
             SetActive(BackButton, admin && MenuState >= StateTerrain);
