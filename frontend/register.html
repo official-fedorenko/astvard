@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Регистрация — Astvard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1><a href="/">Astvard</a></h1>
+  </header>
+  <main>
+    <form class="card" id="register-form">
+      <h2>Регистрация</h2>
+      <label>Никнейм<input type="text" name="nickname" required></label>
+      <label>Email<input type="email" name="email" required></label>
+      <label>Пароль<input type="password" name="password" required minlength="6"></label>
+      <button type="submit">Зарегистрироваться</button>
+      <p class="error" id="error"></p>
+      <p>Уже есть аккаунт? <a href="/login.html">Войти</a></p>
+    </form>
+  </main>
+  <script src="/common.js"></script>
+  <script src="/register.js"></script>
+</body>
+</html>
