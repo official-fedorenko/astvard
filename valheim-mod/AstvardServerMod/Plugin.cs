@@ -28,6 +28,10 @@ namespace AstvardServerMod
         private const int StatePlatforms = 9;   // готовые платформы
         private const int StateHouses = 10;     // категории домов
         private const int StateStarterHouses = 11; // стартовые дома
+        private const int StateRepair = 12;     // радиус починки + применить
+        private const int StateKitchens = 13;   // категории кухонь
+        private const int StateStarterKitchens = 14; // стартовые кухни
+        private const int StateProcessing = 15; // переработка
 
         internal static ManualLogSource Log;
         internal static GameObject Panel;
@@ -57,11 +61,21 @@ namespace AstvardServerMod
         internal static GameObject StarterHousesButton;
         internal static GameObject PlatformTemplateButton;
         internal static GameObject StarterHouse1Button;
+        internal static GameObject KitchensCategoryButton;
+        internal static GameObject StarterKitchensButton;
+        internal static GameObject KitchenFullButton;
+        internal static GameObject ProcessingCategoryButton;
+        internal static GameObject SmelterHallButton;
+        internal static GameObject SnapButton;
         internal static GameObject CheatsButton;
         internal static GameObject TodButton;
         internal static GameObject TodHint;
         internal static GameObject TodInput;
         internal static GameObject TodApplyButton;
+        internal static GameObject RepairButton;
+        internal static GameObject RepairHint;
+        internal static GameObject RepairRadiusInput;
+        internal static GameObject RepairApplyButton;
 
         internal static bool IsAdminUnlocked;
         internal static bool IsInfoShown;
@@ -91,9 +105,30 @@ namespace AstvardServerMod
         private static float _placeHeight;
 
         // How far ahead of the player the preview floats.
-        private const float PlacementDistance = 8f;
+        private const float PlacementDistance = 11f;
         private const float RotationStep = 22.5f;
         private const float HeightStep = 0.5f;
+
+        /// <summary>Whether the preview latches onto nearby built pieces.</summary>
+        internal static bool IsSnapEnabled;
+
+        // How close two snap points must come before the preview jumps to meet
+        // them, how often the surrounding points are re-gathered, and the cell
+        // size used to fold coincident points together.
+        private const float SnapDistance = 2f;
+        private const float SnapCacheInterval = 0.25f;
+        private const float SnapDedupeCell = 0.05f;
+
+        /// <summary>Preview snap points in root-local space, gathered once per preview.</summary>
+        private static readonly List<Vector3> GhostSnapLocal = new List<Vector3>();
+
+        /// <summary>Built snap points around the preview, bucketed by grid cell.</summary>
+        private static readonly Dictionary<long, List<Vector3>> SnapGrid = new Dictionary<long, List<Vector3>>();
+
+        private static readonly List<Transform> SnapTransforms = new List<Transform>();
+        private static readonly List<Piece> SnapPieces = new List<Piece>();
+        private static float _snapCacheTime = float.NegativeInfinity;
+        private static float _ghostRadius = 1f;
 
         // How many pieces go up per tick, and how long a tick lasts.
         private const int PiecesPerBatch = 5;
@@ -213,6 +248,22 @@ namespace AstvardServerMod
 
             TodApplyButton = MakeButton(gui, "Установить", ApplyTimeOfDay);
 
+            RepairButton = MakeButton(gui, "Починить всё", () =>
+            {
+                MenuState = StateRepair;
+                RefreshMenu();
+            });
+
+            RepairHint = MakeText(gui, "Радиус (м).\nЧинит все постройки вокруг\nи заправляет костры, факелы,\nпечи и плавильни.");
+
+            RepairRadiusInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "радиус, напр. 20", 16, 160f, 32f);
+            AddFixedSize(RepairRadiusInput, 160f, 32f);
+
+            RepairApplyButton = MakeButton(gui, "Починить", RunRepair);
+
             TerrainButton = MakeButton(gui, "Рельеф", () =>
             {
                 MenuState = StateTerrain;
@@ -276,6 +327,14 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            SnapButton = MakeButton(gui, "Прилипание", () =>
+            {
+                IsSnapEnabled = !IsSnapEnabled;
+                UpdateSnapButtonLabel();
+                Log.LogInfo($"[AstvardServerMod] Snapping: {IsSnapEnabled}");
+            });
+            UpdateSnapButtonLabel();
+
             PlatformsCategoryButton = MakeButton(gui, "Платформы", () =>
             {
                 MenuState = StatePlatforms;
@@ -308,7 +367,39 @@ namespace AstvardServerMod
                 InventoryGui.instance?.Hide();
             });
 
-            CopyHint = MakeText(gui, "Радиус (м).\nКопировать — проекция перед\nтобой, ЛКМ строит, Esc отменяет.\nСкопировать — чертёж в файл.");
+            KitchensCategoryButton = MakeButton(gui, "Кухни", () =>
+            {
+                MenuState = StateKitchens;
+                RefreshMenu();
+            });
+
+            StarterKitchensButton = MakeButton(gui, "Стартовые", () =>
+            {
+                MenuState = StateStarterKitchens;
+                RefreshMenu();
+            });
+
+            KitchenFullButton = MakeButton(gui, "Полная", () =>
+            {
+                if (!LoadTemplate(Templates.KitchenFull, "Полная кухня")) return;
+                StartPlacement();
+                InventoryGui.instance?.Hide();
+            });
+
+            ProcessingCategoryButton = MakeButton(gui, "Переработка", () =>
+            {
+                MenuState = StateProcessing;
+                RefreshMenu();
+            });
+
+            SmelterHallButton = MakeButton(gui, "Плавильня", () =>
+            {
+                if (!LoadTemplate(Templates.SmelterHall, "Плавильня")) return;
+                StartPlacement();
+                InventoryGui.instance?.Hide();
+            });
+
+            CopyHint = MakeText(gui, "Радиус (м).\nКопировать — проекция перед\nтобой, ЛКМ строит, Esc отменяет.\nQ/E — поворот, Shift+Q/E — высота.\nСкопировать — чертёж в файл.");
 
             CopyRadiusInput = gui.CreateInputField(
                 Panel.transform,
@@ -322,10 +413,12 @@ namespace AstvardServerMod
             {
                 if (MenuState == StateTerrainForm) MenuState = StateTerrain;
                 else if (MenuState == StateCopyForm) MenuState = StateBuild;
-                else if (MenuState == StateTod) MenuState = StateCheats;
+                else if (MenuState == StateTod || MenuState == StateRepair) MenuState = StateCheats;
                 else if (MenuState == StateTemplates) MenuState = StateBuild;
-                else if (MenuState == StatePlatforms || MenuState == StateHouses) MenuState = StateTemplates;
+                else if (MenuState == StatePlatforms || MenuState == StateHouses ||
+                         MenuState == StateKitchens || MenuState == StateProcessing) MenuState = StateTemplates;
                 else if (MenuState == StateStarterHouses) MenuState = StateHouses;
+                else if (MenuState == StateStarterKitchens) MenuState = StateKitchens;
                 else MenuState = StateAdmin;
                 RefreshMenu();
             });
@@ -344,6 +437,12 @@ namespace AstvardServerMod
             go.GetComponent<Button>().onClick.AddListener(onClick);
             go.SetActive(false);
             return go;
+        }
+
+        private static void UpdateSnapButtonLabel()
+        {
+            var label = SnapButton != null ? SnapButton.GetComponentInChildren<Text>() : null;
+            if (label != null) label.text = IsSnapEnabled ? "Прилипание: вкл" : "Прилипание: выкл";
         }
 
         private GameObject MakeText(GUIManager gui, string text)
@@ -377,6 +476,122 @@ namespace AstvardServerMod
             env.m_debugTime = value / 10f;
 
             Log.LogInfo($"[AstvardServerMod] Time of day set to {value} ({env.m_debugTime:F2}).");
+        }
+
+        // CookingStation and Smelter keep their fuel setter private, unlike
+        // Fireplace — both just write the ZDO, so calling them is safe.
+        private static readonly System.Reflection.MethodInfo MCookingSetFuel =
+            AccessTools.Method(typeof(CookingStation), "SetFuel");
+        private static readonly System.Reflection.MethodInfo MSmelterSetFuel =
+            AccessTools.Method(typeof(Smelter), "SetFuel");
+
+        /// <summary>
+        /// Repairs every damaged structure around the player and tops up
+        /// everything that burns fuel. Repair goes through WearNTear's own
+        /// Repair(), so the health change is replicated the same way a hammer
+        /// swing would do it — no ZDO is written behind the game's back.
+        /// Ownership is claimed first: Repair() fires an RPC at the owner, and a
+        /// piece nobody owns would otherwise swallow it silently.
+        /// </summary>
+        private static void RunRepair()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null) return;
+
+            var radius = Mathf.Clamp(ParseField(RepairRadiusInput, 20f), 1f, 200f);
+            var origin = player.transform.position;
+            var sqrRadius = radius * radius;
+
+            var repaired = 0;
+            var skipped = 0;
+
+            // The list is live and Repair() can spawn effects, so iterate a copy.
+            foreach (var wear in WearNTear.GetAllInstances().ToList())
+            {
+                if (wear == null) continue;
+                if ((wear.transform.position - origin).sqrMagnitude > sqrRadius) continue;
+
+                var nview = wear.GetComponent<ZNetView>();
+                if (nview == null || !nview.IsValid()) continue;
+                if (wear.GetHealthPercentage() >= 1f) continue;
+
+                if (!nview.IsOwner()) nview.ClaimOwnership();
+
+                if (wear.Repair()) repaired++;
+                else skipped++;
+            }
+
+            var filled = RefuelAround(origin, radius);
+
+            string message;
+            if (repaired == 0 && filled == 0) message = "Всё целое и заправлено";
+            else if (filled == 0) message = $"Починено построек: {repaired}";
+            else if (repaired == 0) message = $"Заправлено: {filled}";
+            else message = $"Починено: {repaired}, заправлено: {filled}";
+
+            player.Message(MessageHud.MessageType.Center, message);
+
+            Log.LogInfo($"[AstvardServerMod] Repair r={radius} -> {repaired} repaired, " +
+                        $"{skipped} skipped, {filled} refuelled.");
+        }
+
+        /// <summary>
+        /// Tops up everything burning fuel nearby: fireplaces (torches, campfires,
+        /// hearths, braziers), fuelled cooking stations and smelters. Only the
+        /// fuel is filled — a smelter still needs its own ore, since deciding what
+        /// it should be smelting is not ours to make.
+        /// </summary>
+        private static int RefuelAround(Vector3 origin, float radius)
+        {
+            var pieces = new List<Piece>();
+            Piece.GetAllPiecesInRadius(origin, radius, pieces);
+
+            var filled = 0;
+            foreach (var piece in pieces)
+            {
+                if (piece == null) continue;
+
+                var fireplace = piece.GetComponentInChildren<Fireplace>();
+                if (fireplace != null && !fireplace.m_infiniteFuel &&
+                    ClaimForRefuel(fireplace, fireplace.m_maxFuel) != null)
+                {
+                    // Fireplace replicates the change itself, no ZDO poking needed.
+                    fireplace.SetFuel(fireplace.m_maxFuel);
+                    filled++;
+                }
+
+                var cooking = piece.GetComponentInChildren<CookingStation>();
+                if (cooking != null && cooking.m_useFuel &&
+                    SetFuelDirect(cooking, MCookingSetFuel, cooking.m_maxFuel)) filled++;
+
+                var smelter = piece.GetComponentInChildren<Smelter>();
+                if (smelter != null && smelter.m_maxFuel > 0 &&
+                    SetFuelDirect(smelter, MSmelterSetFuel, smelter.m_maxFuel)) filled++;
+            }
+
+            return filled;
+        }
+
+        /// <summary>
+        /// Returns the station's view once it is owned locally and actually short
+        /// on fuel, or null when there is nothing to do.
+        /// </summary>
+        private static ZNetView ClaimForRefuel(Component station, float max)
+        {
+            var nview = station.GetComponentInParent<ZNetView>();
+            if (nview == null || !nview.IsValid()) return null;
+            if (nview.GetZDO().GetFloat(ZDOVars.s_fuel, 0f) >= max) return null;
+
+            if (!nview.IsOwner()) nview.ClaimOwnership();
+            return nview;
+        }
+
+        /// <summary>Fills a station whose own SetFuel is private and owner-only.</summary>
+        private static bool SetFuelDirect(Component station, System.Reflection.MethodInfo setFuel, float max)
+        {
+            if (setFuel == null || ClaimForRefuel(station, max) == null) return false;
+            setFuel.Invoke(station, new object[] { max });
+            return true;
         }
 
         /// <summary>Parses stored blueprint lines into the clipboard.</summary>
@@ -475,6 +690,12 @@ namespace AstvardServerMod
             foreach (var piece in pieces)
             {
                 if (piece == null) continue;
+
+                // A preview's pieces register themselves in the same global list
+                // as real ones, so without this a copy taken while a ghost is up
+                // would swallow the ghost along with the building.
+                if (GhostRoot != null && piece.transform.IsChildOf(GhostRoot.transform)) continue;
+
                 var prefabName = Utils.GetPrefabName(piece.gameObject);
                 if (string.IsNullOrEmpty(prefabName)) continue;
 
@@ -628,6 +849,161 @@ namespace AstvardServerMod
             yaw = Mathf.Round(yaw / RotationStep) * RotationStep;
 
             GhostRoot.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
+
+            if (!IsSnapEnabled) return;
+
+            // What is built nearby barely changes between frames, so it is
+            // gathered on a timer while the pair search runs every frame.
+            if (Time.time - _snapCacheTime > SnapCacheInterval)
+            {
+                _snapCacheTime = Time.time;
+                RefreshSnapGrid(position);
+            }
+
+            if (TryFindSnapOffset(out var snapOffset))
+                GhostRoot.transform.position += snapOffset;
+        }
+
+        /// <summary>
+        /// Collects the snap points of everything built around the preview into a
+        /// grid, so the per-frame search only looks at the handful of points that
+        /// could possibly be in range instead of all of them.
+        /// </summary>
+        private static void RefreshSnapGrid(Vector3 centre)
+        {
+            SnapGrid.Clear();
+            SnapTransforms.Clear();
+            SnapPieces.Clear();
+
+            // This goes through an overlap test, and the preview's colliders are
+            // disabled, so the preview can never find and latch onto itself.
+            Piece.GetSnapPoints(centre, _ghostRadius + SnapDistance, SnapTransforms, SnapPieces);
+
+            foreach (var point in SnapTransforms)
+            {
+                if (point == null) continue;
+                var world = point.position;
+                var key = CellKey(world, SnapDistance);
+                if (!SnapGrid.TryGetValue(key, out var bucket))
+                {
+                    bucket = new List<Vector3>();
+                    SnapGrid[key] = bucket;
+                }
+                bucket.Add(world);
+            }
+        }
+
+        /// <summary>
+        /// Finds the shortest jump that brings one of the preview's snap points
+        /// onto a built one. Returns false when nothing is within reach, which
+        /// leaves placement free-hand.
+        /// </summary>
+        private static bool TryFindSnapOffset(out Vector3 offset)
+        {
+            offset = Vector3.zero;
+            if (SnapGrid.Count == 0 || GhostSnapLocal.Count == 0) return false;
+
+            var root = GhostRoot.transform;
+            var bestSqr = SnapDistance * SnapDistance;
+            var found = false;
+
+            foreach (var local in GhostSnapLocal)
+            {
+                var point = root.TransformPoint(local);
+                var cx = Mathf.FloorToInt(point.x / SnapDistance);
+                var cy = Mathf.FloorToInt(point.y / SnapDistance);
+                var cz = Mathf.FloorToInt(point.z / SnapDistance);
+
+                // A cell is one snap distance across, so a match can only sit in
+                // this cell or one of its 26 neighbours.
+                for (var dx = -1; dx <= 1; dx++)
+                for (var dy = -1; dy <= 1; dy++)
+                for (var dz = -1; dz <= 1; dz++)
+                {
+                    if (!SnapGrid.TryGetValue(Key(cx + dx, cy + dy, cz + dz), out var bucket)) continue;
+
+                    foreach (var world in bucket)
+                    {
+                        var delta = world - point;
+                        var sqr = delta.sqrMagnitude;
+                        if (sqr >= bestSqr) continue;
+
+                        bestSqr = sqr;
+                        offset = delta;
+                        found = true;
+                    }
+                }
+            }
+
+            return found;
+        }
+
+        /// <summary>Reads the preview's own snap points, in root-local space.</summary>
+        private static void CollectGhostSnapPoints()
+        {
+            GhostSnapLocal.Clear();
+            SnapGrid.Clear();
+            _snapCacheTime = float.NegativeInfinity;
+            _ghostRadius = 1f;
+            if (GhostRoot == null) return;
+
+            var root = GhostRoot.transform;
+            var points = new List<Transform>();
+
+            foreach (var ghost in Ghosts)
+            {
+                if (ghost == null) continue;
+
+                // Piece.GetSnapPoints only walks tagged child transforms, so it
+                // still works on a preview whose components are all switched off.
+                var piece = ghost.GetComponent<Piece>();
+                if (piece != null)
+                {
+                    points.Clear();
+                    piece.GetSnapPoints(points);
+                    foreach (var point in points)
+                        if (point != null) GhostSnapLocal.Add(root.InverseTransformPoint(point.position));
+                }
+
+                _ghostRadius = Mathf.Max(_ghostRadius, ghost.transform.localPosition.magnitude);
+            }
+
+            DedupePoints(GhostSnapLocal);
+            Log.LogInfo($"[AstvardServerMod] Preview snap points: {GhostSnapLocal.Count}, radius {_ghostRadius:F1}");
+        }
+
+        /// <summary>
+        /// Folds points that land in the same tiny cell into one. Neighbouring
+        /// pieces share their corners, so without this a big blueprint carries
+        /// several times more snap points than it has distinct positions.
+        /// </summary>
+        private static void DedupePoints(List<Vector3> points)
+        {
+            var seen = new HashSet<long>();
+            var write = 0;
+
+            for (var read = 0; read < points.Count; read++)
+            {
+                var point = points[read];
+                if (!seen.Add(CellKey(point, SnapDedupeCell))) continue;
+                points[write++] = point;
+            }
+
+            points.RemoveRange(write, points.Count - write);
+        }
+
+        private static long CellKey(Vector3 point, float cell)
+        {
+            return Key(Mathf.FloorToInt(point.x / cell),
+                       Mathf.FloorToInt(point.y / cell),
+                       Mathf.FloorToInt(point.z / cell));
+        }
+
+        /// <summary>Packs a cell coordinate into one key; 21 bits an axis is far
+        /// more than Valheim's world ever needs.</summary>
+        private static long Key(int x, int y, int z)
+        {
+            return ((long)(x & 0x1FFFFF) << 42) | ((long)(y & 0x1FFFFF) << 21) | (long)(z & 0x1FFFFF);
         }
 
         private static string SaveBlueprint(float radius)
@@ -750,6 +1126,8 @@ namespace AstvardServerMod
                 ZNetView.m_forceDisableInit = false;
             }
 
+            CollectGhostSnapPoints();
+
             Log.LogInfo($"[AstvardServerMod] Ghost preview: {Ghosts.Count(g => g != null)}/{Clipboard.Count} pieces");
         }
 
@@ -758,6 +1136,9 @@ namespace AstvardServerMod
             foreach (var ghost in Ghosts)
                 if (ghost != null) Destroy(ghost);
             Ghosts.Clear();
+
+            GhostSnapLocal.Clear();
+            SnapGrid.Clear();
 
             if (GhostRoot != null) Destroy(GhostRoot);
             GhostRoot = null;
@@ -993,19 +1374,30 @@ namespace AstvardServerMod
             SetActive(GodButton, admin && MenuState == StateCheats);
             SetActive(DebugModeButton, admin && MenuState == StateCheats);
             SetActive(TodButton, admin && MenuState == StateCheats);
+            SetActive(RepairButton, admin && MenuState == StateCheats);
 
             SetActive(TodHint, admin && MenuState == StateTod);
             SetActive(TodInput, admin && MenuState == StateTod);
             SetActive(TodApplyButton, admin && MenuState == StateTod);
 
+            SetActive(RepairHint, admin && MenuState == StateRepair);
+            SetActive(RepairRadiusInput, admin && MenuState == StateRepair);
+            SetActive(RepairApplyButton, admin && MenuState == StateRepair);
+
             SetActive(CopyButton, admin && MenuState == StateBuild);
             SetActive(PasteButton, admin && MenuState == StateBuild);
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
+            SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(PlatformsCategoryButton, admin && MenuState == StateTemplates);
             SetActive(HousesCategoryButton, admin && MenuState == StateTemplates);
+            SetActive(KitchensCategoryButton, admin && MenuState == StateTemplates);
+            SetActive(ProcessingCategoryButton, admin && MenuState == StateTemplates);
+            SetActive(SmelterHallButton, admin && MenuState == StateProcessing);
             SetActive(PlatformTemplateButton, admin && MenuState == StatePlatforms);
             SetActive(StarterHousesButton, admin && MenuState == StateHouses);
             SetActive(StarterHouse1Button, admin && MenuState == StateStarterHouses);
+            SetActive(StarterKitchensButton, admin && MenuState == StateKitchens);
+            SetActive(KitchenFullButton, admin && MenuState == StateStarterKitchens);
 
             SetActive(CopyHint, admin && MenuState == StateCopyForm);
             SetActive(CopyRadiusInput, admin && MenuState == StateCopyForm);
