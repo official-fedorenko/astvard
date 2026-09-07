@@ -5,11 +5,7 @@ string dir = @"C:\Games\steamapps\common\Valheim dedicated server\valheim_server
 var resolver = new PathAssemblyResolver(Directory.GetFiles(dir, "*.dll"));
 using var mlc = new MetadataLoadContext(resolver);
 var asm = mlc.LoadFromAssemblyPath(Path.Combine(dir, "assembly_valheim.dll"));
-var hm = asm.GetTypes().First(x => x.Name == "Heightmap");
-foreach (var n in new[]{"WorldToVertex","GetHeight","GetWorldHeight","m_scale","m_width"})
-{
-    var m = hm.GetMethods(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance).FirstOrDefault(x=>x.Name==n);
-    if (m != null) Console.WriteLine($"method {n}: public={m.IsPublic} ({string.Join(",", m.GetParameters().Select(p=>p.ParameterType.Name+" "+p.Name))}) -> {m.ReturnType.Name}");
-    var f = hm.GetField(n, BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance);
-    if (f != null) Console.WriteLine($"field {n}: public={f.IsPublic} type={f.FieldType.Name}");
-}
+var t = asm.GetTypes().First(x => x.Name == "EnvMan");
+foreach (var f in t.GetFields(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance|BindingFlags.Static))
+    if (f.Name.ToLower().Contains("time") || f.Name.ToLower().Contains("debug") || f.Name.ToLower().Contains("day"))
+        Console.WriteLine($"EnvMan field: {(f.IsStatic?"static ":"")}{(f.IsPublic?"pub":"prv")} {f.FieldType.Name} {f.Name}");
