@@ -260,8 +260,8 @@ namespace AstvardServerMod
                             index * Module, straight);
             }
 
-            RampDown(survey, into, 0, -1f, rise);
-            RampDown(survey, into, last, 1f, rise);
+            var nearSteps = RampDown(survey, into, 0, -1f, rise);
+            var farSteps = RampDown(survey, into, last, 1f, rise);
 
             if (!IsBridgeCovered) return;
 
@@ -283,9 +283,14 @@ namespace AstvardServerMod
             // the deck it was measured on and leaves half of a wider one open to the sky,
             // which is exactly what a two-wide bridge came out looking like.
             //
-            // The ridge overhangs a module at each end: the top tread of each stair comes
-            // out under it, which is what makes an entrance read as one.
-            for (var i = -1; i <= last + 1; i++)
+            // The overhang matches the flight beneath it, tread for tread. A stair is
+            // 1.974 long against the ridge's 2, so one ridge per tread covers it with a
+            // little to spare; a fixed one-module overhang covered the top step and left
+            // a long flight walking out from under its own roof.
+            //
+            // The roof stays level while the stairs go down, so the headroom grows as
+            // they descend. Stepping it down with them would want its own measurements.
+            for (var i = -nearSteps; i <= last + farSteps; i++)
                 for (var w = 0; w < width; w++)
                     Add(into, RidgePrefab, w * Module - half, rise + RidgeRise,
                         i * Module, acrossBridge);
@@ -314,16 +319,18 @@ namespace AstvardServerMod
         /// One tread past the one that reaches, always. The last tread is what a person
         /// steps off onto, and it is better buried than a hand's breadth short.
         /// </summary>
-        private static void RampDown(BridgeSurvey survey, List<CopiedPiece> into, int index,
-                                     float sense, float rise)
+        /// <returns>How many treads went down, so the roof knows how far to reach.</returns>
+        private static int RampDown(BridgeSurvey survey, List<CopiedPiece> into, int index,
+                                    float sense, float rise)
         {
             var zones = ZoneSystem.instance;
-            if (zones == null) return;
+            if (zones == null) return 0;
 
             var end = _bridgeStart + survey.Facing * new Vector3(0f, 0f, index * Module);
             var outward = survey.Facing * new Vector3(0f, 0f, sense);
             var turn = sense > 0f ? Quaternion.identity : Quaternion.Euler(0f, 180f, 0f);
             var landed = false;
+            var treads = 0;
 
             for (var step = 0; step < MaxRampSteps; step++)
             {
@@ -333,6 +340,7 @@ namespace AstvardServerMod
                 var drop = RampDrop + step * RampRise;
 
                 Add(into, RampPrefab, 0f, rise - drop, index * Module + sense * reach, turn);
+                treads++;
 
                 // This iteration laid the spare, so the flight is done.
                 if (landed) break;
@@ -351,6 +359,8 @@ namespace AstvardServerMod
                 if (step == 0) break;
                 landed = true;
             }
+
+            return treads;
         }
 
         private static void Add(List<CopiedPiece> into, string prefab, float across, float up,
