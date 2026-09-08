@@ -17,7 +17,7 @@ namespace AstvardServerMod
         // Menu levels shown inside the Tab panel.
         private const int StateRoot = 0;      // Ознакомиться / Активировать
         private const int StateAdmin = 1;     // God / Debugmode / Рельеф
-        private const int StateTerrain = 2;   // Выровнять круг / квадрат
+        private const int StateTerrain = 2;   // Выровнять круг / квадрат — открыт всем
         private const int StateTerrainForm = 3; // радиус + высота + применить
         private const int StateBuild = 4;       // Копировать / Вставить
         private const int StateCopyForm = 5;    // радиус копирования + применить
@@ -783,6 +783,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
                 else if (MenuState == StateZoneOthers) MenuState = StateZone;
                 else if (MenuState == StateFeatures) MenuState = StateRoot;
+                else if (MenuState == StateTerrain) MenuState = StateRoot;
                 else if (MenuState == StateAdmin) MenuState = StateRoot;
                 else MenuState = StateAdmin;
                 RefreshMenu();
@@ -924,7 +925,7 @@ namespace AstvardServerMod
                 SetActive(ZoneButtons[i], admin && listing && i < VisibleZones.Count);
                 SetActive(OwnerButtons[i], admin && MenuState == StateZoneOthers && i < ZoneOwners.Count);
             }
-            SetActive(TerrainButton, admin && MenuState == StateAdmin);
+            SetActive(TerrainButton, MenuState == StateRoot);
             SetActive(BuildButton, admin && MenuState == StateAdmin);
 
             SetActive(GodButton, admin && MenuState == StateCheats);
@@ -1004,36 +1005,36 @@ namespace AstvardServerMod
             SetActive(CopyRadiusInput, admin && MenuState == StateCopyForm);
             SetActive(CopyApplyButton, admin && MenuState == StateCopyForm);
 
-            SetActive(LevelCircleButton, admin && MenuState == StateTerrain);
-            SetActive(RoadButton, admin && MenuState == StateTerrain);
-            SetActive(BridgeButton, admin && MenuState == StateTerrain);
-            SetActive(UndoButton, admin && MenuState == StateTerrain && CanUndoTerrain);
+            SetActive(LevelCircleButton, MenuState == StateTerrain);
+            SetActive(RoadButton, MenuState == StateTerrain);
+            SetActive(BridgeButton, MenuState == StateTerrain);
+            SetActive(UndoButton, MenuState == StateTerrain && CanUndoTerrain);
             UpdateUndoButtonLabel();
-            SetActive(RoadHint, admin && MenuState == StateRoad);
-            SetActive(RoadWidthInput, admin && MenuState == StateRoad);
-            SetActive(RoadCurveInput, admin && MenuState == StateRoad);
-            SetActive(RoadAreaInput, admin && MenuState == StateRoad);
-            SetActive(RoadAreaButton, admin && MenuState == StateRoad);
-            SetActive(RoadCancelButton, admin && MenuState == StateRoad && RoadInProgress);
-            SetActive(RoadStoneButton, admin && MenuState == StateRoad);
-            SetActive(RoadDirtButton, admin && MenuState == StateRoad);
-            SetActive(RoadLeftButton, admin && MenuState == StateRoad);
-            SetActive(RoadRightButton, admin && MenuState == StateRoad);
-            SetActive(RoadStartButton, admin && MenuState == StateRoad);
-            SetActive(RoadEndButton, admin && MenuState == StateRoad);
-            SetActive(LevelSquareButton, admin && MenuState == StateTerrain);
+            SetActive(RoadHint, MenuState == StateRoad);
+            SetActive(RoadWidthInput, MenuState == StateRoad);
+            SetActive(RoadCurveInput, MenuState == StateRoad);
+            SetActive(RoadAreaInput, MenuState == StateRoad);
+            SetActive(RoadAreaButton, MenuState == StateRoad);
+            SetActive(RoadCancelButton, MenuState == StateRoad && RoadInProgress);
+            SetActive(RoadStoneButton, MenuState == StateRoad);
+            SetActive(RoadDirtButton, MenuState == StateRoad);
+            SetActive(RoadLeftButton, MenuState == StateRoad);
+            SetActive(RoadRightButton, MenuState == StateRoad);
+            SetActive(RoadStartButton, MenuState == StateRoad);
+            SetActive(RoadEndButton, MenuState == StateRoad);
+            SetActive(LevelSquareButton, MenuState == StateTerrain);
 
-            SetActive(BridgeHint, admin && MenuState == StateBridge);
-            SetActive(BridgeWidthInput, admin && MenuState == StateBridge);
-            SetActive(BridgeLiftInput, admin && MenuState == StateBridge);
-            SetActive(BridgeStartButton, admin && MenuState == StateBridge);
-            SetActive(BridgeEndButton, admin && MenuState == StateBridge);
-            SetActive(BridgeCancelButton, admin && MenuState == StateBridge && BridgeInProgress);
+            SetActive(BridgeHint, MenuState == StateBridge);
+            SetActive(BridgeWidthInput, MenuState == StateBridge);
+            SetActive(BridgeLiftInput, MenuState == StateBridge);
+            SetActive(BridgeStartButton, MenuState == StateBridge);
+            SetActive(BridgeEndButton, MenuState == StateBridge);
+            SetActive(BridgeCancelButton, MenuState == StateBridge && BridgeInProgress);
 
-            SetActive(TerrainHint, admin && MenuState == StateTerrainForm);
-            SetActive(RadiusInput, admin && MenuState == StateTerrainForm);
-            SetActive(HeightInput, admin && MenuState == StateTerrainForm);
-            SetActive(ApplyButton, admin && MenuState == StateTerrainForm);
+            SetActive(TerrainHint, MenuState == StateTerrainForm);
+            SetActive(RadiusInput, MenuState == StateTerrainForm);
+            SetActive(HeightInput, MenuState == StateTerrainForm);
+            SetActive(ApplyButton, MenuState == StateTerrainForm);
 
             SetActive(BackButton, (admin || IsPlayerSection(MenuState)) && MenuState != StateRoot);
 
@@ -1082,7 +1083,9 @@ namespace AstvardServerMod
         // Pages every player can reach, admin or not.
         private static bool IsPlayerSection(int state)
         {
-            return state == StateFeatures || state == StateFill || state == StateCollect;
+            return state == StateFeatures || state == StateFill || state == StateCollect
+                   || state == StateTerrain || state == StateTerrainForm
+                   || state == StateRoad || state == StateBridge;
         }
 
         private static readonly string NEWLINE = "\n";

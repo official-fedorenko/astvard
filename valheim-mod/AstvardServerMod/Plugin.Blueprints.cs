@@ -330,6 +330,7 @@ namespace AstvardServerMod
         {
             UpdatePanelInputBlocking();
             UpdateRoadPreview();
+            UpdateBridgePreview();
 
             // Escape gets the road and the bridge out of the way too, and it has to be
             // read before the placement guard below — a marked start is not a placement.
