@@ -5,10 +5,10 @@ async function loadUsers() {
   const tbody = document.querySelector('#users-table tbody');
   tbody.innerHTML = users.map((u) => `
     <tr>
-      <td>${u.nickname}</td>
-      <td>${u.email}</td>
+      <td>${escapeHtml(u.nickname)}</td>
+      <td>${escapeHtml(u.email)}</td>
       <td>
-        <select data-id="${u.id}" class="role-select">
+        <select data-id="${escapeHtml(u.id)}" class="role-select">
           ${ROLES.map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
         </select>
       </td>
@@ -31,12 +31,12 @@ async function loadServers() {
   const tbody = document.querySelector('#servers-table tbody');
   tbody.innerHTML = servers.map((s) => `
     <tr>
-      <td>${s.name}</td>
-      <td>${s.host}:${s.port}</td>
+      <td>${escapeHtml(s.name)}</td>
+      <td>${escapeHtml(s.host)}:${escapeHtml(s.port)}</td>
       <td class="status ${s.is_online ? 'online' : 'offline'}">${s.is_online ? '● online' : '○ offline'}</td>
       <td>${s.is_online && s.players !== null ? `${s.players}/${s.max_players}` : '—'}</td>
       <td>${s.last_checked_at ? new Date(s.last_checked_at).toLocaleTimeString() : '—'}</td>
-      <td><button data-id="${s.id}" class="delete-server">Удалить</button></td>
+      <td><button data-id="${escapeHtml(s.id)}" class="delete-server">Удалить</button></td>
     </tr>
   `).join('');
 

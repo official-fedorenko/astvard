@@ -19,9 +19,9 @@
   });
 
   document.getElementById('profile-card').innerHTML = `
-    <h2>${user.nickname}</h2>
-    <p>Email: ${user.email}</p>
-    <p>Роль: ${user.role}</p>
+    <h2>${escapeHtml(user.nickname)}</h2>
+    <p>Email: ${escapeHtml(user.email)}</p>
+    <p>Роль: ${escapeHtml(user.role)}</p>
   `;
 
   const { servers } = await apiFetch('/api/servers');
@@ -32,7 +32,7 @@
   }
   list.innerHTML = servers.map((s) => `
     <div class="card server-row">
-      <strong>${s.name}</strong> — ${s.host}:${s.port}
+      <strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(s.host)}:${escapeHtml(s.port)}
       <span class="status ${s.is_online ? 'online' : 'offline'}">
         ${s.is_online ? `● online (${s.players}/${s.max_players})` : '○ offline'}
       </span>

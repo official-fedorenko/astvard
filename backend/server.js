@@ -28,8 +28,24 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+// decodeURIComponent throws URIError on a stray percent sign, and both call sites
+// sit in the synchronous part of the request listener, where a throw is an uncaught
+// exception and takes the process down. "GET /%" was enough.
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 function serveStatic(req, res) {
-  const urlPath = decodeURIComponent(req.url.split('?')[0]);
+  const urlPath = safeDecode(req.url.split('?')[0]);
+  if (urlPath === null) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Bad request');
+    return;
+  }
   const relativePath = urlPath === '/' ? '/index.html' : urlPath;
 
   const filePath = path.normalize(path.join(FRONTEND_DIR, relativePath));
@@ -77,26 +93,35 @@ router.delete('/api/admin/servers/:id', requireAdmin(admin.removeServer));
 router.post('/api/admin/servers/refresh', requireAdmin(admin.refreshServers));
 
 const server = http.createServer((req, res) => {
-  const pathname = req.url.split('?')[0];
+  // Everything here runs synchronously inside the listener, so a single throw
+  // would end the process rather than the request. Belt as well as braces: the
+  // two known throwers are handled above, and this catches the next one.
+  try {
+    const pathname = req.url.split('?')[0];
 
-  const cookies = parseCookies(req);
-  req.user = cookies.token ? verifyToken(cookies.token) : null;
+    const cookies = parseCookies(req);
+    req.user = cookies.token ? verifyToken(cookies.token) : null;
 
-  const match = router.match(req.method, pathname);
-  if (match) {
-    Promise.resolve(match.handler(req, res, match.params)).catch((err) => {
-      console.error(err);
-      sendJson(res, 500, { error: 'Internal server error' });
-    });
-    return;
+    const match = router.match(req.method, pathname);
+    if (match) {
+      Promise.resolve(match.handler(req, res, match.params)).catch((err) => {
+        console.error(err);
+        sendJson(res, 500, { error: 'Internal server error' });
+      });
+      return;
+    }
+
+    if (pathname.startsWith('/api/')) {
+      sendJson(res, 404, { error: 'Not found' });
+      return;
+    }
+
+    serveStatic(req, res);
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) sendJson(res, 400, { error: 'Bad request' });
+    else res.end();
   }
-
-  if (pathname.startsWith('/api/')) {
-    sendJson(res, 404, { error: 'Not found' });
-    return;
-  }
-
-  serveStatic(req, res);
 });
 
 server.listen(PORT, () => {

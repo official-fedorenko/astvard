@@ -46,6 +46,10 @@ function queryA2SInfo(host, port, timeoutMs = 2000) {
     socket.on('error', () => { clearTimeout(timer); finish({ online: false }); });
 
     socket.on('message', (msg) => {
+      // A throw in here is uncaught: the promise executor has already returned, so
+      // a five-byte read on a shorter reply would kill the process, not the query.
+      if (msg.length < 5) return;
+
       const type = msg.readUInt8(4);
       if (type === 0x41) {
         // Challenge response: resend query with the challenge bytes appended.

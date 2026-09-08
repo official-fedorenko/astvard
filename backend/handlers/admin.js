@@ -1,5 +1,5 @@
 const { readJsonBody } = require('../util/body');
-const { listUsers, updateUserRole } = require('../users');
+const { listUsers, updateUserRole, findUserById } = require('../users');
 const { listServers, createServer, deleteServer, refreshServerStatus, refreshAllServers } = require('../servers');
 
 const VALID_ROLES = ['player', 'admin', 'superadmin'];
@@ -33,7 +33,37 @@ async function patchUserRole(req, res, params) {
   if (!VALID_ROLES.includes(body.role)) {
     return sendJson(res, 400, { error: 'Некорректная роль' });
   }
-  const user = await updateUserRole(Number(params.id), body.role);
+
+  const id = Number(params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return sendJson(res, 400, { error: 'Некорректный идентификатор' });
+  }
+
+  // Without this an admin could simply promote themselves: the route is open to
+  // admins, and superadmin was just another valid string.
+  if (id === req.user.sub) {
+    return sendJson(res, 400, { error: 'Нельзя менять собственную роль' });
+  }
+
+  // The rank has to be read from the database, not from the caller's token — a
+  // token keeps the role it was signed with for a week after a demotion.
+  const actor = await findUserById(req.user.sub);
+  if (!actor) {
+    return sendJson(res, 401, { error: 'Не авторизован' });
+  }
+
+  const target = await findUserById(id);
+  if (!target) {
+    return sendJson(res, 404, { error: 'Пользователь не найден' });
+  }
+
+  // Only a superadmin may hand out that rank, or take it away.
+  const touchesSuperadmin = body.role === 'superadmin' || target.role === 'superadmin';
+  if (touchesSuperadmin && actor.role !== 'superadmin') {
+    return sendJson(res, 403, { error: 'Роль суперадмина меняет только суперадмин' });
+  }
+
+  const user = await updateUserRole(id, body.role);
   if (!user) return sendJson(res, 404, { error: 'Пользователь не найден' });
   sendJson(res, 200, { user });
 }

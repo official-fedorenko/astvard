@@ -7,7 +7,13 @@ function parseCookies(req) {
     if (idx === -1) continue;
     const key = part.slice(0, idx).trim();
     const value = part.slice(idx + 1).trim();
-    cookies[key] = decodeURIComponent(value);
+    // A malformed escape is the sender's problem, not a reason to stop serving:
+    // decodeURIComponent('%') throws, and this runs before any handler.
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
   }
   return cookies;
 }
