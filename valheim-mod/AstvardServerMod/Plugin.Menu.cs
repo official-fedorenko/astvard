@@ -26,9 +26,9 @@ namespace AstvardServerMod
         private const int StateTemplates = 8;      // категории, собранные из файлов
         private const int StateTemplateList = 9;   // шаблоны выбранной категории
         private const int StateTemplateEdit = 10;  // действия над одним шаблоном
-        private const int StateStarterHouses = 11; // свободно
+        private const int StateSharedList = 11;    // шаблоны, лежащие на сервере
         private const int StateRepair = 12;     // радиус починки + применить
-        private const int StateKitchens = 13;   // свободно
+        private const int StateSharedItem = 13; // действия над серверным шаблоном
         private const int StateStarterKitchens = 14; // свободно
         private const int StateProcessing = 15; // свободно
         private const int StateForceDelete = 16; // радиус очистки + применить
@@ -69,6 +69,12 @@ namespace AstvardServerMod
         internal static GameObject TemplateDeleteButton;
         internal static GameObject TemplateNameInput;
         internal static GameObject TemplateCategoryInput;
+        internal static GameObject TemplateShareButton;
+        internal static GameObject SharedButton;
+        internal static GameObject SharedHint;
+        internal static GameObject SharedTakeButton;
+        internal static GameObject SharedDeleteButton;
+        internal static readonly GameObject[] SharedButtons = new GameObject[MaxTemplateButtons];
 
         internal static GameObject CheatsButton;
 
@@ -581,6 +587,47 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            TemplateShareButton = MakeButton(gui, "Выложить на сервер", () =>
+            {
+                if (_editingTemplate == null) return;
+                PushTemplate(_editingTemplate);
+            });
+
+            SharedButton = MakeButton(gui, "Общие", () =>
+            {
+                MenuState = StateSharedList;
+                RequestSharedList();
+                RefreshMenu();
+            });
+
+            SharedHint = MakeText(gui, "");
+
+            for (var slot = 0; slot < MaxTemplateButtons; slot++)
+            {
+                var index = slot;
+                SharedButtons[slot] = MakeButton(gui, "", () =>
+                {
+                    if (index >= SharedTemplates.Count) return;
+
+                    _selectedShared = SharedTemplates[index];
+                    MenuState = StateSharedItem;
+                    RefreshMenu();
+                });
+            }
+
+            SharedTakeButton = MakeButton(gui, "Забрать себе", () =>
+            {
+                TakeSharedTemplate(_selectedShared);
+            });
+
+            SharedDeleteButton = MakeButton(gui, "Удалить с сервера", () =>
+            {
+                DeleteSharedTemplate(_selectedShared);
+                _selectedShared = null;
+                MenuState = StateSharedList;
+                RefreshMenu();
+            });
+
             TemplateDeleteButton = MakeButton(gui, "Удалить", () =>
             {
                 if (_editingTemplate == null) return;
@@ -611,6 +658,8 @@ namespace AstvardServerMod
                 else if (MenuState == StateTemplates) MenuState = StateBuild;
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
                 else if (MenuState == StateTemplateEdit) MenuState = StateTemplateList;
+                else if (MenuState == StateSharedList) MenuState = StateTemplates;
+                else if (MenuState == StateSharedItem) MenuState = StateSharedList;
                 else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateFeatures;
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
@@ -773,6 +822,16 @@ namespace AstvardServerMod
             SetActive(TemplatePlaceButton, admin && MenuState == StateTemplateEdit);
             SetActive(TemplateRenameButton, admin && MenuState == StateTemplateEdit);
             SetActive(TemplateDeleteButton, admin && MenuState == StateTemplateEdit);
+            SetActive(TemplateShareButton, admin && MenuState == StateTemplateEdit);
+            SetActive(SharedButton, admin && MenuState == StateTemplates);
+            SetActive(SharedHint, admin && (MenuState == StateSharedList
+                                            || MenuState == StateSharedItem));
+            SetActive(SharedTakeButton, admin && MenuState == StateSharedItem);
+            SetActive(SharedDeleteButton, admin && MenuState == StateSharedItem);
+
+            for (var i = 0; i < MaxTemplateButtons; i++)
+                SetActive(SharedButtons[i], admin && MenuState == StateSharedList
+                                            && i < SharedTemplates.Count);
 
             var naming = MenuState == StateTemplateEdit || MenuState == StateCopyForm;
             SetActive(TemplateNameInput, admin && naming);

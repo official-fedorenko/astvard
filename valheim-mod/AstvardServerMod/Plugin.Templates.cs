@@ -37,6 +37,7 @@ namespace AstvardServerMod
 
         private static string _templateCategory = "";
         private static BlueprintTemplate _editingTemplate;
+        private static SharedTemplate _selectedShared;
         private static int _shownCategories;
         private static int _shownTemplates;
 
@@ -83,6 +84,45 @@ namespace AstvardServerMod
             }
 
             UpdateTemplateHints(categories.Count, shown.Count);
+            RebuildSharedViews();
+        }
+
+        /// <summary>Relabels the server-side list from whatever the server last sent.</summary>
+        private static void RebuildSharedViews()
+        {
+            for (var i = 0; i < MaxTemplateButtons; i++)
+            {
+                var label = SharedButtons[i] != null
+                    ? SharedButtons[i].GetComponentInChildren<UnityEngine.UI.Text>()
+                    : null;
+                if (label == null) continue;
+
+                label.text = i < SharedTemplates.Count
+                    ? $"{SharedTemplates[i].Name} ({SharedTemplates[i].Pieces})"
+                    : "";
+            }
+
+            var hint = SharedHint != null
+                ? SharedHint.GetComponentInChildren<UnityEngine.UI.Text>()
+                : null;
+            if (hint == null) return;
+
+            if (MenuState == StateSharedItem && _selectedShared != null)
+            {
+                hint.text = $"{_selectedShared.Name}{NEWLINE}{_selectedShared.Pieces} деталей, "
+                            + $"категория «{_selectedShared.Category}»."
+                            + (string.IsNullOrEmpty(_selectedShared.Author)
+                                ? ""
+                                : $"{NEWLINE}Выложил: {_selectedShared.Author}");
+                return;
+            }
+
+            hint.text = SharedTemplates.Count == 0
+                ? $"На сервере пусто.{NEWLINE}Открой свой шаблон и нажми{NEWLINE}«Выложить на сервер»."
+                : $"На сервере: {SharedTemplates.Count}."
+                  + (SharedTemplates.Count > MaxTemplateButtons
+                      ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
+                      : "");
         }
 
         private static void UpdateTemplateHints(int categoryCount, int shownCount)

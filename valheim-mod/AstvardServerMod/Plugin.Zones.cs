@@ -182,6 +182,8 @@ namespace AstvardServerMod
             rpc.Register<float, float, bool>(RpcZoneDel, OnZoneDel);
             rpc.Register(RpcZoneQuery, OnZoneQuery);
             rpc.Register<string, int>(RpcZoneList, OnZoneList);
+
+            RegisterTemplateRpcs();
         }
 
         /// <summary>
