@@ -584,14 +584,17 @@ namespace AstvardServerMod
         /// <summary>
         /// Walks a flight of stairs from the end of the deck down to the ground.
         ///
-        /// One stair covers a module of drop, which is all a bank level with the deck
-        /// ever needs — and exactly why a single one was not enough: a bank five metres
-        /// down got a step hanging in the air with no way up onto the bridge.
+        /// A flight is always laid, even where the bank is level with the deck. Skipping
+        /// it there looked reasonable and was not: the bank is level at the mark, and the
+        /// stair lands a module further out where it need not be.
         ///
-        /// Each tread is sampled against the ground under it rather than against the
-        /// bank at the deck, because the flight walks away from the bridge and the
-        /// ground goes on changing while it does. It stops at the first tread whose foot
-        /// reaches, and that one is allowed to sink the way the legs are.
+        /// The ground is asked about under each tread's foot, which is a module further
+        /// out than the tread's own position — asking under its middle is what left
+        /// treads hanging over a bank that keeps falling away, and no number of extra
+        /// steps would have fixed that, only moved where they hung.
+        ///
+        /// One tread past the one that reaches, always. The last tread is what a person
+        /// steps off onto, and it is better buried than a hand's breadth short.
         /// </summary>
         private static int Ramp(GameObject prefab, Vector3 end, Vector3 outward, float deck,
                                 long creator)
@@ -601,23 +604,24 @@ namespace AstvardServerMod
 
             var rotation = Quaternion.LookRotation(outward, Vector3.up);
             var placed = 0;
+            var landed = false;
 
             for (var step = 0; step < MaxRampSteps; step++)
             {
                 var at = end + outward * (Module * (step + 1));
                 var y = deck - RampDrop - step * Module;
 
-                // Nothing to walk down onto: the bank is already at deck height here.
-                if (step == 0 && zones.GetGroundHeight(at, out var first)
-                    && deck - first <= Module * 0.25f) return 0;
-
                 Spawn(prefab, new Vector3(at.x, y, at.z), rotation, creator);
                 placed++;
 
+                // This iteration laid the spare one, so the flight is done.
+                if (landed) break;
+
                 // The tread hangs from its middle like everything else, so its foot is
-                // half a module below the position it was given.
-                if (!zones.GetGroundHeight(at, out var ground)) break;
-                if (y - Module * 0.5f <= ground) break;
+                // half a module down and a whole one further out.
+                var foot = end + outward * (Module * (step + 2));
+                if (!zones.GetGroundHeight(foot, out var ground)) break;
+                if (y - Module * 0.5f <= ground) landed = true;
             }
 
             return placed;

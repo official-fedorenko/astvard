@@ -327,19 +327,22 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// How many deck sections a bridge will leave between legs when it has the
-        /// choice.
+        /// How far apart a bridge will leave its legs when it has the choice, in metres.
         ///
         /// Strength alone is a bad judge of this. The support rules let a shallow
-        /// crossing hold with legs eight sections apart, and what that builds is a deck
+        /// crossing hold with legs sixteen metres apart, and what that builds is a deck
         /// with almost nothing under it, planted wherever the riverbed happened to allow
         /// rather than at any spacing a person would choose. Both bridges built by hand
-        /// put a frame every three or four.
+        /// put a frame every six to eight.
+        ///
+        /// Kept in metres rather than in a count of sections, because metres are what the
+        /// walk actually compares and a count would have to be restated the moment a
+        /// section stops being two metres wide. Six is three of today's sections.
         ///
         /// It is a preference, not a rule: where nothing within reach can carry a leg it
         /// gives way rather than refusing a crossing that would have stood.
         /// </summary>
-        public const int MaxSectionsBetweenLegs = 4;
+        public const float MaxMetresBetweenLegs = 6f;
 
         /// <summary>
         /// Where a bridge stands its legs, and whether what is left between them holds.
@@ -408,7 +411,7 @@ namespace AstvardServerMod
                     if ((j - at) * step > allowed) continue;
 
                     stretch = j;
-                    if (j - at <= MaxSectionsBetweenLegs) reach = j;
+                    if ((j - at) * step <= MaxMetresBetweenLegs) reach = j;
                 }
 
                 if (reach < 0) reach = stretch;

@@ -129,7 +129,7 @@ public class BridgeTests
         supports.Add(ground.Length - 1);
 
         for (var i = 1; i < supports.Count; i++)
-            Assert.True(supports[i] - supports[i - 1] <= Geometry.MaxSectionsBetweenLegs,
+            Assert.True((supports[i] - supports[i - 1]) * 2f <= Geometry.MaxMetresBetweenLegs,
                 $"legs at {supports[i - 1]} and {supports[i]} are further apart than asked");
     }
 
@@ -152,8 +152,8 @@ public class BridgeTests
         var supports = new List<int> { 0 };
         supports.AddRange(plan.Piers);
         supports.Add(ground.Length - 1);
-        Assert.Contains(supports.Skip(1).Select((v, i) => v - supports[i]),
-                        gap => gap > Geometry.MaxSectionsBetweenLegs);
+        Assert.Contains(supports.Skip(1).Select((v, i) => (v - supports[i]) * 2f),
+                        gap => gap > Geometry.MaxMetresBetweenLegs);
     }
 
     [Fact]
