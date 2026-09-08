@@ -20,14 +20,35 @@ namespace AstvardServerMod
 
         internal static GameObject BridgeCancelButton;
 
+        internal static GameObject BridgeCoverButton;
+
         // Deck, leg and ramp are all the same two-metre module, which is what makes the
         // whole thing arithmetic rather than fitting: wood_floor is 2x2, and wood_pole2
         // stacks at exactly 2.0 — measured across nine captured blueprints, every one of
         // them a column of y, y+2, y+4.
+        // The wooden set. Stone and iron reach much further — iron spans 78 m where wood
+        // spans 16 — but each carries its own support table, so another material means
+        // another set of numbers in Geometry, not just another list of prefab names.
         private const string DeckPrefab = "wood_floor";
         private const string LegPrefab = "wood_pole2";
         private const string RampPrefab = "wood_stair";
+        private const string BeamPrefab = "wood_beam";
+        private const string RailPostPrefab = "wood_pole";
+        private const string RidgePrefab = "wood_roof_top";
+        private const string GablePrefab = "wood_wall_roof";
         private const float Module = 2f;
+
+        // Every rise here was measured off the covered bridge saved in game, whose deck
+        // sits at -0.5, rather than chosen. They chain because the pivots are central:
+        // the deck meets a one metre post, the post meets the beam, and a two metre post
+        // carries on from the beam to the ridge with nothing left over.
+        private const float BeamRise = 1f;
+        private const float RailPostRise = 0.5f;
+        private const float RoofPostRise = 2f;
+        private const float RidgeRise = 3f;
+
+        /// <summary>Whether a bridge gets its railing and roof, or is left open.</summary>
+        internal static bool IsBridgeCovered = true;
 
         // Both of these are pivot corrections, and both were measured off a bridge built
         // by hand rather than reasoned about. wood_pole2 hangs from its middle, so a leg
@@ -401,6 +422,8 @@ namespace AstvardServerMod
                 placed += Leg(legPrefab, centres[index], side, deck, survey.Ground[index],
                               width, facing, creator);
 
+            if (IsBridgeCovered) placed += Cover(survey, legs, creator);
+
             // A deck standing above its bank is a deck nobody can climb onto.
             placed += Ramp(rampPrefab, centres[0], -forward, deck, creator);
             placed += Ramp(rampPrefab, centres[last], forward, deck, creator);
@@ -438,6 +461,120 @@ namespace AstvardServerMod
                     var y = deck - LegTopDrop - p * Module;
                     Spawn(prefab, new Vector3(at.x, y, at.z) + side * offset, facing, creator);
                     placed++;
+                }
+            }
+
+            return placed;
+        }
+
+        private static void UpdateBridgeCoverLabel()
+        {
+            var label = BridgeCoverButton != null
+                ? BridgeCoverButton.GetComponentInChildren<Text>()
+                : null;
+            if (label != null) label.text = IsBridgeCovered ? "Крыша: вкл" : "Крыша: выкл";
+        }
+
+        /// <summary>
+        /// Puts the roof and its frame on: a beam down each side, a short post up to it
+        /// wherever a leg already stands, a taller one carrying on to the ridge, and the
+        /// ridge itself running a module past each end so the stairs come out covered.
+        ///
+        /// The frames stand over the legs rather than over the seams between deck pieces,
+        /// which is where the hand-built bridge put them. It is the same joint either
+        /// way, and it saves keeping a second row of positions that has to agree with the
+        /// first one.
+        ///
+        /// The ridge is a single line down the centre, which roofs a deck two metres
+        /// wide. Anything wider gets its rail and its ridge with open air between them:
+        /// a wide covered bridge wants roof slopes, and this design has none yet.
+        /// </summary>
+        private static int Cover(BridgeSurvey survey, List<int> legs, long creator)
+        {
+            var scene = ZNetScene.instance;
+            if (scene == null) return 0;
+
+            var beam = scene.GetPrefab(BeamPrefab);
+            var railPost = scene.GetPrefab(RailPostPrefab);
+            var roofPost = scene.GetPrefab(LegPrefab);
+            var ridge = scene.GetPrefab(RidgePrefab);
+            var gable = scene.GetPrefab(GablePrefab);
+
+            var centres = survey.Centres;
+            var deck = survey.Deck;
+            var facing = survey.Facing;
+            var side = facing * Vector3.right;
+            var forward = facing * Vector3.forward;
+            var edge = survey.Width * Module * 0.5f;
+            var last = centres.Count - 1;
+
+            var alongBridge = facing * Quaternion.Euler(0f, 90f, 0f);
+            var acrossBridge = facing * Quaternion.Euler(0f, -90f, 0f);
+            var placed = 0;
+
+            // A continuous beam down both edges, one piece per deck section.
+            if (beam != null)
+            {
+                for (var i = 0; i <= last; i++)
+                {
+                    foreach (var offset in new[] { -edge, edge })
+                    {
+                        var at = new Vector3(centres[i].x, deck + BeamRise, centres[i].z)
+                                 + side * offset;
+                        Spawn(beam, at, alongBridge, creator);
+                        placed++;
+                    }
+                }
+            }
+
+            // Posts only where a leg already stands, so what they carry has somewhere to
+            // put it down.
+            foreach (var index in legs)
+            {
+                foreach (var offset in new[] { -edge, edge })
+                {
+                    var foot = centres[index] + side * offset;
+
+                    if (railPost != null)
+                    {
+                        Spawn(railPost, new Vector3(foot.x, deck + RailPostRise, foot.z),
+                              facing, creator);
+                        placed++;
+                    }
+
+                    if (roofPost != null)
+                    {
+                        Spawn(roofPost, new Vector3(foot.x, deck + RoofPostRise, foot.z),
+                              facing, creator);
+                        placed++;
+                    }
+                }
+            }
+
+            // The ridge overhangs a module at each end: the top tread of each stair comes
+            // out under it, which is what makes an entrance read as one.
+            if (ridge != null)
+            {
+                for (var i = -1; i <= last + 1; i++)
+                {
+                    var at = centres[0] + forward * (i * Module);
+                    Spawn(ridge, new Vector3(at.x, deck + RidgeRise, at.z), acrossBridge, creator);
+                    placed++;
+                }
+            }
+
+            // Gables close the two ends. They are mirrored, which is why the near and far
+            // ones do not share a facing.
+            if (gable != null)
+            {
+                foreach (var offset in new[] { -edge, edge })
+                {
+                    var near = centres[0] - forward * Module + side * offset;
+                    Spawn(gable, new Vector3(near.x, deck, near.z), acrossBridge, creator);
+
+                    var far = centres[last] + forward * Module + side * offset;
+                    Spawn(gable, new Vector3(far.x, deck, far.z), alongBridge, creator);
+                    placed += 2;
                 }
             }
 

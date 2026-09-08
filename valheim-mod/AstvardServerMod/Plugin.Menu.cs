@@ -562,6 +562,14 @@ namespace AstvardServerMod
                 InputField.ContentType.DecimalNumber, "подъём, напр. 0", 16, 160f, 32f);
             AddFixedSize(BridgeLiftInput, 160f, 32f);
 
+            BridgeCoverButton = MakeButton(gui, "", () =>
+            {
+                IsBridgeCovered = !IsBridgeCovered;
+                UpdateBridgeCoverLabel();
+                Log.LogInfo($"[AstvardServerMod] Bridge covered: {IsBridgeCovered}");
+            });
+            UpdateBridgeCoverLabel();
+
             BridgeStartButton = MakeButton(gui, "Начать", MarkBridgeStart);
 
             BridgeEndButton = MakeButton(gui, "Построить", BuildBridge);
@@ -1027,6 +1035,7 @@ namespace AstvardServerMod
 
             SetActive(BridgeHint, MenuState == StateBridge);
             SetActive(BridgeWidthInput, MenuState == StateBridge);
+            SetActive(BridgeCoverButton, MenuState == StateBridge);
             SetActive(BridgeLiftInput, MenuState == StateBridge);
             SetActive(BridgeStartButton, MenuState == StateBridge);
             SetActive(BridgeEndButton, MenuState == StateBridge);
