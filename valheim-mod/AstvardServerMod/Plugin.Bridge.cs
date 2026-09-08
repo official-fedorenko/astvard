@@ -37,6 +37,11 @@ namespace AstvardServerMod
         private const float LegTopDrop = Module * 0.5f;
         private const float RampDrop = Module * 0.5f;
 
+        // A stair covers one module of drop over one module of run, so a bank further
+        // below the deck than that needs a flight rather than a step. Eight of them walk
+        // down sixteen metres, which is past the height any wooden leg can stand anyway.
+        private const int MaxRampSteps = 8;
+
         // Long enough for any crossing worth a tool, short enough that one press does not
         // put six hundred pieces into the world in a single frame.
         private const float MaxBridgeLength = 120f;
@@ -396,12 +401,9 @@ namespace AstvardServerMod
                 placed += Leg(legPrefab, centres[index], side, deck, survey.Ground[index],
                               width, facing, creator);
 
-            // A deck standing above its bank is a deck nobody can climb onto. A ramp goes
-            // one module out from each end, facing away from the bridge.
-            placed += Ramp(rampPrefab, centres[0] - forward * Module, -forward, deck,
-                           survey.Ground[0], creator);
-            placed += Ramp(rampPrefab, centres[last] + forward * Module, forward, deck,
-                           survey.Ground[last], creator);
+            // A deck standing above its bank is a deck nobody can climb onto.
+            placed += Ramp(rampPrefab, centres[0], -forward, deck, creator);
+            placed += Ramp(rampPrefab, centres[last], forward, deck, creator);
 
             return placed;
         }
@@ -443,17 +445,45 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Lays one ramp onto the end of the deck, if the deck stands high enough off the
-        /// bank there to need one. Flush with the ground it would only bury a stair.
+        /// Walks a flight of stairs from the end of the deck down to the ground.
+        ///
+        /// One stair covers a module of drop, which is all a bank level with the deck
+        /// ever needs — and exactly why a single one was not enough: a bank five metres
+        /// down got a step hanging in the air with no way up onto the bridge.
+        ///
+        /// Each tread is sampled against the ground under it rather than against the
+        /// bank at the deck, because the flight walks away from the bridge and the
+        /// ground goes on changing while it does. It stops at the first tread whose foot
+        /// reaches, and that one is allowed to sink the way the legs are.
         /// </summary>
-        private static int Ramp(GameObject prefab, Vector3 at, Vector3 outward, float deck,
-                                float ground, long creator)
+        private static int Ramp(GameObject prefab, Vector3 end, Vector3 outward, float deck,
+                                long creator)
         {
-            if (prefab == null || deck - ground <= Module * 0.25f) return 0;
+            var zones = ZoneSystem.instance;
+            if (prefab == null || zones == null) return 0;
 
-            Spawn(prefab, new Vector3(at.x, deck - RampDrop, at.z),
-                  Quaternion.LookRotation(outward, Vector3.up), creator);
-            return 1;
+            var rotation = Quaternion.LookRotation(outward, Vector3.up);
+            var placed = 0;
+
+            for (var step = 0; step < MaxRampSteps; step++)
+            {
+                var at = end + outward * (Module * (step + 1));
+                var y = deck - RampDrop - step * Module;
+
+                // Nothing to walk down onto: the bank is already at deck height here.
+                if (step == 0 && zones.GetGroundHeight(at, out var first)
+                    && deck - first <= Module * 0.25f) return 0;
+
+                Spawn(prefab, new Vector3(at.x, y, at.z), rotation, creator);
+                placed++;
+
+                // The tread hangs from its middle like everything else, so its foot is
+                // half a module below the position it was given.
+                if (!zones.GetGroundHeight(at, out var ground)) break;
+                if (y - Module * 0.5f <= ground) break;
+            }
+
+            return placed;
         }
 
         private static void Spawn(GameObject prefab, Vector3 at, Quaternion rotation, long creator)
