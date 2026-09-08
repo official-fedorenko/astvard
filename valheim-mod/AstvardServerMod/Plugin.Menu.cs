@@ -359,7 +359,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            WindHint = MakeText(gui, "Куда дует, в градусах:\n0 — север, 90 — восток,\n180 — юг, 270 — запад.\nСила 1-10.\nВидно только тебе.");
+            WindHint = MakeText(gui, "Куда дует, в градусах:\n0 — север, 90 — восток,\n180 — юг, 270 — запад.\nСила 1-10.\n«По направлению» — куда смотришь.\nВидно только тебе.");
 
             WindAngleInput = gui.CreateInputField(
                 Panel.transform,
@@ -374,6 +374,8 @@ namespace AstvardServerMod
             AddFixedSize(WindPowerInput, 160f, 32f);
 
             WindApplyButton = MakeButton(gui, "Установить", ApplyWind);
+
+            WindFacingButton = MakeButton(gui, "По направлению", ApplyWindFromFacing);
 
             WindResetButton = MakeButton(gui, "Вернуть обычный", ResetWind);
 
@@ -817,6 +819,16 @@ namespace AstvardServerMod
             return go;
         }
 
+        /// <summary>
+        /// Writes a value into a text box the way a player typing it would, so a field
+        /// and whatever a button just decided keep telling the same story.
+        /// </summary>
+        private static void SetField(GameObject inputGo, string text)
+        {
+            var field = inputGo != null ? inputGo.GetComponentInChildren<InputField>() : null;
+            if (field != null) field.text = text;
+        }
+
         private static float ParseField(GameObject inputGo, float fallback)
         {
             var field = inputGo != null ? inputGo.GetComponentInChildren<InputField>() : null;
@@ -901,6 +913,7 @@ namespace AstvardServerMod
             SetActive(WindAngleInput, admin && MenuState == StateWind);
             SetActive(WindPowerInput, admin && MenuState == StateWind);
             SetActive(WindApplyButton, admin && MenuState == StateWind);
+            SetActive(WindFacingButton, admin && MenuState == StateWind);
             SetActive(WindResetButton, admin && MenuState == StateWind);
 
             SetActive(EnvHint, admin && MenuState == StateEnv);

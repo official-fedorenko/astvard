@@ -38,6 +38,8 @@ namespace AstvardServerMod
 
         internal static GameObject WindApplyButton;
 
+        internal static GameObject WindFacingButton;
+
         internal static GameObject WindResetButton;
 
         internal static GameObject EnvButton;
@@ -180,6 +182,53 @@ namespace AstvardServerMod
         /// </summary>
         private static void ApplyWind()
         {
+            // Repeat rather than Clamp: 370 is the same bearing as 10, and a compass
+            // has no ends to bump into.
+            SetWind(Mathf.Repeat(ParseField(WindAngleInput, 0f), 360f),
+                    ParseField(WindPowerInput, 5f));
+        }
+
+        /// <summary>
+        /// Points the wind wherever the player is looking. The eye direction carries
+        /// pitch, so it is flattened to the ground plane first; look straight down and
+        /// there is no bearing left in it, and the body's own facing stands in.
+        ///
+        /// The bearing is written into the field as well as into the wind. Otherwise
+        /// the number on screen would go on describing the previous wind, and the next
+        /// press of "Установить" would quietly undo this one.
+        /// </summary>
+        private static void ApplyWindFromFacing()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null) return;
+
+            var look = player.GetLookDir();
+            var flat = new Vector3(look.x, 0f, look.z);
+
+            // Straight up or straight down: what is left horizontally is noise.
+            if (flat.sqrMagnitude < 0.0001f)
+            {
+                var forward = player.transform.forward;
+                flat = new Vector3(forward.x, 0f, forward.z);
+            }
+
+            if (flat.sqrMagnitude < 0.0001f) return;
+
+            // The game builds the wind as (sin a, 0, cos a), so the bearing is Atan2
+            // with x first — the argument order that reads backwards and is right.
+            // Rounded before it is used, so the field and the wind agree to the degree.
+            var angle = Mathf.Repeat(Mathf.Round(Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg), 360f);
+
+            SetField(WindAngleInput, ((int)angle).ToString());
+            SetWind(angle, ParseField(WindPowerInput, 5f));
+        }
+
+        /// <summary>
+        /// The one place the wind is actually set, so both buttons clamp the strength
+        /// the same way and report it in the same words.
+        /// </summary>
+        private static void SetWind(float angle, float power)
+        {
             var env = EnvMan.instance;
             if (env == null)
             {
@@ -187,11 +236,7 @@ namespace AstvardServerMod
                 return;
             }
 
-            // Repeat rather than Clamp: 370 is the same bearing as 10, and a compass
-            // has no ends to bump into.
-            var angle = Mathf.Repeat(ParseField(WindAngleInput, 0f), 360f);
-            var power = Mathf.Clamp(ParseField(WindPowerInput, 5f), 0f, 10f);
-
+            power = Mathf.Clamp(power, 0f, 10f);
             env.SetDebugWind(angle, power / 10f);
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
