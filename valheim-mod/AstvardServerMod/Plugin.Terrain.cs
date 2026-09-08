@@ -113,33 +113,31 @@ namespace AstvardServerMod
         private static float RoadSagitta(float length)
         {
             var curve = Mathf.Clamp(ParseField(RoadCurveInput, 0f), -10f, 10f);
-            return curve * length * 0.05f;
+            return Geometry.Sagitta(curve, length);
         }
 
         /// <summary>
         /// Samples the centreline. A quadratic Bezier only reaches half of its control
         /// offset, so the control point is pushed out twice the bulge we want.
         /// </summary>
+        /// <summary>
+        /// Samples the centreline. The curve itself lives in <see cref="Geometry"/>,
+        /// which has no Unity in it and can therefore be tested without the game;
+        /// this only carries the height across, which the paint never looks at.
+        /// </summary>
         private static void RoadPoints(Vector3 from, Vector3 to, float sagitta,
                                        float step, List<Vector3> into)
         {
             into.Clear();
 
-            var chord = new Vector3(to.x - from.x, 0f, to.z - from.z);
-            var length = chord.magnitude;
-            if (length < 0.01f) return;
+            var flat = Geometry.Bezier(new Vec2(from.x, from.z), new Vec2(to.x, to.z),
+                                       sagitta, step);
+            if (flat.Count == 0) return;
 
-            var side = new Vector3(-chord.z, 0f, chord.x).normalized;
-            var control = Vector3.Lerp(from, to, 0.5f) + side * (sagitta * 2f);
-
-            var span = length + Mathf.Abs(sagitta) * 2f;
-            var count = Mathf.Max(1, Mathf.CeilToInt(span / Mathf.Max(step, 0.1f)));
-
-            for (var i = 0; i <= count; i++)
+            for (var i = 0; i < flat.Count; i++)
             {
-                var t = (float)i / count;
-                var inv = 1f - t;
-                into.Add(inv * inv * from + 2f * inv * t * control + t * t * to);
+                var t = flat.Count == 1 ? 0f : (float)i / (flat.Count - 1);
+                into.Add(new Vector3(flat[i].X, Mathf.Lerp(from.y, to.y, t), flat[i].Z));
             }
         }
 
@@ -193,44 +191,26 @@ namespace AstvardServerMod
 
         // Mirrors Heightmap.WorldToVertexMask, and its inverse. Keeping both here means
         // the two can be read against each other instead of trusted separately.
+        // Mirrors Heightmap.WorldToVertexMask and its inverse; both are pinned by tests.
         private static int VertexAt(PaintTarget t, float world, float origin)
         {
-            return Mathf.FloorToInt((world - origin) / t.Scale + 0.5f) + t.Half;
+            return Geometry.VertexAt(world, origin, t.Scale, t.Half);
         }
 
         private static float WorldAt(PaintTarget t, int vertex, float origin)
         {
-            return origin + (vertex - t.Half) * t.Scale;
+            return Geometry.WorldAt(vertex, origin, t.Scale, t.Half);
         }
+
+        private static readonly List<Vec2> FlatPath = new List<Vec2>();
 
         private static float DistanceToPath(List<Vector3> path, int first, int last, float x, float z)
         {
-            if (last <= first)
-            {
-                var only = path[first];
-                return Mathf.Sqrt((x - only.x) * (x - only.x) + (z - only.z) * (z - only.z));
-            }
-
-            var best = float.MaxValue;
-            for (var k = first; k < last; k++)
-            {
-                var a = path[k];
-                var b = path[k + 1];
-
-                var abx = b.x - a.x;
-                var abz = b.z - a.z;
-                var lenSq = abx * abx + abz * abz;
-
-                var t = lenSq > 1e-6f
-                    ? Mathf.Clamp01(((x - a.x) * abx + (z - a.z) * abz) / lenSq)
-                    : 0f;
-
-                var dx = x - (a.x + abx * t);
-                var dz = z - (a.z + abz * t);
-                var d = dx * dx + dz * dz;
-                if (d < best) best = d;
-            }
-            return Mathf.Sqrt(best);
+            // The measurement is the whole reason a painted road is continuous, so it
+            // lives with the rest of the tested arithmetic rather than here.
+            FlatPath.Clear();
+            for (var i = 0; i < path.Count; i++) FlatPath.Add(new Vec2(path[i].x, path[i].z));
+            return Geometry.DistanceToPath(FlatPath, first, last, x, z);
         }
 
         /// <summary>
@@ -270,9 +250,7 @@ namespace AstvardServerMod
                     var distance = DistanceToPath(path, first, last, wx, wz);
                     if (distance > radius) continue;
 
-                    // Same shape as the game's brush: solid across most of the width
-                    // with the fade squeezed into the last sliver.
-                    var f = Mathf.Pow(1f - Mathf.Clamp01(distance / radius), 0.1f);
+                    var f = Geometry.Falloff(distance, radius);
 
                     var index = i * t.Size + j;
                     if (f <= t.Best[index]) continue;
