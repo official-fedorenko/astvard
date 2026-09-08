@@ -212,24 +212,34 @@ namespace AstvardServerMod
             => Plugin.AppendKeptZoneObjects(currentNearObjects);
     }
 
-    [HarmonyPatch(typeof(Player), "PlayerAttackInput")]
-    public static class SuppressAttackInputWhilePlacing
-    {
-        private static bool Prefix() => !Plugin.IsPlacing;
-    }
-
     /// <summary>
-    /// Backstop for the above: blocking the input handler alone still let attacks
-    /// through, so refuse the attack itself as well while placing.
+    /// Everything the player's input turns into goes through one call, so this is the
+    /// place to take pieces of it away while a preview is up.
+    ///
+    /// The two earlier patches — on PlayerAttackInput and StartAttack — did not hold.
+    /// The click that commits a build clears IsPlacing in our own Update, and MonoBehaviour
+    /// order is not fixed: the game's input often ran afterwards in the same frame, saw
+    /// placement already finished, and swung the axe. Hence the short window below, which
+    /// outlives the frame the click happened in.
+    ///
+    /// Auto-run was never covered at all. Q is bound to it, and Shift+Q is our height
+    /// control, so lowering a preview sent the character jogging off.
     /// </summary>
-    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.StartAttack))]
-    public static class SuppressStartAttackWhilePlacing
+    [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
+    public static class SuppressControlsWhilePlacing
     {
-        private static bool Prefix(Humanoid __instance, ref bool __result)
+        private static void Prefix(Player __instance, ref bool attack, ref bool attackHold,
+                                   ref bool secondaryAttack, ref bool secondaryAttackHold,
+                                   ref bool autoRun)
         {
-            if (!Plugin.IsPlacing || __instance != Player.m_localPlayer) return true;
-            __result = false;
-            return false;
+            if (__instance != Player.m_localPlayer) return;
+            if (!Plugin.PlacementHoldsInput) return;
+
+            attack = false;
+            attackHold = false;
+            secondaryAttack = false;
+            secondaryAttackHold = false;
+            autoRun = false;
         }
     }
 

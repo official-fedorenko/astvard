@@ -50,13 +50,36 @@ namespace AstvardServerMod
         /// <summary>True while a ghost is following the player, waiting to be placed.</summary>
         internal static bool IsPlacing;
 
+        // Placement ends the instant the click is read, but the game's own input may
+        // still run later in that same frame. Holding the block a moment longer is what
+        // stops the committing click from also being a swing.
+        private static float _inputHeldUntil;
+
+        internal static bool PlacementHoldsInput
+        {
+            get { return IsPlacing || Time.time < _inputHeldUntil; }
+        }
+
         // Placement adjustments driven by Q/E and shift+Q/E.
         private static float _placeYaw;
 
         private static float _placeHeight;
 
-        // How far ahead of the player the preview floats.
-        private const float PlacementDistance = 11f;
+        // How far ahead of the player the preview floats, unless the field says
+        // otherwise. Eleven metres clears an average build; a long hall wants more,
+        // and a single piece is easier to place close in.
+        private const float DefaultPlacementDistance = 11f;
+
+        internal static GameObject PlacementDistanceInput;
+
+        private static float PlacementDistance
+        {
+            get
+            {
+                return Mathf.Clamp(ParseField(PlacementDistanceInput, DefaultPlacementDistance),
+                    2f, 40f);
+            }
+        }
 
         private const float RotationStep = 22.5f;
 
@@ -319,6 +342,7 @@ namespace AstvardServerMod
             if (Input.GetMouseButtonDown(0) && !_building)
             {
                 IsPlacing = false;
+                _inputHeldUntil = Time.time + 0.3f;
                 StartCoroutine(BuildFromGhost(player));
             }
         }

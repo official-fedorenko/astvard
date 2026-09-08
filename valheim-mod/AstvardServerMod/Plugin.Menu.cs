@@ -494,6 +494,12 @@ namespace AstvardServerMod
             });
             UpdateLevelGroundButtonLabel();
 
+            PlacementDistanceInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "дистанция, напр. 11", 16, 160f, 32f);
+            AddFixedSize(PlacementDistanceInput, 160f, 32f);
+
             CopyButton = MakeButton(gui, "Копировать", () =>
             {
                 _copyToFile = false;
@@ -814,6 +820,7 @@ namespace AstvardServerMod
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
+            SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
             RebuildTemplateViews();
 
             SetActive(TemplateHint, admin && (MenuState == StateTemplates
