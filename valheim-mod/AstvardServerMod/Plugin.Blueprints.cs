@@ -275,6 +275,16 @@ namespace AstvardServerMod
         {
             UpdateRoadPreview();
 
+            // Escape gets the road out of the way too, and it has to be read before
+            // the placement guard below — a marked start is not a placement.
+            if (RoadInProgress && Input.GetKeyDown(KeyCode.Escape)
+                && !InventoryGui.IsVisible() && Chat.instance?.HasFocus() != true)
+            {
+                CancelRoad();
+                RefreshMenu();
+                return;
+            }
+
             if (!IsPlacing) return;
 
             var player = Player.m_localPlayer;

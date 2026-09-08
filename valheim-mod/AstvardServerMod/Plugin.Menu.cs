@@ -399,6 +399,12 @@ namespace AstvardServerMod
 
             ApplyButton = MakeButton(gui, "Применить", ApplyTerrainLevel);
 
+            UndoButton = MakeButton(gui, "", () =>
+            {
+                UndoTerrain();
+                RefreshMenu();
+            });
+
             RoadButton = MakeButton(gui, "Дорожка", () =>
             {
                 MenuState = StateRoad;
@@ -453,6 +459,12 @@ namespace AstvardServerMod
             RoadEndButton = MakeButton(gui, "Закончить", BuildRoad);
 
             RoadAreaButton = MakeButton(gui, "Вокруг меня", BuildArea);
+
+            RoadCancelButton = MakeButton(gui, "Отменить", () =>
+            {
+                CancelRoad();
+                RefreshMenu();
+            });
 
             BuildButton = MakeButton(gui, "Постройки", () =>
             {
@@ -780,11 +792,14 @@ namespace AstvardServerMod
 
             SetActive(LevelCircleButton, admin && MenuState == StateTerrain);
             SetActive(RoadButton, admin && MenuState == StateTerrain);
+            SetActive(UndoButton, admin && MenuState == StateTerrain && CanUndoTerrain);
+            UpdateUndoButtonLabel();
             SetActive(RoadHint, admin && MenuState == StateRoad);
             SetActive(RoadWidthInput, admin && MenuState == StateRoad);
             SetActive(RoadCurveInput, admin && MenuState == StateRoad);
             SetActive(RoadAreaInput, admin && MenuState == StateRoad);
             SetActive(RoadAreaButton, admin && MenuState == StateRoad);
+            SetActive(RoadCancelButton, admin && MenuState == StateRoad && RoadInProgress);
             SetActive(RoadStoneButton, admin && MenuState == StateRoad);
             SetActive(RoadDirtButton, admin && MenuState == StateRoad);
             SetActive(RoadStartButton, admin && MenuState == StateRoad);
@@ -797,6 +812,47 @@ namespace AstvardServerMod
             SetActive(ApplyButton, admin && MenuState == StateTerrainForm);
 
             SetActive(BackButton, (admin || IsPlayerSection(MenuState)) && MenuState >= StateTerrain);
+
+            KeepPanelOnScreen();
+        }
+
+        /// <summary>
+        /// Drags the panel back inside the screen after its size changes.
+        ///
+        /// The panel is draggable and resizes itself to whatever page is showing, and
+        /// those two together can lose it: drag it low, open a tall page, and the panel
+        /// grows off the bottom — including the strip you grab it by, so there is no way
+        /// left to drag it back. Clamping after every page change means it can always be
+        /// reached, and a panel taller than the screen pins to the top rather than
+        /// hanging past both edges.
+        /// </summary>
+        private static void KeepPanelOnScreen()
+        {
+            if (Panel == null || !Panel.activeInHierarchy) return;
+
+            var rect = Panel.GetComponent<RectTransform>();
+            var canvas = rect != null ? rect.parent as RectTransform : null;
+            if (rect == null || canvas == null) return;
+
+            // The size fitter only settles during layout, so ask for it now rather than
+            // clamping against the size the panel had on the previous page.
+            LayoutRebuilder.ForceRebuildLayoutImmediate(rect);
+
+            var size = rect.rect.size;
+            var half = canvas.rect.size * 0.5f;
+            var position = rect.anchoredPosition;
+
+            // Pivot sits at the top edge, so anchoredPosition.y is the top of the panel.
+            var top = half.y;
+            var bottom = -half.y + size.y;
+            position.y = Mathf.Clamp(position.y, Mathf.Min(bottom, top), top);
+
+            var margin = size.x * 0.5f;
+            var left = -half.x + margin;
+            var right = half.x - margin;
+            position.x = Mathf.Clamp(position.x, Mathf.Min(left, right), Mathf.Max(left, right));
+
+            rect.anchoredPosition = position;
         }
 
         // Pages every player can reach, admin or not.

@@ -44,6 +44,10 @@ namespace AstvardServerMod
 
         internal static GameObject RoadEndButton;
 
+        internal static GameObject RoadCancelButton;
+
+        internal static GameObject UndoButton;
+
         private static bool _terrainSquare;
 
         internal static bool IsLevelGroundEnabled;
@@ -70,6 +74,32 @@ namespace AstvardServerMod
         private static bool _roadPaved = true;
 
         private static bool _roadStarted;
+        private static bool _roadLaying;
+        private static bool _roadCancelled;
+
+        internal static bool RoadInProgress
+        {
+            get { return _roadStarted || _roadLaying; }
+        }
+
+        /// <summary>
+        /// Drops a marked start, and stops a road already going down. Laying happens
+        /// over several frames, so a road caught halfway keeps the part already painted
+        /// — undoing terrain is not something this can offer, and pretending otherwise
+        /// would be worse than stopping where it stands.
+        /// </summary>
+        internal static void CancelRoad()
+        {
+            var wasLaying = _roadLaying;
+
+            _roadCancelled = _roadLaying;
+            _roadStarted = false;
+            if (_roadPreview != null) _roadPreview.SetActive(false);
+            UpdateRoadHint();
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                wasLaying ? "Укладка остановлена" : "Отменено");
+        }
 
         private static Vector3 _roadStart;
 
@@ -80,7 +110,8 @@ namespace AstvardServerMod
 
             var kind = _roadPaved ? "каменная" : "земляная";
             label.text = _roadStarted
-                ? $"Кладка: {kind}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}и нажми «Закончить»."
+                ? $"Кладка: {kind}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
+                  + $"и нажми «Закончить».{NEWLINE}Esc — отменить."
                 : $"Кладка: {kind}.{NEWLINE}Встань в начало дорожки{NEWLINE}и нажми «Начать».";
         }
 
@@ -484,6 +515,12 @@ namespace AstvardServerMod
                                             float radius, Color paint, float length,
                                             float width, float scale, string kind)
         {
+            RecordTerrainUndo(kind == "area" ? "площадка" : "дорожка", comps,
+                path[path.Count / 2], length * 0.5f + radius + 16f);
+
+            _roadLaying = true;
+            _roadCancelled = false;
+
             var targets = new List<PaintTarget>();
             foreach (var comp in comps)
             {
@@ -494,6 +531,7 @@ namespace AstvardServerMod
             if (targets.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] Could not reach the paint mask.");
+                _roadLaying = false;
                 yield break;
             }
 
@@ -510,8 +548,15 @@ namespace AstvardServerMod
             var segments = Mathf.Max(1, path.Count - 1);
             var perStretch = Mathf.Max(1, Mathf.CeilToInt(segments / 20f));
 
+            var stopped = false;
             for (var first = 0; first < Mathf.Max(1, segments); first += perStretch)
             {
+                if (_roadCancelled)
+                {
+                    stopped = true;
+                    break;
+                }
+
                 var last = Mathf.Min(first + perStretch, path.Count - 1);
 
                 foreach (var target in targets)
@@ -531,12 +576,15 @@ namespace AstvardServerMod
                 foreach (var touched in target.Touched)
                     if (touched) painted++;
 
+            _roadLaying = false;
+            _roadCancelled = false;
             if (_roadPreview != null) _roadPreview.SetActive(false);
 
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                kind == "area"
-                    ? $"Площадка радиусом {length:F0} м"
-                    : $"Дорожка {length:F0} м, ширина {width:F1} м");
+            if (!stopped)
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    kind == "area"
+                        ? $"Площадка радиусом {length:F0} м"
+                        : $"Дорожка {length:F0} м, ширина {width:F1} м");
 
             Log.LogInfo($"[AstvardServerMod] {kind} {(_roadPaved ? "paved" : "dirt")} " +
                         $"{length:F1} m width {width:F1} brush={radius:F2} grid={scale:F2} " +
@@ -588,6 +636,8 @@ namespace AstvardServerMod
             // BlendLevel reads the terrain tool's own square/circle flag. The pad is
             // always round whatever the player last levelled by hand, so the flag is
             // borrowed and put back.
+            RecordTerrainUndo("площадка под постройку", comps, target, radius + blend);
+
             var wasSquare = _terrainSquare;
             _terrainSquare = false;
 
@@ -631,6 +681,8 @@ namespace AstvardServerMod
                 Log.LogWarning("[AstvardServerMod] No TerrainComp available for the area.");
                 return;
             }
+
+            RecordTerrainUndo("выравнивание", comps, target, reach);
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             foreach (var c in comps) BlendLevel(c, target, radius, blend);
