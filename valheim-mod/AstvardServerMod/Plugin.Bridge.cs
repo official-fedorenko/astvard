@@ -22,10 +22,6 @@ namespace AstvardServerMod
 
         internal static GameObject BridgeCoverButton;
 
-        // Deck, leg and ramp are all the same two-metre module, which is what makes the
-        // whole thing arithmetic rather than fitting: wood_floor is 2x2, and wood_pole2
-        // stacks at exactly 2.0 — measured across nine captured blueprints, every one of
-        // them a column of y, y+2, y+4.
         // The wooden set. Stone and iron reach much further — iron spans 78 m where wood
         // spans 16 — but each carries its own support table, so another material means
         // another set of numbers in Geometry, not just another list of prefab names.
@@ -38,18 +34,6 @@ namespace AstvardServerMod
         private const string GablePrefab = "wood_wall_roof";
         private const float Module = 2f;
 
-        // Every rise here was measured off the covered bridge saved in game, whose deck
-        // sits at -0.5, rather than chosen. They chain because the pivots are central:
-        // the deck meets a one metre post, the post meets the beam, and a two metre post
-        // carries on from the beam to the ridge with nothing left over.
-        private const float BeamRise = 1f;
-        private const float RailPostRise = 0.5f;
-        private const float RoofPostRise = 2f;
-        private const float RidgeRise = 3f;
-
-        /// <summary>Whether a bridge gets its railing and roof, or is left open.</summary>
-        internal static bool IsBridgeCovered = true;
-
         // Both of these are pivot corrections, and both were measured off a bridge built
         // by hand rather than reasoned about. wood_pole2 hangs from its middle, so a leg
         // put a whole module under the deck stops half a module short of it — which
@@ -58,14 +42,25 @@ namespace AstvardServerMod
         private const float LegTopDrop = Module * 0.5f;
         private const float RampDrop = Module * 0.5f;
 
-        // A stair covers one module of drop over one module of run, so a bank further
-        // below the deck than that needs a flight rather than a step. Eight of them walk
-        // down sixteen metres, which is past the height any wooden leg can stand anyway.
+        // Every rise here was measured off the covered bridge saved in game, whose deck
+        // sits at -0.5. They chain because the pivots are central: the deck meets a one
+        // metre post, the post meets the beam, and a two metre post carries on from the
+        // beam to the ridge with nothing left over.
+        private const float BeamRise = 1f;
+        private const float RailPostRise = 0.5f;
+        private const float RoofPostRise = 2f;
+        private const float RidgeRise = 3f;
+
+        // A stair covers one module of drop. Eight of them walk down sixteen metres,
+        // which is past the height any wooden leg can stand at anyway.
         private const int MaxRampSteps = 8;
 
         // Long enough for any crossing worth a tool, short enough that one press does not
         // put six hundred pieces into the world in a single frame.
         private const float MaxBridgeLength = 120f;
+
+        /// <summary>Whether a bridge gets its railing and roof, or is left open.</summary>
+        internal static bool IsBridgeCovered = true;
 
         private static Vector3 _bridgeStart;
 
@@ -81,7 +76,7 @@ namespace AstvardServerMod
             if (!_bridgeStarted) return;
 
             _bridgeStarted = false;
-            HideBridgePreview();
+            ClearBridgeGhost();
             UpdateBridgeHint();
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Отменено");
         }
@@ -106,10 +101,18 @@ namespace AstvardServerMod
 
             label.text = _bridgeStarted
                 ? $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
-                  + $"Жёлтая проекция — устоит,{NEWLINE}красная — нет.{NEWLINE}"
-                  + $"ЛКМ или «Построить».{NEWLINE}Esc — отменить."
+                  + $"Проекция белая — устоит,{NEWLINE}красная — нет.{NEWLINE}"
+                  + $"ЛКМ или «Построить». Esc — отменить."
                 : $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
                   + $"Встань на этом берегу{NEWLINE}и нажми «Начать».";
+        }
+
+        private static void UpdateBridgeCoverLabel()
+        {
+            var label = BridgeCoverButton != null
+                ? BridgeCoverButton.GetComponentInChildren<Text>()
+                : null;
+            if (label != null) label.text = IsBridgeCovered ? "Крыша: вкл" : "Крыша: выкл";
         }
 
         // ---------------- survey ----------------
@@ -117,13 +120,9 @@ namespace AstvardServerMod
         /// <summary>
         /// What a crossing from the marked start to here would come to: where every
         /// section lands, what is under it, and whether legs can be made to hold it.
-        ///
-        /// One method behind both the preview and the build, so what the projection
-        /// promises and what the button does cannot drift apart.
         /// </summary>
         private sealed class BridgeSurvey
         {
-            public readonly List<Vector3> Centres = new List<Vector3>();
             public readonly List<float> Ground = new List<float>();
             public Geometry.BridgePlan Plan;
             public float Deck;
@@ -190,7 +189,6 @@ namespace AstvardServerMod
                     return survey;
                 }
 
-                survey.Centres.Add(at);
                 survey.Ground.Add(height);
             }
 
@@ -198,119 +196,271 @@ namespace AstvardServerMod
             return survey;
         }
 
-        // ---------------- projection ----------------
+        // ---------------- layout ----------------
 
-        private static GameObject _bridgePreview;
-
-        private static LineRenderer _bridgeLine;
-
-        private static bool _bridgePreviewFailed;
-
-        private static float _bridgeSurveyAt;
-
-        private static BridgeSurvey _shownSurvey;
-
-        private static readonly List<Vector3> BridgeOutline = new List<Vector3>();
-
-        private static void HideBridgePreview()
+        /// <summary>
+        /// Every piece of the bridge, in the bridge's own frame: X across, Y measured
+        /// from the start mark, Z along. Exactly the shape a blueprint is kept in, and
+        /// for the same reason — a list of pieces relative to one origin can be shown as
+        /// a ghost and then built without either half working out its own geometry.
+        ///
+        /// That mattered here more than it does for a blueprint. The projection and the
+        /// build used to compute their own positions, and a bridge is not a fixed shape:
+        /// it changes with every step the player takes. Two answers to a moving question
+        /// drift apart, and the drift is invisible until something lands wrong.
+        /// </summary>
+        private static void Layout(BridgeSurvey survey, List<CopiedPiece> into)
         {
-            if (_bridgePreview != null) _bridgePreview.SetActive(false);
-            _shownSurvey = null;
+            into.Clear();
+            if (survey.Problem != null || survey.Plan == null) return;
+
+            var sections = survey.Ground.Count;
+            var last = sections - 1;
+            var width = survey.Width;
+            var rise = survey.Deck - _bridgeStart.y;
+            var half = (width - 1) * 0.5f * Module;
+            var edge = width * Module * 0.5f;
+
+            var straight = Quaternion.identity;
+            var alongBridge = Quaternion.Euler(0f, 90f, 0f);
+            var acrossBridge = Quaternion.Euler(0f, -90f, 0f);
+
+            for (var i = 0; i < sections; i++)
+                for (var w = 0; w < width; w++)
+                    Add(into, DeckPrefab, w * Module - half, rise, i * Module, straight);
+
+            // The banks carry legs too. A deck lifted over its own bank stands on one
+            // exactly as it stands on anything else, and leaving those out is how a
+            // bridge ends up hanging from its middle.
+            var legs = new List<int>(survey.Plan.Piers);
+            if (!legs.Contains(0)) legs.Insert(0, 0);
+            if (!legs.Contains(last)) legs.Add(last);
+
+            foreach (var index in legs)
+            {
+                var drop = survey.Deck - survey.Ground[index];
+
+                // Resting on the bank already: a pole here would push up through the deck.
+                if (drop <= Module * 0.5f) continue;
+
+                var poles = Mathf.CeilToInt(drop / Module);
+
+                // Always a pair, under the two outer edges of the deck rather than down
+                // its middle — which is how the same bridge gets built by hand, and it
+                // stands a narrow deck on two feet instead of balancing it on one.
+                foreach (var offset in new[] { -edge, edge })
+                    for (var p = 0; p < poles; p++)
+                        Add(into, LegPrefab, offset, rise - LegTopDrop - p * Module,
+                            index * Module, straight);
+            }
+
+            RampDown(survey, into, 0, -1f, rise);
+            RampDown(survey, into, last, 1f, rise);
+
+            if (!IsBridgeCovered) return;
+
+            // A continuous beam down both edges, one piece per deck section.
+            for (var i = 0; i < sections; i++)
+                foreach (var offset in new[] { -edge, edge })
+                    Add(into, BeamPrefab, offset, rise + BeamRise, i * Module, alongBridge);
+
+            // Posts only where a leg already stands, so what they carry has somewhere to
+            // put it down.
+            foreach (var index in legs)
+                foreach (var offset in new[] { -edge, edge })
+                {
+                    Add(into, RailPostPrefab, offset, rise + RailPostRise, index * Module, straight);
+                    Add(into, LegPrefab, offset, rise + RoofPostRise, index * Module, straight);
+                }
+
+            // The ridge overhangs a module at each end: the top tread of each stair comes
+            // out under it, which is what makes an entrance read as one.
+            for (var i = -1; i <= last + 1; i++)
+                Add(into, RidgePrefab, 0f, rise + RidgeRise, i * Module, acrossBridge);
+
+            // Gables close the two ends. They are mirrored, which is why the near and far
+            // ones do not share a facing.
+            foreach (var offset in new[] { -edge, edge })
+            {
+                Add(into, GablePrefab, offset, rise, -Module, acrossBridge);
+                Add(into, GablePrefab, offset, rise, (last + 1) * Module, alongBridge);
+            }
         }
 
         /// <summary>
-        /// Draws the bridge that would be built from here, and says whether it stands,
-        /// before a single piece is placed. The line runs along the deck and drops to the
-        /// ground wherever a leg is planned, so the spikes hanging off it are the legs at
-        /// the depth they will really be sunk to.
+        /// Walks a flight of stairs from one end of the deck down to the ground.
         ///
-        /// Amber when it holds and red when it does not, which turns walking about
-        /// looking for a crossing into something readable off the screen instead of
-        /// something to press and find out.
+        /// A flight is always laid, even where the bank is level with the deck. Skipping
+        /// it there looked reasonable and was not: the bank is level at the mark, and the
+        /// stair lands a module further out where it need not be.
+        ///
+        /// The ground is asked about under each tread's foot, a module further out than
+        /// the tread's own position — asking under its middle is what left treads hanging
+        /// over a bank that keeps falling away, and no number of extra steps would have
+        /// fixed that, only moved where they hung.
+        ///
+        /// One tread past the one that reaches, always. The last tread is what a person
+        /// steps off onto, and it is better buried than a hand's breadth short.
+        /// </summary>
+        private static void RampDown(BridgeSurvey survey, List<CopiedPiece> into, int index,
+                                     float sense, float rise)
+        {
+            var zones = ZoneSystem.instance;
+            if (zones == null) return;
+
+            var end = _bridgeStart + survey.Facing * new Vector3(0f, 0f, index * Module);
+            var outward = survey.Facing * new Vector3(0f, 0f, sense);
+            var turn = sense > 0f ? Quaternion.identity : Quaternion.Euler(0f, 180f, 0f);
+            var landed = false;
+
+            for (var step = 0; step < MaxRampSteps; step++)
+            {
+                var along = (index + sense * (step + 1)) * Module;
+                var y = rise - RampDrop - step * Module;
+
+                Add(into, RampPrefab, 0f, y, along, turn);
+
+                // This iteration laid the spare one, so the flight is done.
+                if (landed) break;
+
+                var foot = end + outward * (Module * (step + 2));
+                if (!zones.GetGroundHeight(foot, out var ground)) break;
+                if (survey.Deck - RampDrop - step * Module - Module * 0.5f <= ground) landed = true;
+            }
+        }
+
+        private static void Add(List<CopiedPiece> into, string prefab, float across, float up,
+                                float along, Quaternion turn)
+        {
+            into.Add(new CopiedPiece
+            {
+                Prefab = prefab,
+                LocalPos = new Vector3(across, up, along),
+                LocalRot = turn
+            });
+        }
+
+        // ---------------- projection ----------------
+
+        private static readonly List<CopiedPiece> BridgePlanned = new List<CopiedPiece>();
+
+        private static readonly List<CopiedPiece> BridgeShown = new List<CopiedPiece>();
+
+        private static readonly List<GameObject> BridgeGhosts = new List<GameObject>();
+
+        private static GameObject BridgeGhostRoot;
+
+        private static float _bridgeSurveyAt;
+
+        private static void ClearBridgeGhost()
+        {
+            foreach (var ghost in BridgeGhosts)
+                if (ghost != null) Destroy(ghost);
+            BridgeGhosts.Clear();
+            BridgeShown.Clear();
+
+            if (BridgeGhostRoot != null) Destroy(BridgeGhostRoot);
+            BridgeGhostRoot = null;
+        }
+
+        /// <summary>
+        /// Shows the bridge that would be built from here, as the pieces themselves.
+        ///
+        /// The ghost is rebuilt only when the layout changes, and moved every frame,
+        /// which is what makes this affordable: walking sideways turns the whole thing on
+        /// its root, and only walking further along adds a section. Rebuilding it four
+        /// times a second would be hundreds of instantiations a second for nothing.
         /// </summary>
         internal static void UpdateBridgePreview()
         {
             var player = Player.m_localPlayer;
-            if (!_bridgeStarted || player == null || _bridgePreviewFailed)
+            if (!_bridgeStarted || player == null)
             {
-                HideBridgePreview();
+                ClearBridgeGhost();
                 return;
             }
 
-            if (_bridgeLine == null && !CreateBridgePreview()) return;
+            // Aiming is every frame and costs a subtraction: the ghost has to swing with
+            // the player or it lags a quarter second behind its own preview.
+            if (BridgeGhostRoot != null)
+            {
+                var flat = player.transform.position - _bridgeStart;
+                flat.y = 0f;
+                if (flat.sqrMagnitude > 0.01f)
+                    BridgeGhostRoot.transform.SetPositionAndRotation(
+                        _bridgeStart, Quaternion.LookRotation(flat.normalized, Vector3.up));
+            }
 
             // Surveying costs a raycast per section, so it runs a few times a second
-            // rather than every frame. Nothing here moves faster than a walking player.
-            if (Time.time - _bridgeSurveyAt > 0.25f)
-            {
-                _bridgeSurveyAt = Time.time;
-                _shownSurvey = Survey(_bridgeStart, player.transform.position);
-            }
+            // rather than every frame. Nothing here changes faster than a walking player.
+            if (Time.time - _bridgeSurveyAt <= 0.25f) return;
+            _bridgeSurveyAt = Time.time;
 
-            var survey = _shownSurvey;
-            if (survey == null || survey.Centres.Count < 2)
-            {
-                _bridgePreview.SetActive(false);
-                return;
-            }
+            var plan = Survey(_bridgeStart, player.transform.position);
+            Layout(plan, BridgePlanned);
 
-            BridgeOutline.Clear();
-            var piers = survey.Plan != null ? survey.Plan.Piers : null;
-            var last = survey.Centres.Count - 1;
-
-            for (var i = 0; i <= last; i++)
-            {
-                var centre = survey.Centres[i];
-                var top = new Vector3(centre.x, survey.Deck + 0.15f, centre.z);
-                BridgeOutline.Add(top);
-
-                var leg = i == 0 || i == last || (piers != null && piers.Contains(i));
-
-                // Down and straight back up in the same stroke: one renderer draws one
-                // polyline, and a leg walked twice costs two points and reads correctly.
-                if (leg && survey.Deck - survey.Ground[i] > Module * 0.5f)
-                {
-                    BridgeOutline.Add(new Vector3(centre.x, survey.Ground[i], centre.z));
-                    BridgeOutline.Add(top);
-                }
-            }
-
-            var stands = survey.Problem == null && survey.Plan != null && survey.Plan.Stands;
-            var colour = stands
-                ? new Color(1f, 0.8f, 0.27f, 0.55f)
-                : new Color(1f, 0.25f, 0.2f, 0.55f);
-
-            _bridgePreview.SetActive(true);
-            _bridgeLine.startColor = colour;
-            _bridgeLine.endColor = colour;
-            _bridgeLine.widthMultiplier = Mathf.Max(survey.Width * Module * 0.5f, 1f);
-            _bridgeLine.positionCount = BridgeOutline.Count;
-            for (var i = 0; i < BridgeOutline.Count; i++)
-                _bridgeLine.SetPosition(i, BridgeOutline[i]);
+            if (!SameLayout(BridgePlanned, BridgeShown)) RaiseGhost(plan);
         }
 
-        private static bool CreateBridgePreview()
+        private static bool SameLayout(List<CopiedPiece> a, List<CopiedPiece> b)
         {
-            var shader = Shader.Find("Sprites/Default")
-                         ?? Shader.Find("Particles/Standard Unlit")
-                         ?? Shader.Find("Unlit/Color");
-            if (shader == null)
+            if (a.Count != b.Count) return false;
+
+            for (var i = 0; i < a.Count; i++)
             {
-                // Better a bridge tool with no projection than one that throws each frame.
-                _bridgePreviewFailed = true;
-                Log.LogWarning("[AstvardServerMod] No shader for the bridge preview.");
-                return false;
+                if (a[i].Prefab != b[i].Prefab) return false;
+                if ((a[i].LocalPos - b[i].LocalPos).sqrMagnitude > 0.0001f) return false;
             }
 
-            _bridgePreview = new GameObject("AstvardBridgePreview");
-
-            _bridgeLine = _bridgePreview.AddComponent<LineRenderer>();
-            _bridgeLine.material = new Material(shader);
-            _bridgeLine.useWorldSpace = true;
-            _bridgeLine.numCapVertices = 2;
-            _bridgeLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            _bridgeLine.receiveShadows = false;
             return true;
+        }
+
+        private static void RaiseGhost(BridgeSurvey survey)
+        {
+            ClearBridgeGhost();
+            if (ZNetScene.instance == null || BridgePlanned.Count == 0) return;
+
+            BridgeGhostRoot = new GameObject("AstvardBridgeGhost");
+            BridgeGhostRoot.transform.SetPositionAndRotation(_bridgeStart, survey.Facing);
+
+            var stands = survey.Problem == null && survey.Plan != null && survey.Plan.Stands;
+
+            // Red for a crossing that will not stand, so looking for somewhere to build
+            // is something to read off the screen rather than press and find out.
+            var tint = stands ? new Color(1f, 1f, 1f, 0.5f) : new Color(1f, 0.3f, 0.25f, 0.5f);
+
+            // Without this the ghosts would register themselves as real networked objects
+            // the moment they are instantiated.
+            ZNetView.m_forceDisableInit = true;
+            try
+            {
+                foreach (var piece in BridgePlanned)
+                {
+                    var prefab = ZNetScene.instance.GetPrefab(piece.Prefab);
+                    if (prefab == null) continue;
+
+                    var ghost = Instantiate(prefab, BridgeGhostRoot.transform);
+                    ghost.transform.localPosition = piece.LocalPos;
+                    ghost.transform.localRotation = piece.LocalRot;
+
+                    foreach (var collider in ghost.GetComponentsInChildren<Collider>())
+                        collider.enabled = false;
+                    foreach (var behaviour in ghost.GetComponentsInChildren<MonoBehaviour>())
+                        behaviour.enabled = false;
+                    foreach (var renderer in ghost.GetComponentsInChildren<Renderer>())
+                        foreach (var material in renderer.materials)
+                            if (material.HasProperty("_Color")) material.color = tint;
+
+                    BridgeGhosts.Add(ghost);
+                }
+            }
+            finally
+            {
+                ZNetView.m_forceDisableInit = false;
+            }
+
+            BridgeShown.Clear();
+            BridgeShown.AddRange(BridgePlanned);
         }
 
         // ---------------- building ----------------
@@ -331,8 +481,7 @@ namespace AstvardServerMod
                 return;
             }
 
-            var scene = ZNetScene.instance;
-            if (scene == null) return;
+            if (ZNetScene.instance == null) return;
 
             // Surveyed again rather than trusting what the projection last drew: that is
             // a quarter of a second old at worst, and a quarter of a second of walking is
@@ -350,30 +499,22 @@ namespace AstvardServerMod
                     $"Не устоит: с {survey.Plan.GapFrom * Module:F0} м по "
                     + $"{survey.Plan.GapTo * Module:F0} м{NEWLINE}не на что опереться");
                 Log.LogInfo($"[AstvardServerMod] Bridge refused: gap {survey.Plan.GapFrom}.." +
-                            $"{survey.Plan.GapTo} of {survey.Centres.Count} sections.");
+                            $"{survey.Plan.GapTo} of {survey.Ground.Count} sections.");
                 return;
             }
 
-            var deckPrefab = scene.GetPrefab(DeckPrefab);
-            var legPrefab = scene.GetPrefab(LegPrefab);
-            if (deckPrefab == null || legPrefab == null)
-            {
-                Log.LogWarning("[AstvardServerMod] Bridge prefabs missing from the scene.");
-                player.Message(MessageHud.MessageType.Center, "Нет деталей для моста");
-                return;
-            }
+            Layout(survey, BridgePlanned);
 
             _bridgeStarted = false;
-            HideBridgePreview();
             UpdateBridgeHint();
 
-            var placed = Raise(deckPrefab, legPrefab, scene.GetPrefab(RampPrefab), survey,
-                               player.GetPlayerID());
+            var placed = Raise(BridgePlanned, survey.Facing, player.GetPlayerID());
+            ClearBridgeGhost();
 
             player.Message(MessageHud.MessageType.Center,
                 $"Мост {survey.Length:F0} м, опор {survey.Plan.Piers.Count}, деталей {placed}");
             Log.LogInfo($"[AstvardServerMod] Bridge {survey.Length:F1} m, " +
-                        $"{survey.Centres.Count} sections, width {survey.Width}, " +
+                        $"{survey.Ground.Count} sections, width {survey.Width}, " +
                         $"deck {survey.Deck:F1}, {survey.Plan.Piers.Count} piers, {placed} pieces.");
         }
 
@@ -386,252 +527,28 @@ namespace AstvardServerMod
         /// middle before the far end existed. One long frame is the price, and the length
         /// cap is what keeps it to one.
         /// </summary>
-        private static int Raise(GameObject deckPrefab, GameObject legPrefab,
-                                 GameObject rampPrefab, BridgeSurvey survey, long creator)
-        {
-            var centres = survey.Centres;
-            var width = survey.Width;
-            var deck = survey.Deck;
-            var facing = survey.Facing;
-
-            var half = (width - 1) * 0.5f * Module;
-            var side = facing * Vector3.right;
-            var forward = facing * Vector3.forward;
-            var placed = 0;
-
-            for (var i = 0; i < centres.Count; i++)
-            {
-                for (var w = 0; w < width; w++)
-                {
-                    var at = new Vector3(centres[i].x, deck, centres[i].z)
-                             + side * (w * Module - half);
-                    Spawn(deckPrefab, at, facing, creator);
-                    placed++;
-                }
-            }
-
-            // The banks carry legs too. A deck lifted over its own bank stands on one
-            // exactly as it stands on anything else, and leaving those out is how a
-            // bridge ends up hanging from its middle.
-            var last = centres.Count - 1;
-            var legs = new List<int>(survey.Plan.Piers);
-            if (!legs.Contains(0)) legs.Insert(0, 0);
-            if (!legs.Contains(last)) legs.Add(last);
-
-            foreach (var index in legs)
-                placed += Leg(legPrefab, centres[index], side, deck, survey.Ground[index],
-                              width, facing, creator);
-
-            if (IsBridgeCovered) placed += Cover(survey, legs, creator);
-
-            // A deck standing above its bank is a deck nobody can climb onto.
-            placed += Ramp(rampPrefab, centres[0], -forward, deck, creator);
-            placed += Ramp(rampPrefab, centres[last], forward, deck, creator);
-
-            return placed;
-        }
-
-        /// <summary>
-        /// Stands one leg: poles a module at a time from just under the deck down past
-        /// the ground. The lowest is allowed to sink rather than stop short — a leg that
-        /// does not reach carries nothing, and buried wood costs nothing.
-        /// </summary>
-        private static int Leg(GameObject prefab, Vector3 at, Vector3 side, float deck,
-                               float ground, int width, Quaternion facing, long creator)
-        {
-            var drop = deck - ground;
-
-            // Resting on the bank already: a pole here would push up through the deck.
-            if (drop <= Module * 0.5f) return 0;
-
-            var poles = Mathf.CeilToInt(drop / Module);
-            var placed = 0;
-
-            // Always a pair, under the two outer edges of the deck rather than down its
-            // middle — which is how the same bridge gets built by hand, and it stands a
-            // narrow deck on two feet instead of balancing it on one.
-            var edge = width * Module * 0.5f;
-
-            foreach (var offset in new[] { -edge, edge })
-            {
-                for (var p = 0; p < poles; p++)
-                {
-                    // Middle pivot: the topmost pole hangs half a module under the deck
-                    // so its head meets it, and each one below is a module further down.
-                    var y = deck - LegTopDrop - p * Module;
-                    Spawn(prefab, new Vector3(at.x, y, at.z) + side * offset, facing, creator);
-                    placed++;
-                }
-            }
-
-            return placed;
-        }
-
-        private static void UpdateBridgeCoverLabel()
-        {
-            var label = BridgeCoverButton != null
-                ? BridgeCoverButton.GetComponentInChildren<Text>()
-                : null;
-            if (label != null) label.text = IsBridgeCovered ? "Крыша: вкл" : "Крыша: выкл";
-        }
-
-        /// <summary>
-        /// Puts the roof and its frame on: a beam down each side, a short post up to it
-        /// wherever a leg already stands, a taller one carrying on to the ridge, and the
-        /// ridge itself running a module past each end so the stairs come out covered.
-        ///
-        /// The frames stand over the legs rather than over the seams between deck pieces,
-        /// which is where the hand-built bridge put them. It is the same joint either
-        /// way, and it saves keeping a second row of positions that has to agree with the
-        /// first one.
-        ///
-        /// The ridge is a single line down the centre, which roofs a deck two metres
-        /// wide. Anything wider gets its rail and its ridge with open air between them:
-        /// a wide covered bridge wants roof slopes, and this design has none yet.
-        /// </summary>
-        private static int Cover(BridgeSurvey survey, List<int> legs, long creator)
+        private static int Raise(List<CopiedPiece> pieces, Quaternion facing, long creator)
         {
             var scene = ZNetScene.instance;
-            if (scene == null) return 0;
-
-            var beam = scene.GetPrefab(BeamPrefab);
-            var railPost = scene.GetPrefab(RailPostPrefab);
-            var roofPost = scene.GetPrefab(LegPrefab);
-            var ridge = scene.GetPrefab(RidgePrefab);
-            var gable = scene.GetPrefab(GablePrefab);
-
-            var centres = survey.Centres;
-            var deck = survey.Deck;
-            var facing = survey.Facing;
-            var side = facing * Vector3.right;
-            var forward = facing * Vector3.forward;
-            var edge = survey.Width * Module * 0.5f;
-            var last = centres.Count - 1;
-
-            var alongBridge = facing * Quaternion.Euler(0f, 90f, 0f);
-            var acrossBridge = facing * Quaternion.Euler(0f, -90f, 0f);
             var placed = 0;
 
-            // A continuous beam down both edges, one piece per deck section.
-            if (beam != null)
+            foreach (var piece in pieces)
             {
-                for (var i = 0; i <= last; i++)
+                var prefab = scene.GetPrefab(piece.Prefab);
+                if (prefab == null)
                 {
-                    foreach (var offset in new[] { -edge, edge })
-                    {
-                        var at = new Vector3(centres[i].x, deck + BeamRise, centres[i].z)
-                                 + side * offset;
-                        Spawn(beam, at, alongBridge, creator);
-                        placed++;
-                    }
+                    Log.LogWarning($"[AstvardServerMod] Unknown prefab '{piece.Prefab}', skipped.");
+                    continue;
                 }
-            }
 
-            // Posts only where a leg already stands, so what they carry has somewhere to
-            // put it down.
-            foreach (var index in legs)
-            {
-                foreach (var offset in new[] { -edge, edge })
-                {
-                    var foot = centres[index] + side * offset;
-
-                    if (railPost != null)
-                    {
-                        Spawn(railPost, new Vector3(foot.x, deck + RailPostRise, foot.z),
-                              facing, creator);
-                        placed++;
-                    }
-
-                    if (roofPost != null)
-                    {
-                        Spawn(roofPost, new Vector3(foot.x, deck + RoofPostRise, foot.z),
-                              facing, creator);
-                        placed++;
-                    }
-                }
-            }
-
-            // The ridge overhangs a module at each end: the top tread of each stair comes
-            // out under it, which is what makes an entrance read as one.
-            if (ridge != null)
-            {
-                for (var i = -1; i <= last + 1; i++)
-                {
-                    var at = centres[0] + forward * (i * Module);
-                    Spawn(ridge, new Vector3(at.x, deck + RidgeRise, at.z), acrossBridge, creator);
-                    placed++;
-                }
-            }
-
-            // Gables close the two ends. They are mirrored, which is why the near and far
-            // ones do not share a facing.
-            if (gable != null)
-            {
-                foreach (var offset in new[] { -edge, edge })
-                {
-                    var near = centres[0] - forward * Module + side * offset;
-                    Spawn(gable, new Vector3(near.x, deck, near.z), acrossBridge, creator);
-
-                    var far = centres[last] + forward * Module + side * offset;
-                    Spawn(gable, new Vector3(far.x, deck, far.z), alongBridge, creator);
-                    placed += 2;
-                }
-            }
-
-            return placed;
-        }
-
-        /// <summary>
-        /// Walks a flight of stairs from the end of the deck down to the ground.
-        ///
-        /// A flight is always laid, even where the bank is level with the deck. Skipping
-        /// it there looked reasonable and was not: the bank is level at the mark, and the
-        /// stair lands a module further out where it need not be.
-        ///
-        /// The ground is asked about under each tread's foot, which is a module further
-        /// out than the tread's own position — asking under its middle is what left
-        /// treads hanging over a bank that keeps falling away, and no number of extra
-        /// steps would have fixed that, only moved where they hung.
-        ///
-        /// One tread past the one that reaches, always. The last tread is what a person
-        /// steps off onto, and it is better buried than a hand's breadth short.
-        /// </summary>
-        private static int Ramp(GameObject prefab, Vector3 end, Vector3 outward, float deck,
-                                long creator)
-        {
-            var zones = ZoneSystem.instance;
-            if (prefab == null || zones == null) return 0;
-
-            var rotation = Quaternion.LookRotation(outward, Vector3.up);
-            var placed = 0;
-            var landed = false;
-
-            for (var step = 0; step < MaxRampSteps; step++)
-            {
-                var at = end + outward * (Module * (step + 1));
-                var y = deck - RampDrop - step * Module;
-
-                Spawn(prefab, new Vector3(at.x, y, at.z), rotation, creator);
+                var go = Instantiate(prefab, _bridgeStart + facing * piece.LocalPos,
+                                     facing * piece.LocalRot);
+                var built = go.GetComponent<Piece>();
+                if (built != null) built.SetCreator(creator);
                 placed++;
-
-                // This iteration laid the spare one, so the flight is done.
-                if (landed) break;
-
-                // The tread hangs from its middle like everything else, so its foot is
-                // half a module down and a whole one further out.
-                var foot = end + outward * (Module * (step + 2));
-                if (!zones.GetGroundHeight(foot, out var ground)) break;
-                if (y - Module * 0.5f <= ground) landed = true;
             }
 
             return placed;
-        }
-
-        private static void Spawn(GameObject prefab, Vector3 at, Quaternion rotation, long creator)
-        {
-            var go = Instantiate(prefab, at, rotation);
-            var piece = go.GetComponent<Piece>();
-            if (piece != null) piece.SetCreator(creator);
         }
     }
 }
