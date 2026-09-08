@@ -34,6 +34,11 @@ namespace AstvardServerMod
         private const string GablePrefab = "wood_wall_roof";
         private const float Module = 2f;
 
+        // Legs stand on the seams between deck pieces, which are half a module apart, so
+        // the ground is probed at that spacing and a leg is placed by probe rather than
+        // by deck section.
+        private const float ProbeStep = Module * 0.5f;
+
         // Both of these are pivot corrections, and both were measured off a bridge built
         // by hand rather than reasoned about. wood_pole2 hangs from its middle, so a leg
         // put a whole module under the deck stops half a module short of it — which
@@ -129,7 +134,10 @@ namespace AstvardServerMod
         /// </summary>
         private sealed class BridgeSurvey
         {
+            /// <summary>Ground under every probe, half a module apart. See Survey.</summary>
             public readonly List<float> Ground = new List<float>();
+
+            public int Sections;
             public Geometry.BridgePlan Plan;
             public float Deck;
             public float Length;
@@ -178,11 +186,20 @@ namespace AstvardServerMod
 
             // Sections land on whole modules and stop short of the far mark rather than
             // past it: deck hanging beyond the bank is deck with nothing under it.
-            var sections = Mathf.FloorToInt(survey.Length / Module) + 1;
+            survey.Sections = Mathf.FloorToInt(survey.Length / Module) + 1;
 
-            for (var i = 0; i < sections; i++)
+            // Probed every half module, so the seams between deck pieces are real points
+            // in the profile and a leg can stand on one. A leg on a seam touches the two
+            // pieces it sits between and feeds both from below, where the loss is 0.125 a
+            // metre; under a piece's middle it feeds one, and the neighbour has to take
+            // its share sideways at 0.2. Measured across a range of depths, that is about
+            // a fifth more support in the weakest deck piece, and two more metres of
+            // spacing before a leg runs out.
+            var probes = survey.Sections * 2 - 1;
+
+            for (var k = 0; k < probes; k++)
             {
-                var at = from + dir * (i * Module);
+                var at = from + dir * (k * ProbeStep);
 
                 // No terrain collider means the zone is not loaded, and the obvious
                 // fallback is the worst one available: putting the deck's own line into
@@ -190,15 +207,20 @@ namespace AstvardServerMod
                 // support, which approves a span over nothing at all.
                 if (!zones.GetGroundHeight(at, out var height))
                 {
-                    survey.Problem = $"Земля не прогружена на {i * Module:F0} м{NEWLINE}"
+                    survey.Problem = $"Земля не прогружена на {k * ProbeStep:F0} м{NEWLINE}"
                                      + "пройди вдоль будущего моста";
                     return survey;
                 }
 
-                survey.Ground.Add(height);
+                // Even probes are the middles of deck pieces. Rather than teach the
+                // planner which of its samples may carry a leg, they are handed to it as
+                // ground far below anything a leg reaches, so it passes over them on its
+                // own. The two ends stay real: those are the banks.
+                var middle = k % 2 == 0 && k > 0 && k < probes - 1;
+                survey.Ground.Add(middle ? survey.Deck - 1000f : height);
             }
 
-            survey.Plan = Geometry.PlanPiers(survey.Ground, Module, survey.Deck);
+            survey.Plan = Geometry.PlanPiers(survey.Ground, ProbeStep, survey.Deck);
             return survey;
         }
 
@@ -220,8 +242,9 @@ namespace AstvardServerMod
             into.Clear();
             if (survey.Problem != null || survey.Plan == null) return;
 
-            var sections = survey.Ground.Count;
+            var sections = survey.Sections;
             var last = sections - 1;
+            var probes = survey.Ground.Count;
             var width = survey.Width;
             var rise = survey.Deck - _bridgeStart.y;
             var half = (width - 1) * 0.5f * Module;
@@ -240,11 +263,11 @@ namespace AstvardServerMod
             // bridge ends up hanging from its middle.
             var legs = new List<int>(survey.Plan.Piers);
             if (!legs.Contains(0)) legs.Insert(0, 0);
-            if (!legs.Contains(last)) legs.Add(last);
+            if (!legs.Contains(probes - 1)) legs.Add(probes - 1);
 
-            foreach (var index in legs)
+            foreach (var probe in legs)
             {
-                var drop = survey.Deck - survey.Ground[index];
+                var drop = survey.Deck - survey.Ground[probe];
 
                 // Resting on the bank already: a pole here would push up through the deck.
                 if (drop <= Module * 0.5f) continue;
@@ -257,11 +280,11 @@ namespace AstvardServerMod
                 foreach (var offset in new[] { -edge, edge })
                     for (var p = 0; p < poles; p++)
                         Add(into, LegPrefab, offset, rise - LegTopDrop - p * Module,
-                            index * Module, straight);
+                            probe * ProbeStep, straight);
             }
 
-            var nearSteps = RampDown(survey, into, 0, -1f, rise);
-            var farSteps = RampDown(survey, into, last, 1f, rise);
+            var nearSteps = RampDown(survey, into, 0f, -1f, rise);
+            var farSteps = RampDown(survey, into, last * Module, 1f, rise);
 
             if (!IsBridgeCovered) return;
 
@@ -271,12 +294,15 @@ namespace AstvardServerMod
                     Add(into, BeamPrefab, offset, rise + BeamRise, i * Module, alongBridge);
 
             // Posts only where a leg already stands, so what they carry has somewhere to
-            // put it down.
-            foreach (var index in legs)
+            // put it down — which now means on the seams, exactly where the hand-built
+            // bridge puts its frames.
+            foreach (var probe in legs)
                 foreach (var offset in new[] { -edge, edge })
                 {
-                    Add(into, RailPostPrefab, offset, rise + RailPostRise, index * Module, straight);
-                    Add(into, LegPrefab, offset, rise + RoofPostRise, index * Module, straight);
+                    Add(into, RailPostPrefab, offset, rise + RailPostRise,
+                        probe * ProbeStep, straight);
+                    Add(into, LegPrefab, offset, rise + RoofPostRise,
+                        probe * ProbeStep, straight);
                 }
 
             // A ridge over every two metre lane, not one down the middle. One line roofs
@@ -324,13 +350,13 @@ namespace AstvardServerMod
         /// a wide flight ragged, one lane ending a step above its neighbour.
         /// </summary>
         /// <returns>How many treads went down, so the roof knows how far to reach.</returns>
-        private static int RampDown(BridgeSurvey survey, List<CopiedPiece> into, int index,
+        private static int RampDown(BridgeSurvey survey, List<CopiedPiece> into, float from,
                                     float sense, float rise)
         {
             var zones = ZoneSystem.instance;
             if (zones == null) return 0;
 
-            var end = _bridgeStart + survey.Facing * new Vector3(0f, 0f, index * Module);
+            var end = _bridgeStart + survey.Facing * new Vector3(0f, 0f, from);
             var outward = survey.Facing * new Vector3(0f, 0f, sense);
             var turn = sense > 0f ? Quaternion.identity : Quaternion.Euler(0f, 180f, 0f);
             var width = survey.Width;
@@ -347,7 +373,7 @@ namespace AstvardServerMod
 
                 // A stair in every lane, so the flight is as wide as the deck it leaves.
                 // One down the middle of a four metre bridge is a plank, not a way down.
-                var along = index * Module + sense * reach;
+                var along = from + sense * reach;
                 for (var w = 0; w < width; w++)
                     Add(into, RampPrefab, w * Module - half, rise - drop, along, turn);
                 treads++;
@@ -540,10 +566,11 @@ namespace AstvardServerMod
             if (!survey.Plan.Stands)
             {
                 player.Message(MessageHud.MessageType.Center,
-                    $"Не устоит: с {survey.Plan.GapFrom * Module:F0} м по "
-                    + $"{survey.Plan.GapTo * Module:F0} м{NEWLINE}не на что опереться");
-                Log.LogInfo($"[AstvardServerMod] Bridge refused: gap {survey.Plan.GapFrom}.." +
-                            $"{survey.Plan.GapTo} of {survey.Ground.Count} sections.");
+                    $"Не устоит: с {survey.Plan.GapFrom * ProbeStep:F0} м по "
+                    + $"{survey.Plan.GapTo * ProbeStep:F0} м{NEWLINE}не на что опереться");
+                Log.LogInfo($"[AstvardServerMod] Bridge refused: gap " +
+                            $"{survey.Plan.GapFrom * ProbeStep:F0}..{survey.Plan.GapTo * ProbeStep:F0} m " +
+                            $"of {survey.Sections} sections.");
                 return;
             }
 
@@ -558,7 +585,7 @@ namespace AstvardServerMod
             player.Message(MessageHud.MessageType.Center,
                 $"Мост {survey.Length:F0} м, опор {survey.Plan.Piers.Count}, деталей {placed}");
             Log.LogInfo($"[AstvardServerMod] Bridge {survey.Length:F1} m, " +
-                        $"{survey.Ground.Count} sections, width {survey.Width}, " +
+                        $"{survey.Sections} sections, width {survey.Width}, " +
                         $"deck {survey.Deck:F1}, {survey.Plan.Piers.Count} piers, {placed} pieces.");
         }
 
