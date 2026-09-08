@@ -271,5 +271,146 @@ namespace AstvardServerMod
 
             return -best;
         }
+
+        // ---------------- bridge piers ----------------
+
+        /// <summary>
+        /// The longest stretch of wooden deck that can hang between two supports with
+        /// nothing under it, in metres.
+        ///
+        /// Read out of WearNTear rather than guessed. Support starts at 100 where a
+        /// piece touches ground, each joint multiplies it by (1 - loss * distance) with a
+        /// horizontal loss of 0.2 per metre for wood, and a piece dies below 10. A run
+        /// held at both ends also gets the game's two-sided rule, which averages the
+        /// two arriving values when the supports lie more than 100 degrees apart — that
+        /// rule is the only reason a span longer than a cantilever stands at all.
+        /// Eight deck pieces come out at 11.4, nine at 8.35.
+        /// </summary>
+        public const float MaxFreeSpan = 16f;
+
+        /// <summary>
+        /// The tallest wooden leg worth building, in metres.
+        ///
+        /// A column of poles decays vertically at 0.125 per metre: eight poles reach
+        /// 11.87 and still stand, nine reach 8.75 and fall. But a leg at that limit has
+        /// nothing left to give away — at 16 m no deck hangs off it at any spacing, so
+        /// the last useful height is 14.
+        /// </summary>
+        public const float MaxPierHeight = 14f;
+
+        // How far apart legs may stand, by how tall they are. Measured on an 80 m deck,
+        // long enough that the legs are the only thing holding the middle up: a shorter
+        // test bridge stands on its own banks and reports whatever spacing it was asked
+        // about. The step at 6-8 m is real and not a rounding artefact — it is where the
+        // two-sided rule stops being able to make up the difference.
+        private static readonly float[] PierHeightSteps = { 2f, 4f, 6f, 8f, 10f, 12f, 14f };
+        private static readonly float[] PierSpanSteps = { 16f, 14f, 10f, 10f, 6f, 4f, 2f };
+
+        /// <summary>
+        /// How far apart two supports may stand when the taller of them rises
+        /// <paramref name="pierHeight"/> metres off the ground. Zero when nothing can be
+        /// carried at that height.
+        ///
+        /// Heights round up to the next measured step rather than interpolating between
+        /// them: promising a span that was never measured is how a bridge falls down
+        /// after it is built.
+        /// </summary>
+        public static float MaxPierSpacing(float pierHeight)
+        {
+            // A leg of no height is the bank itself, and the bank has full support.
+            if (pierHeight <= 0f) return MaxFreeSpan;
+
+            for (var i = 0; i < PierHeightSteps.Length; i++)
+                if (pierHeight <= PierHeightSteps[i]) return PierSpanSteps[i];
+
+            return 0f;
+        }
+
+        /// <summary>
+        /// Where a bridge stands its legs, and whether what is left between them holds.
+        /// </summary>
+        public sealed class BridgePlan
+        {
+            /// <summary>Profile indices carrying a leg. The two banks are not in here.</summary>
+            public readonly List<int> Piers = new List<int>();
+
+            /// <summary>False when a stretch has nothing to stand on and is too wide to span.</summary>
+            public bool Stands;
+
+            /// <summary>The stretch that defeated it, as profile indices. Both -1 when it stands.</summary>
+            public int GapFrom = -1;
+
+            public int GapTo = -1;
+        }
+
+        /// <summary>
+        /// Walks the ground under a planned deck and decides where the legs go.
+        ///
+        /// The two ends are the banks and are assumed to meet the ground, so they carry
+        /// full support and never appear as legs. Between them the walk is greedy: from
+        /// each support it reaches for the furthest next one it is allowed to reach, so
+        /// the bridge gets the fewest legs that hold rather than the most that fit.
+        ///
+        /// Reaching further is not simply a question of distance. Each end of a stretch
+        /// caps how far it may span, and the cap comes from the height of that leg, so a
+        /// distant shallow spot can be reachable where a nearer deep one is not. That is
+        /// why every candidate is tried rather than the walk stopping at the first
+        /// failure.
+        /// </summary>
+        /// <param name="ground">Ground height at evenly spaced samples along the centreline.</param>
+        /// <param name="step">Distance between two samples, in metres.</param>
+        /// <param name="deck">Height the deck will sit at.</param>
+        public static BridgePlan PlanPiers(IList<float> ground, float step, float deck)
+        {
+            var plan = new BridgePlan();
+
+            if (ground == null || ground.Count < 2 || step <= 0f)
+            {
+                plan.Stands = ground != null && ground.Count > 0;
+                return plan;
+            }
+
+            var last = ground.Count - 1;
+            var at = 0;
+
+            while (at < last)
+            {
+                var reach = -1;
+
+                for (var j = at + 1; j <= last; j++)
+                {
+                    // Anywhere but the far bank has to be somewhere a leg can stand.
+                    if (j != last && PierAt(ground, deck, j) > MaxPierHeight) continue;
+
+                    var allowed = Math.Min(MaxPierSpacing(PierAt(ground, deck, at)),
+                                           MaxPierSpacing(PierAt(ground, deck, j)));
+                    if ((j - at) * step <= allowed) reach = j;
+                }
+
+                if (reach < 0)
+                {
+                    plan.GapFrom = at;
+                    plan.GapTo = last;
+                    plan.Stands = false;
+                    return plan;
+                }
+
+                at = reach;
+                if (at != last) plan.Piers.Add(at);
+            }
+
+            plan.Stands = true;
+            return plan;
+        }
+
+        /// <summary>
+        /// How tall a leg at this sample would be. Ground standing above the deck counts
+        /// as no leg at all rather than a negative one: the deck is resting on it.
+        /// </summary>
+        private static float PierAt(IList<float> ground, float deck, int index)
+        {
+            var height = deck - ground[index];
+            return height > 0f ? height : 0f;
+        }
     }
 }
