@@ -331,12 +331,15 @@ namespace AstvardServerMod
             UpdatePanelInputBlocking();
             UpdateRoadPreview();
 
-            // Escape gets the road out of the way too, and it has to be read before
-            // the placement guard below — a marked start is not a placement.
-            if (RoadInProgress && Input.GetKeyDown(KeyCode.Escape)
+            // Escape gets the road and the bridge out of the way too, and it has to be
+            // read before the placement guard below — a marked start is not a placement.
+            if ((RoadInProgress || BridgeInProgress) && Input.GetKeyDown(KeyCode.Escape)
                 && !InventoryGui.IsVisible() && Chat.instance?.HasFocus() != true)
             {
-                CancelRoad();
+                // Asked separately: CancelRoad answers "Отменено" whether or not a road
+                // was going, so calling both would answer twice for one press.
+                if (RoadInProgress) CancelRoad();
+                if (BridgeInProgress) CancelBridge();
                 RefreshMenu();
                 return;
             }

@@ -43,6 +43,7 @@ namespace AstvardServerMod
         private const int StateWeather = 25;    // ветер и погода
         private const int StateWind = 26;       // куда и как сильно дует
         private const int StateEnv = 27;        // какую погоду держать
+        private const int StateBridge = 28;     // мост между двумя точками
 
         internal static GameObject Panel;
 
@@ -539,6 +540,37 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            BridgeButton = MakeButton(gui, "Мост", () =>
+            {
+                MenuState = StateBridge;
+                RefreshMenu();
+            });
+
+            BridgeHint = MakeText(gui, "");
+            UpdateBridgeHint();
+
+            BridgeWidthInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "ширина 1-4, напр. 2", 16, 160f, 32f);
+            AddFixedSize(BridgeWidthInput, 160f, 32f);
+
+            BridgeLiftInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "подъём, напр. 0", 16, 160f, 32f);
+            AddFixedSize(BridgeLiftInput, 160f, 32f);
+
+            BridgeStartButton = MakeButton(gui, "Начать", MarkBridgeStart);
+
+            BridgeEndButton = MakeButton(gui, "Построить", BuildBridge);
+
+            BridgeCancelButton = MakeButton(gui, "Отменить", () =>
+            {
+                CancelBridge();
+                RefreshMenu();
+            });
+
             BuildButton = MakeButton(gui, "Постройки", () =>
             {
                 MenuState = StateBuild;
@@ -734,6 +766,7 @@ namespace AstvardServerMod
             BackButton = MakeButton(gui, "Назад", () =>
             {
                 if (MenuState == StateTerrainForm) MenuState = StateTerrain;
+                else if (MenuState == StateBridge) MenuState = StateTerrain;
                 else if (MenuState == StateRoad) MenuState = StateTerrain;
                 else if (MenuState == StateCopyForm) MenuState = StateBuild;
                 else if (MenuState == StateTod || MenuState == StateRepair ||
@@ -973,6 +1006,7 @@ namespace AstvardServerMod
 
             SetActive(LevelCircleButton, admin && MenuState == StateTerrain);
             SetActive(RoadButton, admin && MenuState == StateTerrain);
+            SetActive(BridgeButton, admin && MenuState == StateTerrain);
             SetActive(UndoButton, admin && MenuState == StateTerrain && CanUndoTerrain);
             UpdateUndoButtonLabel();
             SetActive(RoadHint, admin && MenuState == StateRoad);
@@ -988,6 +1022,13 @@ namespace AstvardServerMod
             SetActive(RoadStartButton, admin && MenuState == StateRoad);
             SetActive(RoadEndButton, admin && MenuState == StateRoad);
             SetActive(LevelSquareButton, admin && MenuState == StateTerrain);
+
+            SetActive(BridgeHint, admin && MenuState == StateBridge);
+            SetActive(BridgeWidthInput, admin && MenuState == StateBridge);
+            SetActive(BridgeLiftInput, admin && MenuState == StateBridge);
+            SetActive(BridgeStartButton, admin && MenuState == StateBridge);
+            SetActive(BridgeEndButton, admin && MenuState == StateBridge);
+            SetActive(BridgeCancelButton, admin && MenuState == StateBridge && BridgeInProgress);
 
             SetActive(TerrainHint, admin && MenuState == StateTerrainForm);
             SetActive(RadiusInput, admin && MenuState == StateTerrainForm);
