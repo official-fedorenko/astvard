@@ -390,7 +390,19 @@ namespace AstvardServerMod
                 if (reach < 0)
                 {
                     plan.GapFrom = at;
+
+                    // The far bank is where the bridge ends, not where the trouble
+                    // does. Reporting it makes a hole in the middle of an otherwise
+                    // fine crossing read as the whole crossing being impossible, so
+                    // name the first place a leg could stand again instead.
                     plan.GapTo = last;
+                    for (var j = at + 1; j <= last; j++)
+                    {
+                        if (j != last && PierAt(ground, deck, j) > MaxPierHeight) continue;
+                        plan.GapTo = j;
+                        break;
+                    }
+
                     plan.Stands = false;
                     return plan;
                 }

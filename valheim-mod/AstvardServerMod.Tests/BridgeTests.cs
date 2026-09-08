@@ -75,6 +75,25 @@ public class BridgeTests
         Assert.Equal(ground.Length - 1, plan.GapTo);
     }
 
+    /// <summary>
+    /// What the refusal points at. The far bank is where the bridge ends, not where
+    /// the trouble is, and naming it makes one hole in an otherwise fine crossing read
+    /// as the whole crossing being impossible.
+    /// </summary>
+    [Fact]
+    public void TheRefusalNamesTheStretchThatCannotBeCrossed()
+    {
+        // Twenty metres of water too deep for any leg, with ordinary ground on both
+        // sides of it. The walk gets as far as sample 1 and stops; sample 11 is the
+        // first place past the hole where a leg could stand again.
+        var ground = Under(0f, 2f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 2f, 2f);
+        var plan = Geometry.PlanPiers(ground, 2f, 0f);
+
+        Assert.False(plan.Stands);
+        Assert.Equal(1, plan.GapFrom);
+        Assert.Equal(11, plan.GapTo);
+    }
+
     [Fact]
     public void ShallowWaterGetsLegsAtTheFullAllowedSpacing()
     {

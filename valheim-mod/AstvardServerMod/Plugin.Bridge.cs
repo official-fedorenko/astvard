@@ -140,8 +140,21 @@ namespace AstvardServerMod
             for (var i = 0; i < sections; i++)
             {
                 var at = from + dir * (i * Module);
+
+                // No terrain collider means the zone is not loaded, and the obvious
+                // fallback is the worst one available: putting the deck's own line into
+                // the profile reads as ground exactly at deck height, which is full
+                // support, which approves a span over nothing at all.
+                if (!zones.GetGroundHeight(at, out var height))
+                {
+                    player.Message(MessageHud.MessageType.Center,
+                        $"Земля не прогружена на {i * Module:F0} м{NEWLINE}пройди вдоль будущего моста");
+                    Log.LogWarning($"[AstvardServerMod] No ground at section {i}, bridge refused.");
+                    return;
+                }
+
                 centres.Add(at);
-                ground.Add(zones.GetGroundHeight(at, out var height) ? height : at.y);
+                ground.Add(height);
             }
 
             var plan = Geometry.PlanPiers(ground, Module, deck);
