@@ -40,6 +40,9 @@ namespace AstvardServerMod
         private const int StateZoneOwner = 22;  // зоны одного игрока
         private const int StateZoneEdit = 23;   // действия над одной зоной
         private const int StateRoad = 24;       // дорожки между двумя точками
+        private const int StateWeather = 25;    // ветер и погода
+        private const int StateWind = 26;       // куда и как сильно дует
+        private const int StateEnv = 27;        // какую погоду держать
 
         internal static GameObject Panel;
 
@@ -337,6 +340,54 @@ namespace AstvardServerMod
             AddFixedSize(TodInput, 160f, 32f);
 
             TodApplyButton = MakeButton(gui, "Установить", ApplyTimeOfDay);
+
+            WeatherButton = MakeButton(gui, "Настройка погоды", () =>
+            {
+                MenuState = StateWeather;
+                RefreshMenu();
+            });
+
+            WindButton = MakeButton(gui, "Направление ветра", () =>
+            {
+                MenuState = StateWind;
+                RefreshMenu();
+            });
+
+            EnvButton = MakeButton(gui, "Погода", () =>
+            {
+                MenuState = StateEnv;
+                RefreshMenu();
+            });
+
+            WindHint = MakeText(gui, "Куда дует, в градусах:\n0 — север, 90 — восток,\n180 — юг, 270 — запад.\nСила 1-10.\nВидно только тебе.");
+
+            WindAngleInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "градусы, напр. 90", 16, 160f, 32f);
+            AddFixedSize(WindAngleInput, 160f, 32f);
+
+            WindPowerInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "сила 1-10, напр. 5", 16, 160f, 32f);
+            AddFixedSize(WindPowerInput, 160f, 32f);
+
+            WindApplyButton = MakeButton(gui, "Установить", ApplyWind);
+
+            WindResetButton = MakeButton(gui, "Вернуть обычный", ResetWind);
+
+            EnvHint = MakeText(gui, "Держит выбранную погоду,\nпока не вернёшь обычную.\nВидно только тебе.");
+
+            // Built once, like every other list here: a button created inside a click
+            // handler breeds a new one on every press.
+            for (var i = 0; i < WeatherOptions.Length; i++)
+            {
+                var option = WeatherOptions[i];
+                WeatherOptionButtons[i] = MakeButton(gui, option.Label, () => ApplyWeather(option));
+            }
+
+            EnvResetButton = MakeButton(gui, "Вернуть обычную", ResetWeather);
 
             RepairButton = MakeButton(gui, "Починить всё", () =>
             {
@@ -672,7 +723,9 @@ namespace AstvardServerMod
                 else if (MenuState == StateRoad) MenuState = StateTerrain;
                 else if (MenuState == StateCopyForm) MenuState = StateBuild;
                 else if (MenuState == StateTod || MenuState == StateRepair ||
-                         MenuState == StateForceDelete) MenuState = StateCheats;
+                         MenuState == StateForceDelete ||
+                         MenuState == StateWeather) MenuState = StateCheats;
+                else if (MenuState == StateWind || MenuState == StateEnv) MenuState = StateWeather;
                 else if (MenuState == StateTemplates) MenuState = StateBuild;
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
                 else if (MenuState == StateTemplateEdit) MenuState = StateTemplateList;
@@ -814,6 +867,7 @@ namespace AstvardServerMod
             SetActive(GodButton, admin && MenuState == StateCheats);
             SetActive(DebugModeButton, admin && MenuState == StateCheats);
             SetActive(TodButton, admin && MenuState == StateCheats);
+            SetActive(WeatherButton, admin && MenuState == StateCheats);
             SetActive(RepairButton, admin && MenuState == StateCheats);
             SetActive(ForceDeleteButton, admin && MenuState == StateCheats);
 
@@ -827,6 +881,21 @@ namespace AstvardServerMod
             SetActive(ForceDeleteHint, admin && MenuState == StateForceDelete);
             SetActive(ForceDeleteRadiusInput, admin && MenuState == StateForceDelete);
             SetActive(ForceDeleteApplyButton, admin && MenuState == StateForceDelete);
+
+            SetActive(WindButton, admin && MenuState == StateWeather);
+            SetActive(EnvButton, admin && MenuState == StateWeather);
+
+            SetActive(WindHint, admin && MenuState == StateWind);
+            SetActive(WindAngleInput, admin && MenuState == StateWind);
+            SetActive(WindPowerInput, admin && MenuState == StateWind);
+            SetActive(WindApplyButton, admin && MenuState == StateWind);
+            SetActive(WindResetButton, admin && MenuState == StateWind);
+
+            SetActive(EnvHint, admin && MenuState == StateEnv);
+            for (var i = 0; i < WeatherOptions.Length; i++)
+                SetActive(WeatherOptionButtons[i], admin && MenuState == StateEnv
+                                                   && KnowsWeather(WeatherOptions[i].Env));
+            SetActive(EnvResetButton, admin && MenuState == StateEnv);
 
             SetActive(CopyButton, admin && MenuState == StateBuild);
             SetActive(PasteButton, admin && MenuState == StateBuild);

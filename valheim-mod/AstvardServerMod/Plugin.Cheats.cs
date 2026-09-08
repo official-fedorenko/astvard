@@ -26,6 +26,26 @@ namespace AstvardServerMod
 
         internal static GameObject TodApplyButton;
 
+        internal static GameObject WeatherButton;
+
+        internal static GameObject WindButton;
+
+        internal static GameObject WindHint;
+
+        internal static GameObject WindAngleInput;
+
+        internal static GameObject WindPowerInput;
+
+        internal static GameObject WindApplyButton;
+
+        internal static GameObject WindResetButton;
+
+        internal static GameObject EnvButton;
+
+        internal static GameObject EnvHint;
+
+        internal static GameObject EnvResetButton;
+
         internal static GameObject RepairButton;
 
         internal static GameObject RepairHint;
@@ -60,6 +80,135 @@ namespace AstvardServerMod
             env.m_debugTime = value / 10f;
 
             Log.LogInfo($"[AstvardServerMod] Time of day set to {value} ({env.m_debugTime:F2}).");
+        }
+
+        /// <summary>What the button says, and the name EnvMan files that weather under.</summary>
+        private class WeatherOption
+        {
+            public WeatherOption(string label, string env)
+            {
+                Label = label;
+                Env = env;
+            }
+
+            public string Label { get; }
+
+            public string Env { get; }
+        }
+
+        // The handful worth a button, out of the thirty-odd the game carries — most of
+        // the rest are boss arenas and cave interiors, which look wrong under open sky.
+        // Every name is checked against the running game before its button is shown, so
+        // one the build has dropped disappears rather than sitting there doing nothing.
+        private static readonly WeatherOption[] WeatherOptions =
+        {
+            new WeatherOption("Ясно", "Clear"),
+            new WeatherOption("Морось", "LightRain"),
+            new WeatherOption("Дождь", "Rain"),
+            new WeatherOption("Гроза", "ThunderStorm"),
+            new WeatherOption("Туман", "Misty"),
+            new WeatherOption("Снег", "Snow"),
+            new WeatherOption("Метель", "SnowStorm"),
+            new WeatherOption("Мгла", "Darklands_dark"),
+        };
+
+        internal static readonly GameObject[] WeatherOptionButtons =
+            new GameObject[WeatherOptions.Length];
+
+        private static readonly string[] CompassNames =
+        {
+            "север", "северо-восток", "восток", "юго-восток",
+            "юг", "юго-запад", "запад", "северо-запад"
+        };
+
+        /// <summary>
+        /// Whether this build of the game has that weather at all. m_environments is
+        /// filled from game data at load, so asking it is the only honest answer — a
+        /// name that was right one update ago can quietly stop existing.
+        /// </summary>
+        internal static bool KnowsWeather(string name)
+        {
+            var env = EnvMan.instance;
+            if (env == null || env.m_environments == null) return false;
+
+            foreach (var setup in env.m_environments)
+                if (setup != null && setup.m_name == name) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Pins the weather, the way the console's "env" command does. Only this client
+        /// sees it: m_forceEnv is an ordinary local field, and everyone else goes on
+        /// deriving the weather from world time as usual.
+        /// </summary>
+        private static void ApplyWeather(WeatherOption option)
+        {
+            var env = EnvMan.instance;
+            if (env == null)
+            {
+                Log.LogWarning("[AstvardServerMod] EnvMan not ready.");
+                return;
+            }
+
+            env.SetForceEnvironment(option.Env);
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Погода: {option.Label}");
+            Log.LogInfo($"[AstvardServerMod] Forced environment {option.Env}.");
+        }
+
+        /// <summary>Hands the weather back to the world clock.</summary>
+        private static void ResetWeather()
+        {
+            var env = EnvMan.instance;
+            if (env == null) return;
+
+            // Empty is what the field starts as and what the game reads as "no
+            // override"; there is no separate call for clearing it.
+            env.SetForceEnvironment("");
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Погода снова обычная");
+            Log.LogInfo("[AstvardServerMod] Environment override cleared.");
+        }
+
+        /// <summary>
+        /// Freezes the wind at a bearing and a strength. The game turns the angle into
+        /// (sin, 0, cos), which makes it an ordinary compass bearing pointing the way
+        /// the wind blows: 0 north, 90 east. Strength is 1-10 here to match the
+        /// time-of-day field next door — the game itself wants 0-1 and clamps to it.
+        /// Local like the weather: m_debugWind never leaves this client.
+        /// </summary>
+        private static void ApplyWind()
+        {
+            var env = EnvMan.instance;
+            if (env == null)
+            {
+                Log.LogWarning("[AstvardServerMod] EnvMan not ready.");
+                return;
+            }
+
+            // Repeat rather than Clamp: 370 is the same bearing as 10, and a compass
+            // has no ends to bump into.
+            var angle = Mathf.Repeat(ParseField(WindAngleInput, 0f), 360f);
+            var power = Mathf.Clamp(ParseField(WindPowerInput, 5f), 0f, 10f);
+
+            env.SetDebugWind(angle, power / 10f);
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                $"Ветер на {CompassNames[(int)Mathf.Repeat(Mathf.Round(angle / 45f), 8f)]}, сила {power:F0}");
+            Log.LogInfo($"[AstvardServerMod] Wind set to {angle:F0} deg, {power / 10f:F2}.");
+        }
+
+        /// <summary>Hands the wind back to the weather that should be driving it.</summary>
+        private static void ResetWind()
+        {
+            var env = EnvMan.instance;
+            if (env == null) return;
+
+            env.ResetDebugWind();
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Ветер снова обычный");
+            Log.LogInfo("[AstvardServerMod] Debug wind cleared.");
         }
 
         // CookingStation and Smelter keep their fuel setter private, unlike
