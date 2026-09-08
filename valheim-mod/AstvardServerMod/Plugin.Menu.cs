@@ -482,7 +482,7 @@ namespace AstvardServerMod
             RoadCurveInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "изгиб 0-10, минус — влево", 16, 160f, 32f);
+                InputField.ContentType.DecimalNumber, "изгиб 0-10, напр. 3", 16, 160f, 32f);
             AddFixedSize(RoadCurveInput, 160f, 32f);
 
             RoadAreaInput = gui.CreateInputField(
@@ -500,6 +500,18 @@ namespace AstvardServerMod
             RoadDirtButton = MakeButton(gui, "Земляная", () =>
             {
                 _roadPaved = false;
+                UpdateRoadHint();
+            });
+
+            RoadLeftButton = MakeButton(gui, "Изгиб влево", () =>
+            {
+                _roadBendLeft = true;
+                UpdateRoadHint();
+            });
+
+            RoadRightButton = MakeButton(gui, "Изгиб вправо", () =>
+            {
+                _roadBendLeft = false;
                 UpdateRoadHint();
             });
 
@@ -952,6 +964,8 @@ namespace AstvardServerMod
             SetActive(RoadCancelButton, admin && MenuState == StateRoad && RoadInProgress);
             SetActive(RoadStoneButton, admin && MenuState == StateRoad);
             SetActive(RoadDirtButton, admin && MenuState == StateRoad);
+            SetActive(RoadLeftButton, admin && MenuState == StateRoad);
+            SetActive(RoadRightButton, admin && MenuState == StateRoad);
             SetActive(RoadStartButton, admin && MenuState == StateRoad);
             SetActive(RoadEndButton, admin && MenuState == StateRoad);
             SetActive(LevelSquareButton, admin && MenuState == StateTerrain);

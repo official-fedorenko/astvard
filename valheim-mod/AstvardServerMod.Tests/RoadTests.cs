@@ -67,6 +67,29 @@ public class RoadTests
         }
     }
 
+    /// <summary>
+    /// Which way a positive curve bows. Nothing pinned this before, and the input
+    /// field's own label claimed the opposite: the side vector is the travel direction
+    /// turned a quarter turn to the left, so a positive sagitta bows left and a
+    /// negative one bows right. The buttons in the panel lean on this.
+    /// </summary>
+    [Fact]
+    public void PositiveCurveBowsLeftOfTheTravel()
+    {
+        // Heading east, left is north: +Z.
+        var east = Geometry.Bezier(new Vec2(0f, 0f), new Vec2(100f, 0f), 10f, 1f);
+        Assert.True(east[east.Count / 2].Z > 0f);
+
+        // Heading north, left is west: -X. The side has to follow the heading rather
+        // than one fixed axis.
+        var north = Geometry.Bezier(new Vec2(0f, 0f), new Vec2(0f, 100f), 10f, 1f);
+        Assert.True(north[north.Count / 2].X < 0f);
+
+        // And a negative curve bows the other way from the same start.
+        var right = Geometry.Bezier(new Vec2(0f, 0f), new Vec2(100f, 0f), -10f, 1f);
+        Assert.True(right[right.Count / 2].Z < 0f);
+    }
+
     [Fact]
     public void SamplesNeverStepFurtherThanAsked()
     {

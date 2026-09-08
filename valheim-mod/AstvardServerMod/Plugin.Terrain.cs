@@ -40,6 +40,10 @@ namespace AstvardServerMod
 
         internal static GameObject RoadDirtButton;
 
+        internal static GameObject RoadLeftButton;
+
+        internal static GameObject RoadRightButton;
+
         internal static GameObject RoadStartButton;
 
         internal static GameObject RoadEndButton;
@@ -72,6 +76,10 @@ namespace AstvardServerMod
         private const float MaxRoadLength = 200f;
 
         private static bool _roadPaved = true;
+
+        // Left is what a positive curve used to mean, so this keeps every road already
+        // laid by a typed number bending the way it did.
+        private static bool _roadBendLeft = true;
 
         private static bool _roadStarted;
         private static bool _roadLaying;
@@ -109,10 +117,12 @@ namespace AstvardServerMod
             if (label == null) return;
 
             var kind = _roadPaved ? "каменная" : "земляная";
+            var bend = _roadBendLeft ? "влево" : "вправо";
             label.text = _roadStarted
-                ? $"Кладка: {kind}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
+                ? $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
                   + $"и нажми «Закончить».{NEWLINE}Esc — отменить."
-                : $"Кладка: {kind}.{NEWLINE}Встань в начало дорожки{NEWLINE}и нажми «Начать».";
+                : $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Встань в начало дорожки{NEWLINE}"
+                  + $"и нажми «Начать».";
         }
 
         private static readonly List<Vector3> RoadPath = new List<Vector3>();
@@ -143,8 +153,11 @@ namespace AstvardServerMod
         /// </summary>
         private static float RoadSagitta(float length)
         {
-            var curve = Mathf.Clamp(ParseField(RoadCurveInput, 0f), -10f, 10f);
-            return Geometry.Sagitta(curve, length);
+            // The field is a magnitude and the buttons carry the side. A typed minus
+            // used to be the only way to say "the other way", and the field's own
+            // label had that backwards — positive bows left, which RoadTests pins.
+            var curve = Mathf.Clamp(Mathf.Abs(ParseField(RoadCurveInput, 0f)), 0f, 10f);
+            return Geometry.Sagitta(_roadBendLeft ? curve : -curve, length);
         }
 
         /// <summary>
