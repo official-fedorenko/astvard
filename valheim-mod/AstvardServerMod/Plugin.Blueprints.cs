@@ -294,8 +294,41 @@ namespace AstvardServerMod
         /// Drives placement mode: the ghost follows the player until left click
         /// commits it, or escape drops it.
         /// </summary>
+        private static UnityEngine.UI.InputField[] _panelInputs;
+        private static bool _inputBlocked;
+
+        /// <summary>
+        /// Hands the keyboard to a focused text box. Without this the game keeps every
+        /// letter as a hotkey, so typing a template name did nothing visible — the
+        /// numeric fields only seemed to work because digits are not bound to anything.
+        /// </summary>
+        internal static void UpdatePanelInputBlocking()
+        {
+            if (Panel == null) return;
+
+            if (_panelInputs == null)
+                _panelInputs = Panel.GetComponentsInChildren<UnityEngine.UI.InputField>(true);
+
+            var focused = false;
+            if (Panel.activeInHierarchy)
+            {
+                foreach (var field in _panelInputs)
+                {
+                    if (field == null || !field.isFocused) continue;
+                    focused = true;
+                    break;
+                }
+            }
+
+            if (focused == _inputBlocked) return;
+
+            _inputBlocked = focused;
+            GUIManager.BlockInput(focused);
+        }
+
         private void Update()
         {
+            UpdatePanelInputBlocking();
             UpdateRoadPreview();
 
             // Escape gets the road out of the way too, and it has to be read before

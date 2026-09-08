@@ -41,6 +41,14 @@ namespace AstvardServerMod
         private static int _shownCategories;
         private static int _shownTemplates;
 
+        private static void SetFieldText(GameObject inputGo, string text)
+        {
+            var field = inputGo != null
+                ? inputGo.GetComponentInChildren<UnityEngine.UI.InputField>()
+                : null;
+            if (field != null) field.text = text ?? "";
+        }
+
         private static string FieldText(GameObject inputGo, string fallback)
         {
             var field = inputGo != null

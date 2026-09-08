@@ -69,6 +69,8 @@ namespace AstvardServerMod
         internal static GameObject TemplateDeleteButton;
         internal static GameObject TemplateNameInput;
         internal static GameObject TemplateCategoryInput;
+        internal static GameObject TemplateNameLabel;
+        internal static GameObject TemplateCategoryLabel;
         internal static GameObject TemplateShareButton;
         internal static GameObject SharedButton;
         internal static GameObject SharedHint;
@@ -551,6 +553,12 @@ namespace AstvardServerMod
                     if (index >= shown.Count) return;
 
                     _editingTemplate = shown[index];
+
+                    // Filled in rather than left blank: renaming means editing what is
+                    // there, and an empty box says nothing about what you are editing.
+                    SetFieldText(TemplateNameInput, _editingTemplate.Name);
+                    SetFieldText(TemplateCategoryInput, _editingTemplate.Category);
+
                     MenuState = StateTemplateEdit;
                     RefreshMenu();
                 });
@@ -558,16 +566,20 @@ namespace AstvardServerMod
 
             TemplateEditHint = MakeText(gui, "");
 
+            TemplateNameLabel = MakeText(gui, "Имя:");
+
             TemplateNameInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.Standard, "имя", 32, 160f, 32f);
+                InputField.ContentType.Standard, "имя шаблона", 16, 160f, 32f);
             AddFixedSize(TemplateNameInput, 160f, 32f);
+
+            TemplateCategoryLabel = MakeText(gui, "Категория:");
 
             TemplateCategoryInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.Standard, "категория", 32, 160f, 32f);
+                InputField.ContentType.Standard, "категория", 16, 160f, 32f);
             AddFixedSize(TemplateCategoryInput, 160f, 32f);
 
             TemplatePlaceButton = MakeButton(gui, "Поставить", () =>
@@ -671,6 +683,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
                 else if (MenuState == StateZoneOthers) MenuState = StateZone;
                 else if (MenuState == StateFeatures) MenuState = StateRoot;
+                else if (MenuState == StateAdmin) MenuState = StateRoot;
                 else MenuState = StateAdmin;
                 RefreshMenu();
             });
@@ -841,7 +854,9 @@ namespace AstvardServerMod
                                             && i < SharedTemplates.Count);
 
             var naming = MenuState == StateTemplateEdit || MenuState == StateCopyForm;
+            SetActive(TemplateNameLabel, admin && naming);
             SetActive(TemplateNameInput, admin && naming);
+            SetActive(TemplateCategoryLabel, admin && naming);
             SetActive(TemplateCategoryInput, admin && naming);
 
             for (var i = 0; i < MaxTemplateButtons; i++)
@@ -877,7 +892,7 @@ namespace AstvardServerMod
             SetActive(HeightInput, admin && MenuState == StateTerrainForm);
             SetActive(ApplyButton, admin && MenuState == StateTerrainForm);
 
-            SetActive(BackButton, (admin || IsPlayerSection(MenuState)) && MenuState >= StateTerrain);
+            SetActive(BackButton, (admin || IsPlayerSection(MenuState)) && MenuState != StateRoot);
 
             KeepPanelOnScreen();
         }

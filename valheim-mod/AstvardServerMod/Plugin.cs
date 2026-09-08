@@ -78,6 +78,9 @@ namespace AstvardServerMod
 
         private void OnDestroy()
         {
+            // Leaving the keyboard captured would lock the player out of their own game.
+            if (_inputBlocked) GUIManager.BlockInput(false);
+
             if (_roadPreview != null) Destroy(_roadPreview);
             _harmony?.UnpatchSelf();
         }
