@@ -44,6 +44,8 @@ namespace AstvardServerMod
         private const int StateWind = 26;       // куда и как сильно дует
         private const int StateEnv = 27;        // какую погоду держать
         private const int StateBridge = 28;     // мост между двумя точками
+        private const int StateSpawners = 29;   // спавнеры, сгруппированные по биому
+        private const int StateSpawnerList = 30; // спавнеры одного биома
 
         internal static GameObject Panel;
 
@@ -341,6 +343,27 @@ namespace AstvardServerMod
             AddFixedSize(TodInput, 160f, 32f);
 
             TodApplyButton = MakeButton(gui, "Установить", ApplyTimeOfDay);
+
+
+            SpawnerButton = MakeButton(gui, "Спавнеры", () =>
+            {
+                MenuState = StateSpawners;
+                RefreshMenu();
+            });
+
+            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nСтавится проекцией:\nЛКМ — поставить, Esc — отмена.\nБуфер копирования будет занят.");
+
+            for (var i = 0; i < MaxSpawnerButtons; i++)
+            {
+                var slot = i;
+                SpawnerGroupButtons[slot] = MakeButton(gui, "", () => OpenSpawnerGroup(slot));
+            }
+
+            for (var i = 0; i < MaxSpawnerButtons; i++)
+            {
+                var slot = i;
+                SpawnerKindButtons[slot] = MakeButton(gui, "", () => PlaceSpawner(slot));
+            }
 
             WeatherButton = MakeButton(gui, "Настройка погоды", () =>
             {
@@ -782,6 +805,8 @@ namespace AstvardServerMod
                          MenuState == StateForceDelete ||
                          MenuState == StateWeather) MenuState = StateCheats;
                 else if (MenuState == StateWind || MenuState == StateEnv) MenuState = StateWeather;
+                else if (MenuState == StateSpawners) MenuState = StateCheats;
+                else if (MenuState == StateSpawnerList) MenuState = StateSpawners;
                 else if (MenuState == StateTemplates) MenuState = StateBuild;
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
                 else if (MenuState == StateTemplateEdit) MenuState = StateTemplateList;
@@ -941,6 +966,7 @@ namespace AstvardServerMod
             SetActive(DebugModeButton, admin && MenuState == StateCheats);
             SetActive(TodButton, admin && MenuState == StateCheats);
             SetActive(WeatherButton, admin && MenuState == StateCheats);
+            SetActive(SpawnerButton, admin && MenuState == StateCheats);
             SetActive(RepairButton, admin && MenuState == StateCheats);
             SetActive(ForceDeleteButton, admin && MenuState == StateCheats);
 
@@ -970,6 +996,17 @@ namespace AstvardServerMod
                 SetActive(WeatherOptionButtons[i], admin && MenuState == StateEnv
                                                    && KnowsWeather(WeatherOptions[i].Env));
             SetActive(EnvResetButton, admin && MenuState == StateEnv);
+
+            RebuildSpawnerViews();
+            SetActive(SpawnerHint, admin && (MenuState == StateSpawners
+                                            || MenuState == StateSpawnerList));
+            for (var i = 0; i < MaxSpawnerButtons; i++)
+            {
+                SetActive(SpawnerGroupButtons[i], admin && MenuState == StateSpawners
+                                                  && i < _shownSpawnerGroups);
+                SetActive(SpawnerKindButtons[i], admin && MenuState == StateSpawnerList
+                                                 && i < _shownSpawnerKinds);
+            }
 
             SetActive(CopyButton, admin && MenuState == StateBuild);
             SetActive(PasteButton, admin && MenuState == StateBuild);
