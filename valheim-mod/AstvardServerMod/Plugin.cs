@@ -78,6 +78,7 @@ namespace AstvardServerMod
         internal static GameObject SmelterHallButton;
         internal static GameObject CharcoalKilnsButton;
         internal static GameObject SnapButton;
+        internal static GameObject LevelGroundButton;
         internal static GameObject CheatsButton;
         internal static GameObject TodButton;
         internal static GameObject TodHint;
@@ -161,6 +162,7 @@ namespace AstvardServerMod
 
         /// <summary>Whether the preview latches onto nearby built pieces.</summary>
         internal static bool IsSnapEnabled;
+        internal static bool IsLevelGroundEnabled;
         // null = not armed, true = arm assign, false = arm unassign.
         internal static bool? PendingChestAssign;
         // Which role the armed button is about: supply chest or collection chest.
@@ -662,6 +664,14 @@ namespace AstvardServerMod
             });
             UpdateSnapButtonLabel();
 
+            LevelGroundButton = MakeButton(gui, "Выравнивать землю", () =>
+            {
+                IsLevelGroundEnabled = !IsLevelGroundEnabled;
+                UpdateLevelGroundButtonLabel();
+                Log.LogInfo($"[AstvardServerMod] Level ground: {IsLevelGroundEnabled}");
+            });
+            UpdateLevelGroundButtonLabel();
+
             TemplatesButton = MakeButton(gui, "Шаблоны", () =>
             {
                 MenuState = StateTemplates;
@@ -790,6 +800,17 @@ namespace AstvardServerMod
         {
             var label = SnapButton != null ? SnapButton.GetComponentInChildren<Text>() : null;
             if (label != null) label.text = IsSnapEnabled ? "Прилипание: вкл" : "Прилипание: выкл";
+        }
+
+        private static void UpdateLevelGroundButtonLabel()
+        {
+            var label = LevelGroundButton != null
+                ? LevelGroundButton.GetComponentInChildren<Text>()
+                : null;
+            if (label != null)
+                label.text = IsLevelGroundEnabled
+                    ? "Выравнивать землю: вкл"
+                    : "Выравнивать землю: выкл";
         }
 
         private static void UpdateAutoCollectButtonLabel()
@@ -1907,6 +1928,10 @@ namespace AstvardServerMod
             var rotation = GhostRoot != null ? GhostRoot.transform.rotation : player.transform.rotation;
             var creator = player.GetPlayerID();
 
+            // Before the pieces, not after: a floor dropped onto a slope and then
+            // levelled underneath would already have decided what it was resting on.
+            if (IsLevelGroundEnabled) LevelUnderBuild(origin, rotation);
+
             for (var i = 0; i < Clipboard.Count; i++)
             {
                 var entry = Clipboard[i];
@@ -2497,6 +2522,62 @@ namespace AstvardServerMod
                         $"nodes={path.Count} zones={comps.Count} owned={owned} verts={painted}");
         }
 
+        /// <summary>
+        /// Flattens a pad under a blueprint before it is placed, so a build meant for
+        /// level ground does not end up half-buried on a slope. The footprint is taken
+        /// from the rotated clipboard, so a build set down at an angle still gets a pad
+        /// that covers it.
+        /// </summary>
+        private static void LevelUnderBuild(Vector3 origin, Quaternion rotation)
+        {
+            if (Clipboard.Count == 0) return;
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (var entry in Clipboard)
+            {
+                var local = rotation * entry.LocalPos;
+                if (local.x < minX) minX = local.x;
+                if (local.x > maxX) maxX = local.x;
+                if (local.z < minZ) minZ = local.z;
+                if (local.z > maxZ) maxZ = local.z;
+            }
+
+            var half = Mathf.Max(maxX - minX, maxZ - minZ) * 0.5f;
+            var radius = Mathf.Clamp(half + 1.5f, 2f, 64f);
+            var target = new Vector3(origin.x + (minX + maxX) * 0.5f,
+                                     origin.y,
+                                     origin.z + (minZ + maxZ) * 0.5f);
+
+            // A short run-out: enough that the pad does not end in a cliff, not so much
+            // that setting down a hut reshapes the whole hillside around it.
+            var blend = Mathf.Clamp(radius * 0.35f, 2f, 8f);
+
+            var comps = CollectTerrainComps(target, radius + blend);
+            if (comps.Count == 0)
+            {
+                Log.LogWarning("[AstvardServerMod] No TerrainComp under the build.");
+                return;
+            }
+
+            // BlendLevel reads the terrain tool's own square/circle flag. A building
+            // wants a square pad whatever the player last levelled by hand, so the flag
+            // is borrowed and put back.
+            var wasSquare = _terrainSquare;
+            _terrainSquare = true;
+
+            var save = AccessTools.Method(typeof(TerrainComp), "Save");
+            foreach (var comp in comps) BlendLevel(comp, target, radius, blend);
+            foreach (var comp in comps) save.Invoke(comp, null);
+
+            _terrainSquare = wasSquare;
+
+            RebuildHeightmaps(target, radius + blend);
+
+            Log.LogInfo($"[AstvardServerMod] Levelled under build r={radius:F1} " +
+                        $"blend={blend:F1} zones={comps.Count} at {target}");
+        }
+
         private static void ApplyTerrainLevel()
         {
             var player = Player.m_localPlayer;
@@ -2779,6 +2860,7 @@ namespace AstvardServerMod
             SetActive(PasteButton, admin && MenuState == StateBuild);
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
             SetActive(SnapButton, admin && MenuState == StateBuild);
+            SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlatformsCategoryButton, admin && MenuState == StateTemplates);
             SetActive(HousesCategoryButton, admin && MenuState == StateTemplates);
             SetActive(KitchensCategoryButton, admin && MenuState == StateTemplates);
