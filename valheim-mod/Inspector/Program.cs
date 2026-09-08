@@ -9,14 +9,26 @@ var resolver = new PathAssemblyResolver(files);
 using var mlc = new MetadataLoadContext(resolver);
 var asm = mlc.LoadFromAssemblyPath(jotunn);
 
-var gm = asm.GetTypes().First(x => x.Name == "GUIManager");
-foreach (var m in gm.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-    if (m.Name is "CreateButton" or "CreateText")
-        Console.WriteLine($"{m.Name}({string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name + " " + p.Name))})");
+var mm = asm.GetTypes().FirstOrDefault(x => x.Name == "MinimapManager");
+if (mm == null)
+{
+    Console.WriteLine("no MinimapManager in Jotunn");
+}
+else
+{
+    Console.WriteLine("=== MinimapManager public API ===");
+    foreach (var m in mm.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                        .OrderBy(m => m.Name))
+        Console.WriteLine($"  {m.ReturnType.Name} {m.Name}({string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name + " " + p.Name))})");
 
-// Which Text type does the game use for buttons at all?
-var uasm = mlc.LoadFromAssemblyPath(Path.Combine(vdir, "assembly_valheim.dll"));
-var pc = uasm.GetTypes().First(x => x.Name == "Piece");
-Console.WriteLine("\nPhysics buffer size check — Piece static fields:");
-foreach (var f in pc.GetFields(BindingFlags.NonPublic | BindingFlags.Static))
-    Console.WriteLine($"  {f.FieldType.Name} {f.Name}");
+    foreach (var t in mm.GetNestedTypes(BindingFlags.Public))
+    {
+        Console.WriteLine($"\n=== nested {t.Name} ===");
+        foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            Console.WriteLine($"  prop {p.PropertyType.Name} {p.Name}");
+        foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.Instance))
+            Console.WriteLine($"  field {f.FieldType.Name} {f.Name}");
+        foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            Console.WriteLine($"  {m.ReturnType.Name} {m.Name}({string.Join(", ", m.GetParameters().Select(x => x.ParameterType.Name))})");
+    }
+}
