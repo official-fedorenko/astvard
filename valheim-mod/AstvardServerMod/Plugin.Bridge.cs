@@ -318,6 +318,10 @@ namespace AstvardServerMod
         ///
         /// One tread past the one that reaches, always. The last tread is what a person
         /// steps off onto, and it is better buried than a hand's breadth short.
+        ///
+        /// How far the flight goes is measured once, down the centreline, and every lane
+        /// gets that many treads. Measuring each lane against its own ground would leave
+        /// a wide flight ragged, one lane ending a step above its neighbour.
         /// </summary>
         /// <returns>How many treads went down, so the roof knows how far to reach.</returns>
         private static int RampDown(BridgeSurvey survey, List<CopiedPiece> into, int index,
@@ -329,6 +333,8 @@ namespace AstvardServerMod
             var end = _bridgeStart + survey.Facing * new Vector3(0f, 0f, index * Module);
             var outward = survey.Facing * new Vector3(0f, 0f, sense);
             var turn = sense > 0f ? Quaternion.identity : Quaternion.Euler(0f, 180f, 0f);
+            var width = survey.Width;
+            var half = (width - 1) * 0.5f * Module;
             var landed = false;
             var treads = 0;
 
@@ -339,7 +345,11 @@ namespace AstvardServerMod
                 var reach = Module + step * RampRun;
                 var drop = RampDrop + step * RampRise;
 
-                Add(into, RampPrefab, 0f, rise - drop, index * Module + sense * reach, turn);
+                // A stair in every lane, so the flight is as wide as the deck it leaves.
+                // One down the middle of a four metre bridge is a plank, not a way down.
+                var along = index * Module + sense * reach;
+                for (var w = 0; w < width; w++)
+                    Add(into, RampPrefab, w * Module - half, rise - drop, along, turn);
                 treads++;
 
                 // This iteration laid the spare, so the flight is done.
