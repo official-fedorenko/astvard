@@ -51,9 +51,15 @@ namespace AstvardServerMod
         private const float RoofPostRise = 2f;
         private const float RidgeRise = 3f;
 
-        // A stair covers one module of drop. Eight of them walk down sixteen metres,
-        // which is past the height any wooden leg can stand at anyway.
-        private const int MaxRampSteps = 8;
+        // Measured across three blueprints built by hand, every one of them agreeing to
+        // the millimetre: a stair covers one metre of drop over 1.974 of run. Assuming a
+        // whole module of drop is what left the treads a metre apart with daylight
+        // between them, which no amount of extra treads would have closed.
+        private const float RampRise = 1f;
+        private const float RampRun = 1.974f;
+
+        // Sixteen treads walk down sixteen metres, past the height any wooden leg stands.
+        private const int MaxRampSteps = 16;
 
         // Long enough for any crossing worth a tool, short enough that one press does not
         // put six hundred pieces into the world in a single frame.
@@ -273,10 +279,16 @@ namespace AstvardServerMod
                     Add(into, LegPrefab, offset, rise + RoofPostRise, index * Module, straight);
                 }
 
+            // A ridge over every two metre lane, not one down the middle. One line roofs
+            // the deck it was measured on and leaves half of a wider one open to the sky,
+            // which is exactly what a two-wide bridge came out looking like.
+            //
             // The ridge overhangs a module at each end: the top tread of each stair comes
             // out under it, which is what makes an entrance read as one.
             for (var i = -1; i <= last + 1; i++)
-                Add(into, RidgePrefab, 0f, rise + RidgeRise, i * Module, acrossBridge);
+                for (var w = 0; w < width; w++)
+                    Add(into, RidgePrefab, w * Module - half, rise + RidgeRise,
+                        i * Module, acrossBridge);
 
             // Gables close the two ends. They are mirrored, which is why the near and far
             // ones do not share a facing.
@@ -315,17 +327,29 @@ namespace AstvardServerMod
 
             for (var step = 0; step < MaxRampSteps; step++)
             {
-                var along = (index + sense * (step + 1)) * Module;
-                var y = rise - RampDrop - step * Module;
+                // The first tread sits a whole module past the deck, the way the
+                // hand-built one does; every tread after it follows the stair's own run.
+                var reach = Module + step * RampRun;
+                var drop = RampDrop + step * RampRise;
 
-                Add(into, RampPrefab, 0f, y, along, turn);
+                Add(into, RampPrefab, 0f, rise - drop, index * Module + sense * reach, turn);
 
-                // This iteration laid the spare one, so the flight is done.
+                // This iteration laid the spare, so the flight is done.
                 if (landed) break;
 
-                var foot = end + outward * (Module * (step + 2));
+                // A tread meets the ground at its foot, half its run further out and half
+                // its rise lower. Asking under its middle is what left treads hanging
+                // over a bank that keeps falling away.
+                var foot = end + outward * (reach + RampRun * 0.5f);
                 if (!zones.GetGroundHeight(foot, out var ground)) break;
-                if (survey.Deck - RampDrop - step * Module - Module * 0.5f <= ground) landed = true;
+                if (survey.Deck - drop - RampRise * 0.5f > ground) continue;
+
+                // A flight of one is a step onto a bank a metre down and it has already
+                // arrived; a spare below that is a stair buried in the bank for nothing.
+                // Longer flights get one, because the ground under their last tread is
+                // further out and less certain.
+                if (step == 0) break;
+                landed = true;
             }
         }
 
