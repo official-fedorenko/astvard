@@ -294,6 +294,7 @@ namespace AstvardServerMod
             InfoButton = MakeButton(gui, "Ознакомиться", () =>
             {
                 IsInfoShown = !IsInfoShown;
+                UpdateInfoText();
                 RefreshMenu();
             });
 
@@ -642,20 +643,6 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            CopyButton = MakeButton(gui, "Копировать", () =>
-            {
-                _copyToFile = false;
-                MenuState = StateCopyForm;
-                RefreshMenu();
-            });
-
-            PasteButton = MakeButton(gui, "Скопировать", () =>
-            {
-                _copyToFile = true;
-                MenuState = StateCopyForm;
-                RefreshMenu();
-            });
-
             SnapButton = MakeButton(gui, "Прилипание", () =>
             {
                 IsSnapEnabled = !IsSnapEnabled;
@@ -671,6 +658,20 @@ namespace AstvardServerMod
                 Log.LogInfo($"[AstvardServerMod] Level ground: {IsLevelGroundEnabled}");
             });
             UpdateLevelGroundButtonLabel();
+
+            CopyButton = MakeButton(gui, "Копировать", () =>
+            {
+                _copyToFile = false;
+                MenuState = StateCopyForm;
+                RefreshMenu();
+            });
+
+            PasteButton = MakeButton(gui, "Скопировать", () =>
+            {
+                _copyToFile = true;
+                MenuState = StateCopyForm;
+                RefreshMenu();
+            });
 
             TemplatesButton = MakeButton(gui, "Шаблоны", () =>
             {
@@ -794,6 +795,41 @@ namespace AstvardServerMod
             go.GetComponent<Button>().onClick.AddListener(onClick);
             go.SetActive(false);
             return go;
+        }
+
+        /// <summary>
+        /// Appends what is only knowable in game — where the player stands and which
+        /// world they stand in. Rebuilt on every open rather than cached, since both
+        /// change under the panel while it is closed.
+        /// </summary>
+        private static void UpdateInfoText()
+        {
+            var label = InfoText != null ? InfoText.GetComponentInChildren<Text>() : null;
+            if (label == null) return;
+
+            var text = new System.Text.StringBuilder(ProjectDescription);
+
+            var world = ZNet.World;
+            if (world != null)
+            {
+                text.Append($"{NEWLINE}{NEWLINE}Мир: {world.m_name}");
+                text.Append($"{NEWLINE}Сид: {world.m_seedName} ({world.m_seed})");
+            }
+
+            var player = Player.m_localPlayer;
+            if (player != null)
+            {
+                var pos = player.transform.position;
+                text.Append($"{NEWLINE}Позиция: {pos.x:F0}, {pos.y:F0}, {pos.z:F0}");
+
+                var zone = ZoneSystem.GetZone(pos);
+                text.Append($"{NEWLINE}Зона: {zone.x}, {zone.y}");
+
+                var biome = Heightmap.FindBiome(pos);
+                text.Append($"{NEWLINE}Биом: {biome}");
+            }
+
+            label.text = text.ToString();
         }
 
         private static void UpdateSnapButtonLabel()
@@ -2543,7 +2579,11 @@ namespace AstvardServerMod
                 if (local.z > maxZ) maxZ = local.z;
             }
 
-            var half = Mathf.Max(maxX - minX, maxZ - minZ) * 0.5f;
+            // A circle has to reach the corners, not the sides: half the diagonal,
+            // otherwise a rectangular build would sit with its corners off the pad.
+            var spanX = maxX - minX;
+            var spanZ = maxZ - minZ;
+            var half = Mathf.Sqrt(spanX * spanX + spanZ * spanZ) * 0.5f;
             var radius = Mathf.Clamp(half + 1.5f, 2f, 64f);
             var target = new Vector3(origin.x + (minX + maxX) * 0.5f,
                                      origin.y,
@@ -2560,11 +2600,11 @@ namespace AstvardServerMod
                 return;
             }
 
-            // BlendLevel reads the terrain tool's own square/circle flag. A building
-            // wants a square pad whatever the player last levelled by hand, so the flag
-            // is borrowed and put back.
+            // BlendLevel reads the terrain tool's own square/circle flag. The pad is
+            // always round whatever the player last levelled by hand, so the flag is
+            // borrowed and put back.
             var wasSquare = _terrainSquare;
-            _terrainSquare = true;
+            _terrainSquare = false;
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             foreach (var comp in comps) BlendLevel(comp, target, radius, blend);
