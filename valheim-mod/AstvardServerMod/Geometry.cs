@@ -327,6 +327,21 @@ namespace AstvardServerMod
         }
 
         /// <summary>
+        /// How many deck sections a bridge will leave between legs when it has the
+        /// choice.
+        ///
+        /// Strength alone is a bad judge of this. The support rules let a shallow
+        /// crossing hold with legs eight sections apart, and what that builds is a deck
+        /// with almost nothing under it, planted wherever the riverbed happened to allow
+        /// rather than at any spacing a person would choose. Both bridges built by hand
+        /// put a frame every three or four.
+        ///
+        /// It is a preference, not a rule: where nothing within reach can carry a leg it
+        /// gives way rather than refusing a crossing that would have stood.
+        /// </summary>
+        public const int MaxSectionsBetweenLegs = 4;
+
+        /// <summary>
         /// Where a bridge stands its legs, and whether what is left between them holds.
         /// </summary>
         public sealed class BridgePlan
@@ -375,7 +390,13 @@ namespace AstvardServerMod
 
             while (at < last)
             {
+                // Two answers: the furthest that keeps to the preferred spacing, and
+                // the furthest that stands at all. The first is what gets used, which
+                // makes the legs land on a rhythm instead of wherever the ground last
+                // permitted; the second is the fallback when nothing near enough can
+                // carry one.
                 var reach = -1;
+                var stretch = -1;
 
                 for (var j = at + 1; j <= last; j++)
                 {
@@ -384,8 +405,13 @@ namespace AstvardServerMod
 
                     var allowed = Math.Min(MaxPierSpacing(PierAt(ground, deck, at)),
                                            MaxPierSpacing(PierAt(ground, deck, j)));
-                    if ((j - at) * step <= allowed) reach = j;
+                    if ((j - at) * step > allowed) continue;
+
+                    stretch = j;
+                    if (j - at <= MaxSectionsBetweenLegs) reach = j;
                 }
+
+                if (reach < 0) reach = stretch;
 
                 if (reach < 0)
                 {

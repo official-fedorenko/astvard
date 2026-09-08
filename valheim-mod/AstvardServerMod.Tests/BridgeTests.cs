@@ -54,9 +54,11 @@ public class BridgeTests
     [Fact]
     public void AGapInsideTheFreeSpanNeedsNoLegs()
     {
-        // 8 samples of 2 m: 16 m of deck between two banks, which is exactly what
-        // the two-sided rule carries.
-        var ground = Under(0f, 9f, 9f, 9f, 9f, 9f, 9f, 9f, 0f);
+        // 16 m of deck between two banks, which is exactly what the two-sided rule
+        // carries, over a ravine too deep to stand anything in. Water a leg could
+        // reach would get one: the spacing preference plants legs wherever it can,
+        // and only the free span is left when it cannot.
+        var ground = Under(0f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 0f);
         var plan = Geometry.PlanPiers(ground, 2f, 0f);
 
         Assert.True(plan.Stands);
@@ -95,17 +97,63 @@ public class BridgeTests
     }
 
     [Fact]
-    public void ShallowWaterGetsLegsAtTheFullAllowedSpacing()
+    public void TheBanksAreNeverListedAsLegs()
     {
-        // Two metres deep the whole way: legs may stand 16 m apart, which is
-        // every eighth sample.
+        // They carry the deck like any other support, but they are the ends of the
+        // bridge rather than something it has to build.
         var ground = Under(new float[25].Select(_ => 2f).ToArray());
         var plan = Geometry.PlanPiers(ground, 2f, 0f);
 
         Assert.True(plan.Stands);
-        foreach (var pier in plan.Piers) Assert.Equal(0, pier % 8);
         Assert.DoesNotContain(0, plan.Piers);
         Assert.DoesNotContain(ground.Length - 1, plan.Piers);
+    }
+
+    /// <summary>
+    /// Strength is not the only thing deciding where legs go. Shallow water lets them
+    /// stand sixteen metres apart and still hold, which builds a deck with almost
+    /// nothing under it — so the walk keeps to a rhythm when it has the choice.
+    /// </summary>
+    [Fact]
+    public void LegsKeepToTheirRhythmWhereStrengthWouldAllowMore()
+    {
+        // Two metres deep the whole way, where the support rules alone permit eight
+        // sections between legs.
+        var ground = Under(new float[41].Select(_ => 2f).ToArray());
+        var plan = Geometry.PlanPiers(ground, 2f, 0f);
+
+        Assert.True(plan.Stands);
+
+        var supports = new List<int> { 0 };
+        supports.AddRange(plan.Piers);
+        supports.Add(ground.Length - 1);
+
+        for (var i = 1; i < supports.Count; i++)
+            Assert.True(supports[i] - supports[i - 1] <= Geometry.MaxSectionsBetweenLegs,
+                $"legs at {supports[i - 1]} and {supports[i]} are further apart than asked");
+    }
+
+    /// <summary>
+    /// The rhythm is a preference and has to give way. A stretch too deep to stand a leg
+    /// in is exactly the case the support rules exist for, and holding out for a tidy
+    /// spacing there would refuse a crossing that stands.
+    /// </summary>
+    [Fact]
+    public void TheRhythmGivesWayRatherThanRefusingACrossing()
+    {
+        // Twelve metres of water too deep for any leg, inside the free span, with
+        // ordinary ground either side.
+        var ground = Under(0f, 2f, 20f, 20f, 20f, 20f, 20f, 2f, 2f, 2f);
+        var plan = Geometry.PlanPiers(ground, 2f, 0f);
+
+        Assert.True(plan.Stands);
+
+        // And the stretch it had to reach across is longer than the preference.
+        var supports = new List<int> { 0 };
+        supports.AddRange(plan.Piers);
+        supports.Add(ground.Length - 1);
+        Assert.Contains(supports.Skip(1).Select((v, i) => v - supports[i]),
+                        gap => gap > Geometry.MaxSectionsBetweenLegs);
     }
 
     [Fact]
@@ -141,18 +189,16 @@ public class BridgeTests
     [Fact]
     public void ADistantShallowSpotIsReachedPastNearerDeepOnes()
     {
-        // 30 m across, so it cannot be spanned in one go. Twelve metres down a leg
-        // only carries 4 m of deck; two metres down it carries 16. Samples 5 and 10
-        // are the shallow ones, and both sit exactly 10 m from the previous support.
-        // Getting to them means scanning past samples 3 and 4, which are near enough
-        // to look promising and too deep to reach.
-        var ground = Under(0f, 12f, 12f, 12f, 12f, 2f,
-                           12f, 12f, 12f, 12f, 2f,
-                           12f, 12f, 12f, 12f, 0f);
+        // Samples 1 and 2 are twenty metres down, past what any wooden leg can stand,
+        // so the walk has to look past both of them to sample 3. Stopping at the first
+        // candidate it cannot use would call this crossing impossible.
+        var ground = Under(0f, 20f, 20f, 2f, 20f, 20f, 2f, 2f);
         var plan = Geometry.PlanPiers(ground, 2f, 0f);
 
         Assert.True(plan.Stands);
-        Assert.Equal(new[] { 5, 10 }, plan.Piers);
+        Assert.Contains(3, plan.Piers);
+        Assert.DoesNotContain(1, plan.Piers);
+        Assert.DoesNotContain(2, plan.Piers);
     }
 
     [Fact]
