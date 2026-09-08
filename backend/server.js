@@ -80,9 +80,10 @@ router.post('/api/login', authHandlers.login);
 router.post('/api/logout', authHandlers.logout);
 router.get('/api/me', authHandlers.me);
 
-router.get('/api/servers', (req, res) => {
-  listServers().then((servers) => sendJson(res, 200, { servers }));
-});
+// Returned, not fired and forgotten: the router awaits this and turns a rejection
+// into a 500. Without the return a database failure answered nothing at all.
+router.get('/api/servers', (req, res) =>
+  listServers().then((servers) => sendJson(res, 200, { servers })));
 
 const requireAdmin = admin.requireRole('admin', 'superadmin');
 router.get('/api/admin/users', requireAdmin(admin.getUsers));
@@ -96,6 +97,11 @@ const server = http.createServer((req, res) => {
   // Everything here runs synchronously inside the listener, so a single throw
   // would end the process rather than the request. Belt as well as braces: the
   // two known throwers are handled above, and this catches the next one.
+  // A client that walks away mid-request makes the socket emit 'error'; without
+  // a listener that is an unhandled event and ends the process.
+  req.on('error', (err) => console.error('request stream error', err.message));
+  res.on('error', (err) => console.error('response stream error', err.message));
+
   try {
     const pathname = req.url.split('?')[0];
 
