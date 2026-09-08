@@ -796,6 +796,12 @@ namespace AstvardServerMod
                 var pos = player.transform.position;
                 text.Append($"{NEWLINE}Позиция: {pos.x:F0}, {pos.y:F0}, {pos.z:F0}");
 
+                // Raw Y is measured from the world floor and the sea sits at 30 of it,
+                // so the number in the line above says nothing a player can act on.
+                // Against the water it does: negative means below the waves.
+                var sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : 30f;
+                text.Append($"{NEWLINE}Высота: {pos.y - sea:F0}");
+
                 var zone = ZoneSystem.GetZone(pos);
                 text.Append($"{NEWLINE}Зона: {zone.x}, {zone.y}");
 
