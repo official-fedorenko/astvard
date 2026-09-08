@@ -1,11 +1,15 @@
 namespace AstvardServerMod
 {
     /// <summary>
-    /// Blueprint data captured in-game, rotated so the structure sits square to
+    /// Blueprint data captured in-game and squared up. These are seeds only: on
+    /// first run they are written out as files, and from then on the files are the
+    /// templates. Nothing here is read again once they exist.
+    ///
+    /// Original note: rotated so the structure sits square to
     /// its own axes. Format matches the exported blueprint files:
     /// prefab;posX;posY;posZ;rotX;rotY;rotZ;rotW
     /// </summary>
-    internal static class Templates
+    internal static class BuiltInTemplates
     {
         internal static readonly string[] StarterHouse1 =
         {
@@ -766,6 +770,40 @@ namespace AstvardServerMod
             "wood_roof;0.0;8.0;1.0;0.0;0.0;0.0;1.0",
             "wood_roof;-2.0;8.0;1.0;0.0;0.0;0.0;1.0",
             "wood_roof;2.0;8.0;-1.0;0.0;1.0;0.0;0.0",
+        };
+
+        /// <summary>
+        /// The 4x4 platform, which used to be generated in code. It is spelled out here
+        /// so it seeds into the folder like every other template and can be renamed,
+        /// moved or thrown away from the panel.
+        /// </summary>
+        internal static readonly string[] Platform4x4 =
+        {
+            "wood_pole2;-2.0;0.0;-2.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;-2.0;0.0;0.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;-2.0;0.0;2.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;0.0;0.0;-2.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;0.0;0.0;0.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;0.0;0.0;2.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;2.0;0.0;-2.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;2.0;0.0;0.0;0.0;0.0;0.0;1.0",
+            "wood_pole2;2.0;0.0;2.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-3.0;1.0;-3.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-3.0;1.0;-1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-3.0;1.0;1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-3.0;1.0;3.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-1.0;1.0;-3.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-1.0;1.0;-1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-1.0;1.0;1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;-1.0;1.0;3.0;0.0;0.0;0.0;1.0",
+            "wood_floor;1.0;1.0;-3.0;0.0;0.0;0.0;1.0",
+            "wood_floor;1.0;1.0;-1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;1.0;1.0;1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;1.0;1.0;3.0;0.0;0.0;0.0;1.0",
+            "wood_floor;3.0;1.0;-3.0;0.0;0.0;0.0;1.0",
+            "wood_floor;3.0;1.0;-1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;3.0;1.0;1.0;0.0;0.0;0.0;1.0",
+            "wood_floor;3.0;1.0;3.0;0.0;0.0;0.0;1.0",
         };
     }
 }

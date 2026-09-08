@@ -14,7 +14,6 @@ namespace AstvardServerMod
 {
     public partial class Plugin
     {
-        internal static GameObject SmelterHallButton;
 
         internal static GameObject AutoCollectHint;
 

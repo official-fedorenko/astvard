@@ -23,14 +23,14 @@ namespace AstvardServerMod
         private const int StateCopyForm = 5;    // радиус копирования + применить
         private const int StateCheats = 6;      // God / Debugmode / Tod
         private const int StateTod = 7;         // время суток 1-10
-        private const int StateTemplates = 8;   // Платформы / Дома
-        private const int StatePlatforms = 9;   // готовые платформы
-        private const int StateHouses = 10;     // категории домов
-        private const int StateStarterHouses = 11; // стартовые дома
+        private const int StateTemplates = 8;      // категории, собранные из файлов
+        private const int StateTemplateList = 9;   // шаблоны выбранной категории
+        private const int StateTemplateEdit = 10;  // действия над одним шаблоном
+        private const int StateStarterHouses = 11; // свободно
         private const int StateRepair = 12;     // радиус починки + применить
-        private const int StateKitchens = 13;   // категории кухонь
-        private const int StateStarterKitchens = 14; // стартовые кухни
-        private const int StateProcessing = 15; // переработка
+        private const int StateKitchens = 13;   // свободно
+        private const int StateStarterKitchens = 14; // свободно
+        private const int StateProcessing = 15; // свободно
         private const int StateForceDelete = 16; // радиус очистки + применить
         private const int StateFeatures = 17;   // общие функции, видны всем
         private const int StateFill = 18;       // наполнение станций из сундуков
@@ -59,23 +59,16 @@ namespace AstvardServerMod
 
         internal static GameObject BuildButton;
 
-        internal static GameObject PlatformsCategoryButton;
-
-        internal static GameObject HousesCategoryButton;
-
-        internal static GameObject StarterHousesButton;
-
-        internal static GameObject StarterHouse1Button;
-
-        internal static GameObject KitchensCategoryButton;
-
-        internal static GameObject StarterKitchensButton;
-
-        internal static GameObject KitchenFullButton;
-
-        internal static GameObject ProcessingCategoryButton;
-
-        internal static GameObject CharcoalKilnsButton;
+        private const int MaxTemplateButtons = 8;
+        internal static readonly GameObject[] CategoryButtons = new GameObject[MaxTemplateButtons];
+        internal static readonly GameObject[] TemplateButtons = new GameObject[MaxTemplateButtons];
+        internal static GameObject TemplateHint;
+        internal static GameObject TemplateEditHint;
+        internal static GameObject TemplatePlaceButton;
+        internal static GameObject TemplateRenameButton;
+        internal static GameObject TemplateDeleteButton;
+        internal static GameObject TemplateNameInput;
+        internal static GameObject TemplateCategoryInput;
 
         internal static GameObject CheatsButton;
 
@@ -500,81 +493,93 @@ namespace AstvardServerMod
             TemplatesButton = MakeButton(gui, "Шаблоны", () =>
             {
                 MenuState = StateTemplates;
+                // Read the folder on the way in, so a file dropped there while the
+                // game was running shows up without a restart.
+                ReloadTemplates();
                 RefreshMenu();
             });
 
-            PlatformsCategoryButton = MakeButton(gui, "Платформы", () =>
-            {
-                MenuState = StatePlatforms;
-                RefreshMenu();
-            });
+            TemplateHint = MakeText(gui, "");
 
-            HousesCategoryButton = MakeButton(gui, "Дома", () =>
+            // One button per category and per template, filled in from whatever the
+            // files say. Unity widgets are built once, so the pools stay put and the
+            // lists move under them.
+            for (var slot = 0; slot < MaxTemplateButtons; slot++)
             {
-                MenuState = StateHouses;
-                RefreshMenu();
-            });
+                var index = slot;
+                CategoryButtons[slot] = MakeButton(gui, "", () =>
+                {
+                    var categories = TemplateCategories();
+                    if (index >= categories.Count) return;
 
-            StarterHousesButton = MakeButton(gui, "Стартовые", () =>
-            {
-                MenuState = StateStarterHouses;
-                RefreshMenu();
-            });
+                    _templateCategory = categories[index];
+                    MenuState = StateTemplateList;
+                    RefreshMenu();
+                });
+            }
 
-            PlatformTemplateButton = MakeButton(gui, "Платформа 4х4", () =>
+            for (var slot = 0; slot < MaxTemplateButtons; slot++)
             {
-                LoadPlatformTemplate();
+                var index = slot;
+                TemplateButtons[slot] = MakeButton(gui, "", () =>
+                {
+                    var shown = TemplatesIn(_templateCategory);
+                    if (index >= shown.Count) return;
+
+                    _editingTemplate = shown[index];
+                    MenuState = StateTemplateEdit;
+                    RefreshMenu();
+                });
+            }
+
+            TemplateEditHint = MakeText(gui, "");
+
+            TemplateNameInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.Standard, "имя", 32, 160f, 32f);
+            AddFixedSize(TemplateNameInput, 160f, 32f);
+
+            TemplateCategoryInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.Standard, "категория", 32, 160f, 32f);
+            AddFixedSize(TemplateCategoryInput, 160f, 32f);
+
+            TemplatePlaceButton = MakeButton(gui, "Поставить", () =>
+            {
+                if (_editingTemplate == null) return;
+                if (!LoadTemplate(_editingTemplate.Lines, _editingTemplate.Name)) return;
+
                 StartPlacement();
                 InventoryGui.instance?.Hide();
             });
 
-            StarterHouse1Button = MakeButton(gui, "Стартовый дом №1", () =>
+            TemplateRenameButton = MakeButton(gui, "Переименовать", () =>
             {
-                if (!LoadTemplate(Templates.StarterHouse1, "Стартовый дом №1")) return;
-                StartPlacement();
-                InventoryGui.instance?.Hide();
-            });
+                if (_editingTemplate == null) return;
 
-            KitchensCategoryButton = MakeButton(gui, "Кухни", () =>
-            {
-                MenuState = StateKitchens;
+                var name = FieldText(TemplateNameInput, _editingTemplate.Name);
+                var category = FieldText(TemplateCategoryInput, _editingTemplate.Category);
+                if (!RenameTemplate(_editingTemplate, name, category)) return;
+
+                _templateCategory = category;
+                _editingTemplate = null;
+                MenuState = StateTemplateList;
                 RefreshMenu();
             });
 
-            StarterKitchensButton = MakeButton(gui, "Стартовые", () =>
+            TemplateDeleteButton = MakeButton(gui, "Удалить", () =>
             {
-                MenuState = StateStarterKitchens;
+                if (_editingTemplate == null) return;
+                if (!DeleteTemplate(_editingTemplate)) return;
+
+                _editingTemplate = null;
+                MenuState = StateTemplateList;
                 RefreshMenu();
             });
 
-            KitchenFullButton = MakeButton(gui, "Полная", () =>
-            {
-                if (!LoadTemplate(Templates.KitchenFull, "Полная кухня")) return;
-                StartPlacement();
-                InventoryGui.instance?.Hide();
-            });
-
-            ProcessingCategoryButton = MakeButton(gui, "Переработка", () =>
-            {
-                MenuState = StateProcessing;
-                RefreshMenu();
-            });
-
-            SmelterHallButton = MakeButton(gui, "Плавильня", () =>
-            {
-                if (!LoadTemplate(Templates.SmelterHall, "Плавильня")) return;
-                StartPlacement();
-                InventoryGui.instance?.Hide();
-            });
-
-            CharcoalKilnsButton = MakeButton(gui, "Угольные печи", () =>
-            {
-                if (!LoadTemplate(Templates.CharcoalKilns, "Угольные печи")) return;
-                StartPlacement();
-                InventoryGui.instance?.Hide();
-            });
-
-            CopyHint = MakeText(gui, "Радиус (м).\nКопировать — проекция перед\nтобой, ЛКМ строит, Esc отменяет.\nQ/E — поворот, Shift+Q/E — высота.\nСкопировать — чертёж в файл.");
+            CopyHint = MakeText(gui, "Радиус (м).\nКопировать — проекция перед\nтобой, ЛКМ строит, Esc отменяет.\nQ/E — поворот, Shift+Q/E — высота.\nСкопировать — сохранить шаблоном,\nимя и категорию задай ниже.");
 
             CopyRadiusInput = gui.CreateInputField(
                 Panel.transform,
@@ -592,10 +597,8 @@ namespace AstvardServerMod
                 else if (MenuState == StateTod || MenuState == StateRepair ||
                          MenuState == StateForceDelete) MenuState = StateCheats;
                 else if (MenuState == StateTemplates) MenuState = StateBuild;
-                else if (MenuState == StatePlatforms || MenuState == StateHouses ||
-                         MenuState == StateKitchens || MenuState == StateProcessing) MenuState = StateTemplates;
-                else if (MenuState == StateStarterHouses) MenuState = StateHouses;
-                else if (MenuState == StateStarterKitchens) MenuState = StateKitchens;
+                else if (MenuState == StateTemplateList) MenuState = StateTemplates;
+                else if (MenuState == StateTemplateEdit) MenuState = StateTemplateList;
                 else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateFeatures;
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
@@ -750,17 +753,26 @@ namespace AstvardServerMod
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
-            SetActive(PlatformsCategoryButton, admin && MenuState == StateTemplates);
-            SetActive(HousesCategoryButton, admin && MenuState == StateTemplates);
-            SetActive(KitchensCategoryButton, admin && MenuState == StateTemplates);
-            SetActive(ProcessingCategoryButton, admin && MenuState == StateTemplates);
-            SetActive(SmelterHallButton, admin && MenuState == StateProcessing);
-            SetActive(CharcoalKilnsButton, admin && MenuState == StateProcessing);
-            SetActive(PlatformTemplateButton, admin && MenuState == StatePlatforms);
-            SetActive(StarterHousesButton, admin && MenuState == StateHouses);
-            SetActive(StarterHouse1Button, admin && MenuState == StateStarterHouses);
-            SetActive(StarterKitchensButton, admin && MenuState == StateKitchens);
-            SetActive(KitchenFullButton, admin && MenuState == StateStarterKitchens);
+            RebuildTemplateViews();
+
+            SetActive(TemplateHint, admin && (MenuState == StateTemplates
+                                              || MenuState == StateTemplateList));
+            SetActive(TemplateEditHint, admin && MenuState == StateTemplateEdit);
+            SetActive(TemplatePlaceButton, admin && MenuState == StateTemplateEdit);
+            SetActive(TemplateRenameButton, admin && MenuState == StateTemplateEdit);
+            SetActive(TemplateDeleteButton, admin && MenuState == StateTemplateEdit);
+
+            var naming = MenuState == StateTemplateEdit || MenuState == StateCopyForm;
+            SetActive(TemplateNameInput, admin && naming);
+            SetActive(TemplateCategoryInput, admin && naming);
+
+            for (var i = 0; i < MaxTemplateButtons; i++)
+            {
+                SetActive(CategoryButtons[i], admin && MenuState == StateTemplates
+                                              && i < _shownCategories);
+                SetActive(TemplateButtons[i], admin && MenuState == StateTemplateList
+                                              && i < _shownTemplates);
+            }
 
             SetActive(CopyHint, admin && MenuState == StateCopyForm);
             SetActive(CopyRadiusInput, admin && MenuState == StateCopyForm);

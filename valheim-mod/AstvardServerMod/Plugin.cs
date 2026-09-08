@@ -71,6 +71,7 @@ namespace AstvardServerMod
                 return;
             }
 
+            ReloadTemplates();
             GUIManager.OnCustomGUIAvailable += CreatePanel;
             StartCoroutine(AutomationLoop());
         }

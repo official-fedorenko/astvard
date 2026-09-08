@@ -26,7 +26,6 @@ namespace AstvardServerMod
 
         internal static GameObject TemplatesButton;
 
-        internal static GameObject PlatformTemplateButton;
 
         internal static GameObject SnapButton;
 
@@ -147,45 +146,6 @@ namespace AstvardServerMod
         /// clipboard. Generated rather than stored as data so the grid comes out
         /// perfectly aligned, unlike a copy taken from a hand-built structure.
         /// </summary>
-        private static void LoadPlatformTemplate()
-        {
-            const float tile = 2f;   // one wood_floor is 2x2 m
-            const float floorY = 1f; // posts are 1 m tall
-
-            Clipboard.Clear();
-
-            // Posts: 3x3 grid at -2 / 0 / +2.
-            for (var x = -1; x <= 1; x++)
-            {
-                for (var z = -1; z <= 1; z++)
-                {
-                    Clipboard.Add(new CopiedPiece
-                    {
-                        Prefab = "wood_pole2",
-                        LocalPos = new Vector3(x * tile, 0f, z * tile),
-                        LocalRot = Quaternion.identity,
-                    });
-                }
-            }
-
-            // Floor: 4x4 tiles centred on the same origin, so at -3 / -1 / 1 / 3.
-            for (var x = 0; x < 4; x++)
-            {
-                for (var z = 0; z < 4; z++)
-                {
-                    Clipboard.Add(new CopiedPiece
-                    {
-                        Prefab = "wood_floor",
-                        LocalPos = new Vector3((x - 1.5f) * tile, floorY, (z - 1.5f) * tile),
-                        LocalRot = Quaternion.identity,
-                    });
-                }
-            }
-
-            Clipboard.Sort((a, b) => a.LocalPos.y.CompareTo(b.LocalPos.y));
-            Log.LogInfo($"[AstvardServerMod] Template loaded: platform 4x4 ({Clipboard.Count} pieces).");
-        }
-
         /// <summary>Fills the clipboard from everything around the player.</summary>
         private static bool FillClipboard(Player player, float radius)
         {
@@ -263,6 +223,11 @@ namespace AstvardServerMod
         }
 
         /// <summary>Copies to the clipboard and writes a blueprint file, no placement.</summary>
+        /// <summary>
+        /// Copies what is around the player and stores it as a template. Squaring up
+        /// happens on the way in, so what lands in the folder is already aligned —
+        /// that used to be a hand-run script between the game and the mod.
+        /// </summary>
         private static void RunCopyToFile()
         {
             var player = Player.m_localPlayer;
@@ -271,8 +236,17 @@ namespace AstvardServerMod
             var radius = Mathf.Clamp(ParseField(CopyRadiusInput, 10f), 1f, 64f);
             if (!FillClipboard(player, radius)) return;
 
-            var path = SaveBlueprint(radius);
-            Log.LogInfo($"[AstvardServerMod] Saved {Clipboard.Count} pieces (r={radius}) -> {path}");
+            var name = FieldText(TemplateNameInput, "");
+            var category = FieldText(TemplateCategoryInput, "");
+
+            if (!SaveClipboardAsTemplate(name, category, player.GetPlayerName()))
+            {
+                player.Message(MessageHud.MessageType.Center, "Не удалось сохранить шаблон");
+                return;
+            }
+
+            player.Message(MessageHud.MessageType.Center,
+                $"Шаблон сохранён: {Clipboard.Count} деталей");
 
             MenuState = StateBuild;
             RefreshMenu();
