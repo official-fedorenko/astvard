@@ -90,6 +90,12 @@ namespace AstvardServerMod
             get { return _roadStarted || _roadLaying; }
         }
 
+        /// <summary>A start is marked and the far end is still to be chosen.</summary>
+        internal static bool RoadAwaitingEnd
+        {
+            get { return _roadStarted; }
+        }
+
         /// <summary>
         /// Drops a marked start, and stops a road already going down. Laying happens
         /// over several frames, so a road caught halfway keeps the part already painted
@@ -120,7 +126,7 @@ namespace AstvardServerMod
             var bend = _roadBendLeft ? "влево" : "вправо";
             label.text = _roadStarted
                 ? $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
-                  + $"и нажми «Закончить».{NEWLINE}Esc — отменить."
+                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить."
                 : $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Встань в начало дорожки{NEWLINE}"
                   + $"и нажми «Начать».";
         }

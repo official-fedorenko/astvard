@@ -67,6 +67,7 @@ namespace AstvardServerMod
 
             _bridgeStart = player.transform.position;
             _bridgeStarted = true;
+            NoteToolStart();
             UpdateBridgeHint();
             InventoryGui.instance?.Hide();
             player.Message(MessageHud.MessageType.Center, "Начало отмечено");
@@ -80,7 +81,7 @@ namespace AstvardServerMod
             label.text = _bridgeStarted
                 ? $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
                   + $"Жёлтая проекция — устоит,{NEWLINE}красная — нет.{NEWLINE}"
-                  + $"Esc — отменить."
+                  + $"ЛКМ или «Построить».{NEWLINE}Esc — отменить."
                 : $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
                   + $"Встань на этом берегу{NEWLINE}и нажми «Начать».";
         }

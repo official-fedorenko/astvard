@@ -525,6 +525,7 @@ namespace AstvardServerMod
 
                 _roadStart = player.transform.position;
                 _roadStarted = true;
+                NoteToolStart();
                 UpdateRoadHint();
                 InventoryGui.instance?.Hide();
                 player.Message(MessageHud.MessageType.Center, "Начало отмечено");

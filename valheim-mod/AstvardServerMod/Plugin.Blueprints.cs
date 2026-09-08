@@ -55,6 +55,19 @@ namespace AstvardServerMod
         // stops the committing click from also being a swing.
         private static float _inputHeldUntil;
 
+        // The button that marks a start also closes the panel, so without a deaf moment
+        // the very same click carries on into the world and finishes the road it just
+        // began. Long enough to outlive the frame, short enough not to be felt.
+        private const float MarkDeafSeconds = 0.25f;
+
+        private static float _toolMarkedAt;
+
+        /// <summary>Called when a road or bridge start is marked, to hold off that click.</summary>
+        internal static void NoteToolStart()
+        {
+            _toolMarkedAt = Time.time;
+        }
+
         internal static bool PlacementHoldsInput
         {
             get { return IsPlacing || Time.time < _inputHeldUntil; }
@@ -341,6 +354,26 @@ namespace AstvardServerMod
                 // was going, so calling both would answer twice for one press.
                 if (RoadInProgress) CancelRoad();
                 if (BridgeInProgress) CancelBridge();
+                RefreshMenu();
+                return;
+            }
+
+            // A marked road or bridge finishes on a click as well as on its own button.
+            // The panel is shut while you walk to the far end, and opening it to press
+            // one button is a step nobody wants. Marking stays on the button: a click
+            // that both began and ended a road would leave no way to change your mind.
+            if ((RoadAwaitingEnd || BridgeInProgress) && Input.GetMouseButtonDown(0)
+                && !InventoryGui.IsVisible() && Chat.instance?.HasFocus() != true
+                && Time.time - _toolMarkedAt > MarkDeafSeconds)
+            {
+                // The same window the committing placement click uses: this click must
+                // not also be a swing, and the game's own input can still run later in
+                // the very same frame.
+                _inputHeldUntil = Time.time + 0.3f;
+
+                if (BridgeInProgress) BuildBridge();
+                else BuildRoad();
+
                 RefreshMenu();
                 return;
             }
