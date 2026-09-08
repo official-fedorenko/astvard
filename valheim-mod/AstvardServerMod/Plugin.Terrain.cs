@@ -678,13 +678,24 @@ namespace AstvardServerMod
             if (player == null) return;
 
             var radius = ParseField(RadiusInput, 8f);
-            var heightOffset = ParseField(HeightInput, 0f);
+            var asked = ParseField(HeightInput, 0f);
             // The heightmap only covers one 64 m zone, so anything past its edge is
             // silently clipped — the cap is generous rather than exact.
             radius = Mathf.Clamp(radius, 1f, 64f);
 
             var playerPos = player.transform.position;
-            var target = new Vector3(playerPos.x, playerPos.y + heightOffset, playerPos.z);
+
+            // An absolute mark, not a step up from where the player stands. "Level this
+            // to five above the water" is the thing anyone actually wants, and it is the
+            // same number the info page reports — raw Y would read five as twenty-five
+            // metres under the sea, since the world floor sits thirty below it.
+            //
+            // Zero and empty both mean the height being stood at, which is what the field
+            // did before and what it is most often used for. The price is that sea level
+            // itself cannot be asked for by number; stand at the shore for that.
+            var sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : 30f;
+            var targetY = Mathf.Approximately(asked, 0f) ? playerPos.y : sea + asked;
+            var target = new Vector3(playerPos.x, targetY, playerPos.z);
 
             // The blend band is derived from the radius — a bigger platform gets a
             // longer run-out, so the user only has to pick radius and height.
@@ -710,7 +721,7 @@ namespace AstvardServerMod
             RebuildHeightmaps(target, reach);
 
             Log.LogInfo($"[AstvardServerMod] Level {(_terrainSquare ? "square" : "circle")} " +
-                        $"r={radius} h={heightOffset:F1} blend={blend:F1} " +
+                        $"r={radius} h={asked:F1} -> y={targetY:F1} blend={blend:F1} " +
                         $"zones={comps.Count} at {target}");
         }
 

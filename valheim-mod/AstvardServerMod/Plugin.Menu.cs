@@ -467,7 +467,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            TerrainHint = MakeText(gui, "Радиус (м) и высота.\n0 = уровень игрока.\nКрая сшиваются автоматически.");
+            TerrainHint = MakeText(gui, "Радиус (м) и высота над водой.\n0 или пусто — уровень игрока.\nКрая сшиваются автоматически.");
 
             RadiusInput = gui.CreateInputField(
                 Panel.transform,
@@ -478,7 +478,7 @@ namespace AstvardServerMod
             HeightInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "высота, напр. 0", 16, 160f, 32f);
+                InputField.ContentType.DecimalNumber, "над водой, напр. 5", 16, 160f, 32f);
             AddFixedSize(HeightInput, 160f, 32f);
 
 
