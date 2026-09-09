@@ -62,8 +62,8 @@ namespace AstvardServerMod
             _harmony.PatchAll();
             Log.LogInfo("AstvardServerMod loaded");
 
-            CommandManager.Instance.AddConsoleCommand(new HiCommand());
-            CommandManager.Instance.AddConsoleCommand(new AdminUnlockCommand());
+            RegisterCommand(new HiCommand());
+            RegisterCommand(new AdminUnlockCommand());
 
             if (GUIManager.IsHeadless())
             {
@@ -74,6 +74,33 @@ namespace AstvardServerMod
             ReloadTemplates();
             GUIManager.OnCustomGUIAvailable += CreatePanel;
             StartCoroutine(AutomationLoop());
+        }
+
+        /// <summary>
+        /// Hands a command to the game's console directly, instead of through Jotunn.
+        ///
+        /// Jotunn 2.29.2 looks up Terminal.ConsoleCommand's constructor by an exact
+        /// signature, and 1.0 added parameters to it, so CommandManager quietly
+        /// registers nothing and only says "No suitable constructor" in the log — the
+        /// commands simply do not exist, astvardadmin among them. The constructor puts
+        /// itself into Terminal's own static table, which is created once and never
+        /// rebuilt, so calling it from here works whether the console has initialised
+        /// yet or not, and needs no Jotunn release.
+        ///
+        /// Every flag the entity carries is passed on, so the command classes stay the
+        /// one place its behaviour is described.
+        /// </summary>
+        private static void RegisterCommand(ConsoleCommand command)
+        {
+            _ = new Terminal.ConsoleCommand(
+                command.Name,
+                command.Help,
+                args => command.Run(args.Args, args.Context),
+                isCheat: command.IsCheat,
+                isNetwork: command.IsNetwork,
+                onlyServer: command.OnlyServer,
+                isSecret: command.IsSecret,
+                optionsFetcher: command.CommandOptionList);
         }
 
         private void OnDestroy()
