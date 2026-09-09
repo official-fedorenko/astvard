@@ -49,6 +49,12 @@
       <HintPath>$(ValheimDir)\valheim_Data\Managed\assembly_utils.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- ButtonSfx lives here, and the panel has to reach it to undo a sound
+         Jotunn wires onto every button it styles. -->
+    <Reference Include="assembly_guiutils">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\assembly_guiutils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.dll</HintPath>
       <Private>false</Private>

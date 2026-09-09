@@ -864,6 +864,34 @@ namespace AstvardServerMod
             Log.LogInfo("Astvard panel created.");
         }
 
+        /// <summary>
+        /// Takes back the second sound Jotunn puts on every button.
+        ///
+        /// One press was answered twice, and the two were not the same sound. Jotunn's
+        /// ApplyButtonStyle fills two of ButtonSfx's slots - m_sfxPrefab with
+        /// sfx_gui_button and m_selectSfxPrefab with sfx_gui_select - and 1.0's
+        /// ButtonSfx plays the second one from ISelectHandler.OnSelect. A mouse press
+        /// raises exactly that: Selectable.OnPointerDown makes the button the
+        /// EventSystem's selection, so sfx_gui_select plays going down and
+        /// sfx_gui_button coming back up.
+        ///
+        /// It reads as a doubled click because the two are milliseconds apart, and it
+        /// survived the duplicate-panel fix because it never had anything to do with
+        /// two panels - one button is enough.
+        ///
+        /// Jotunn is not wrong so much as out of date: this build moved the hover tick
+        /// into m_enterSfxPrefab, a field that did not exist when that line was
+        /// written, and left m_selectSfxPrefab meaning keyboard and gamepad selection.
+        /// Clearing it silences the press and leaves the click, which is what a mouse
+        /// user expects. Wiring the tick into m_enterSfxPrefab would give the panel
+        /// vanilla's hover sound as well, and is a separate decision.
+        /// </summary>
+        private static void Silence(GameObject button)
+        {
+            var sfx = button != null ? button.GetComponent<ButtonSfx>() : null;
+            if (sfx != null) sfx.m_selectSfxPrefab = null;
+        }
+
         private GameObject MakeButton(GUIManager gui, string text, UnityEngine.Events.UnityAction onClick)
         {
             var go = gui.CreateButton(
@@ -871,6 +899,7 @@ namespace AstvardServerMod
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
                 180f, 40f);
             AddFixedSize(go, 180f, 40f);
+            Silence(go);
             go.GetComponent<Button>().onClick.AddListener(onClick);
             go.SetActive(false);
             return go;
