@@ -29,10 +29,13 @@ npm start --prefix backend           # сайт на :3001, читает ../.env
 по имени `astvard-backend` — запись уже лежит в `.claude/launch.json`,
 тогда логи читаются штатно, а не из перехваченного вывода.
 
-Игровой сервер — только через свой bat, из его же папки:
+Игровой сервер — только через свой bat, из его же папки. Процесс надо **отцепить**:
+команда агента завершается вместе с вызовом и утащила бы сервер за собой. И сразу
+`-WindowStyle Hidden` — иначе на рабочем столе хозяина машины открывается окно cmd,
+которое там никому не нужно: весь вывод и так пишется в `-logFile`.
 
 ```bash
-powershell -c "Start-Process 'C:\Games\steamapps\common\Valheim dedicated server\start_astvard.bat' -WorkingDirectory 'C:\Games\steamapps\common\Valheim dedicated server'"
+powershell -c "Start-Process 'C:\Games\steamapps\common\Valheim dedicated server\start_astvard.bat' -WorkingDirectory 'C:\Games\steamapps\common\Valheim dedicated server' -WindowStyle Hidden"
 ```
 
 Проверка, что всё действительно живо (не верь тому, что процесс просто есть):
@@ -40,11 +43,37 @@ powershell -c "Start-Process 'C:\Games\steamapps\common\Valheim dedicated server
 ```bash
 curl -s http://127.0.0.1:3001/api/health          # ждём {"status":"ok","db":"ok"}
 netstat -ano -p UDP | grep :2456                  # игровой сервер слушает
-tail -5 "/c/Games/steamapps/common/Valheim dedicated server/BepInEx/LogOutput.log"
+tail -5 "/c/Games/steamapps/common/Valheim dedicated server/logs/astvard_server.log"
 ```
 
-В логе мода должны быть три строки: `Loading [Jotunn]`, `Loading [AstvardServerMod]`,
-`Loading [Server Devcommands]`. Если мода нет — DLL не туда положили, см. ниже.
+В логе ждём `Valheim version: ...` и `Game server connected`. Смотреть надо именно
+в этот файл, а не в `Player.log`: для Unity клиент и сервер оба «IronGate/Valheim»,
+пишут по одному пути и отбирают его друг у друга — ошибки клиента там легко принять
+за серверные. Отсюда и `-logFile` в bat.
+
+Когда моды включены, в логе должны быть три строки: `Loading [Jotunn]`,
+`Loading [AstvardServerMod]`, `Loading [Server Devcommands]`. Если мода нет —
+DLL не туда положили, см. ниже.
+
+**Сейчас моды выключены.** 09.09.2026 вышел Valheim 1.0, он сломал ABI, и сборки
+Jotunn под 1.0 ещё нет. Мод в этом состоянии не собирается: исходники писаны под 0.221,
+а `Vector2i` у зон стал `Vector2s` и `Piece.SetCreator` получил `PlatformUserID` —
+17 ошибок в `Plugin.Terrain.cs`, `Plugin.Zones.cs`, `Plugin.Bridge.cs`.
+
+Установки при этом в разном состоянии, и это важно помнить:
+
+- **Клиент вычищен до ванили.** Удалены `BepInEx/`, `winhttp.dll`, `doorstop_config.ini`,
+  `doorstop_libs/`, `.doorstop_version`, оба `start_*_bepinex.sh` и `changelog.txt`
+  (последний — журнал BepInEx, а не игры; в корне игры он выглядит своим). Чтобы вернуть
+  моды, BepInEx придётся ставить заново. `steam_appid.txt` — файл Steam, его не трогать.
+- **Выделенный сервер моды сохранил**, но загрузчик выключен через `enabled = false`
+  в его `doorstop_config.ini` (рядом `.bak` с исходным).
+
+Содержимое `BepInEx/config` клиента лежит в `.backups/valheim-client-bepinex-config/` —
+33 файла, сверено хешами. Там `astvard-templates` с чертежами построек: имена файлов
+врут, судить надо по заголовку `#name` внутри (`y.txt` — это база на 751 деталь).
+Проверка целостности через Steam при этом не нужна: `patchers/` был пуст, то есть
+установка мода была чисто добавляющей и ни одного файла игры не переписывала.
 
 `.env` не в git. Ключи: `POSTGRES_*`, `PORT=3001`, `JWT_SECRET`, `APP_ENV`.
 Без `JWT_SECRET` бэкенд намеренно отказывается стартовать — это не баг.
@@ -117,10 +146,14 @@ dotnet test valheim-mod/AstvardServerMod.Tests
 - Мод и сайт проверяй **эмпирически**. Живой запрос, живой сокет, живой лог. Слишком
   многое здесь выглядит рабочим и не работает.
 
-## Незакрытое (проверено 08.09.2026, коммит 69769eb)
+## Незакрытое (проверено 09.09.2026)
 
 Каждый пункт ниже перепроверен по коду в этот день, а не переписан из памяти.
 Если правишь — проверь заново и обнови дату; протухший список хуже пустого.
+
+**Весь мод сейчас непроверяем.** После выхода 1.0 он не собирается и не грузится,
+так что ни один пункт про мод нельзя ни закрыть, ни опровергнуть в игре — пока
+не выйдет Jotunn под 1.0 и не будет сделан порт. Список заморожен, а не протух.
 
 - `handlers/admin.js:14` — `requireRole` берёт роль из `req.user`, то есть из JWT.
   Понижение в правах не подействует, пока токен не протухнет. `patchUserRole` уже
@@ -143,6 +176,14 @@ dotnet test valheim-mod/AstvardServerMod.Tests
 - Погода и ветер из панели видны только тому, кто нажал: `m_forceEnv` и
   `m_debugWind` локальные. Сделать их общими на сервер — отдельная работа,
   через RPC под `ServerAllows`.
+- Четыре правки по спавнерам написаны, но **ни разу не собраны и не запускались**:
+  маркер в проекции, пропуск выравнивания земли, кнопка «Убрать рядом» и текст
+  подсказки. Компилятор их не видел — 1.0 вышел раньше сборки. Первое, что надо
+  сделать после порта, — собрать и проверить именно их.
+- Условия самого `CreatureSpawner` в игре не проверялись: не сработает внутри базы
+  игрока (`m_spawnInPlayerBase`), может сам себя удалить внутри локации
+  (`m_blockSpawnGroups`), требует игрока ближе `m_triggerDistance` (60 м по умолчанию).
+  Значения этих полей лежат в данных префабов, из кода их не прочитать — только опытом.
 
 Закрыто и в списке больше не нужно: падение на теле больше 1 МБ, `GET /%`,
 короткий A2S-пакет, отброшенное отклонение промиса, старт без `JWT_SECRET`.

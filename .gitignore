@@ -9,3 +9,6 @@ obj/
 # Decompiled game code — reference only, not ours to redistribute
 valheim-mod/decompiled/
 valheim-mod/decompiled_*.cs
+
+# Local world backups, not source
+.backups/
