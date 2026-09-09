@@ -414,7 +414,7 @@ namespace AstvardServerMod
         /// </summary>
         private static List<TerrainComp> CompsForStamps(List<Vector3> points, float radius, float y)
         {
-            var zones = new HashSet<Vector2i>();
+            var zones = new HashSet<Vector2s>();
             foreach (var point in points)
             {
                 zones.Add(ZoneSystem.GetZone(point + new Vector3(-radius, 0f, -radius)));
@@ -581,7 +581,10 @@ namespace AstvardServerMod
                 foreach (var target in targets)
                     PaintStretch(target, path, first, last, radius, paint);
 
-                foreach (var comp in comps) save.Invoke(comp, null);
+                // Save gained an optional paintOnly in 1.0. Reflection does not fill
+                // optional parameters - a null argument array throws - so pass the
+                // default explicitly; false is the full save the old call made.
+                foreach (var comp in comps) save.Invoke(comp, new object[] { false });
                 RebuildHeightmaps(path[last], radius + 16f);
                 yield return null;
             }
@@ -662,7 +665,7 @@ namespace AstvardServerMod
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             foreach (var comp in comps) BlendLevel(comp, target, radius, blend);
-            foreach (var comp in comps) save.Invoke(comp, null);
+            foreach (var comp in comps) save.Invoke(comp, new object[] { false });
 
             _terrainSquare = wasSquare;
 
@@ -716,7 +719,7 @@ namespace AstvardServerMod
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             foreach (var c in comps) BlendLevel(c, target, radius, blend);
-            foreach (var c in comps) save.Invoke(c, null);
+            foreach (var c in comps) save.Invoke(c, new object[] { false });
 
             RebuildHeightmaps(target, reach);
 
@@ -817,7 +820,7 @@ namespace AstvardServerMod
         private static List<TerrainComp> CollectTerrainComps(Vector3 center, float reach)
         {
             var comps = new List<TerrainComp>();
-            var seen = new HashSet<Vector2i>();
+            var seen = new HashSet<Vector2s>();
 
             // Sample a grid across the affected square; a half-zone step is fine
             // since one sample per 32 m cannot skip over a 64 m zone.
@@ -856,8 +859,11 @@ namespace AstvardServerMod
         {
             foreach (var hmap in Heightmap.GetAllHeightmaps())
             {
+                // Poke's "delayed" is an update-channel selector now, not a flag:
+                // 0 regenerates inside the call, as the old false did. 1 and 2 defer to
+                // LateUpdate, which would leave the caller measuring a stale heightmap.
                 if (hmap != null && hmap.IsPointInside(center, reach))
-                    hmap.Poke(delayed: false);
+                    hmap.Poke(delayed: 0);
             }
 
             if (ClutterSystem.instance != null)

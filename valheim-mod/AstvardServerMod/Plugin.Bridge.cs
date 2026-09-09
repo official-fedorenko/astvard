@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Splatform;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -603,6 +604,10 @@ namespace AstvardServerMod
             var scene = ZNetScene.instance;
             var placed = 0;
 
+            // Hoisted out of the loop below: SetCreator scans the world's player
+            // history for this id on every piece it stamps.
+            var creatorPlatform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
+
             foreach (var piece in pieces)
             {
                 var prefab = scene.GetPrefab(piece.Prefab);
@@ -615,7 +620,7 @@ namespace AstvardServerMod
                 var go = Instantiate(prefab, _bridgeStart + facing * piece.LocalPos,
                                      facing * piece.LocalRot);
                 var built = go.GetComponent<Piece>();
-                if (built != null) built.SetCreator(creator);
+                if (built != null) built.SetCreator(creator, creatorPlatform);
                 placed++;
             }
 

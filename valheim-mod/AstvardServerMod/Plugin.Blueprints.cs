@@ -7,6 +7,7 @@ using BepInEx.Logging;
 using HarmonyLib;
 using Jotunn.Entities;
 using Jotunn.Managers;
+using Splatform;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -608,6 +609,9 @@ namespace AstvardServerMod
             var origin = GhostRoot != null ? GhostRoot.transform.position : player.transform.position;
             var rotation = GhostRoot != null ? GhostRoot.transform.rotation : player.transform.rotation;
             var creator = player.GetPlayerID();
+            // Hoisted out of the loop below: SetCreator scans the world's player
+            // history for this id on every piece it stamps.
+            var creatorPlatform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
 
             // Before the pieces, not after: a floor dropped onto a slope and then
             // levelled underneath would already have decided what it was resting on.
@@ -628,7 +632,7 @@ namespace AstvardServerMod
                         rotation * entry.LocalRot);
 
                     var piece = go.GetComponent<Piece>();
-                    if (piece != null) piece.SetCreator(creator);
+                    if (piece != null) piece.SetCreator(creator, creatorPlatform);
                 }
                 else
                 {

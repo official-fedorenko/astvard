@@ -143,7 +143,7 @@ namespace AstvardServerMod
                 var view = zone.Comp.GetComponent<ZNetView>();
                 if (view != null && view.IsValid() && !view.IsOwner()) view.ClaimOwnership();
 
-                if (save != null) save.Invoke(zone.Comp, null);
+                if (save != null) save.Invoke(zone.Comp, new object[] { false });
                 restored++;
             }
 

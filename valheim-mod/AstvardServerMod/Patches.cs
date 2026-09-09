@@ -149,19 +149,25 @@ namespace AstvardServerMod
     [HarmonyPatch(typeof(Fermenter), "DelayedTap")]
     public static class FermenterTapToChest
     {
-        private static readonly AccessTools.FieldRef<Fermenter, string> TapItem =
-            AccessTools.FieldRefAccess<Fermenter, string>("m_delayedTapItem");
+        // 1.0 turned m_delayedTapItem from the item's name into the stable hash of
+        // that name, and an empty fermenter reads 0. Declaring it string here does not
+        // fail to compile - Harmony throws when this field initialiser runs, taking the
+        // whole patch class with it.
+        private static readonly AccessTools.FieldRef<Fermenter, int> TapItem =
+            AccessTools.FieldRefAccess<Fermenter, int>("m_delayedTapItem");
 
         private static bool Prefix(Fermenter __instance)
         {
             var content = TapItem(__instance);
-            if (string.IsNullOrEmpty(content)) return true;
+            if (content == 0) return true;
 
+            // The same match the game's own GetItemConversion makes: it hashes the
+            // prefab name rather than comparing it, so we hash too.
             Fermenter.ItemConversion conversion = null;
             foreach (var candidate in __instance.m_conversion)
             {
                 if (candidate == null || candidate.m_from == null) continue;
-                if (candidate.m_from.gameObject.name != content) continue;
+                if (candidate.m_from.gameObject.name.GetStableHashCode() != content) continue;
                 conversion = candidate;
                 break;
             }

@@ -149,7 +149,7 @@ namespace AstvardServerMod
                        .Replace('\n', ' ').Replace('\r', ' ').Trim();
         }
 
-        private static void ZoneCells(KeptZone zone, out Vector2i min, out Vector2i max)
+        private static void ZoneCells(KeptZone zone, out Vector2s min, out Vector2s max)
         {
             // Half-open on the far side: a cell owns [centre-32, centre+32), so treating
             // the far edge as inclusive would drag in the next cell on every axis and
@@ -622,7 +622,7 @@ namespace AstvardServerMod
                 ZoneCells(zone, out var min, out var max);
                 for (var y = min.y; y <= max.y; y++)
                 for (var x = min.x; x <= max.x; x++)
-                    MPokeLocalZone.Invoke(system, new object[] { new Vector2i(x, y) });
+                    MPokeLocalZone.Invoke(system, new object[] { new Vector2s(x, y) });
             }
         }
 
@@ -646,11 +646,12 @@ namespace AstvardServerMod
                     foreach (var zone in Zones)
                     {
                         ZoneCells(zone, out var min, out var max);
-                        // area 0 is exactly the one centre cell, so walking the range
-                        // cell by cell gives the same set the square would, no more.
+                        // A zero simulation distance is exactly the one centre cell, so
+                        // walking the range cell by cell gives the same set the square
+                        // would, no more.
                         for (var y = min.y; y <= max.y; y++)
                         for (var x = min.x; x <= max.x; x++)
-                            man.FindSectorObjects(new Vector2i(x, y), 0, 0, KeptZoneObjects);
+                            man.FindSectorObjects(new Vector2s(x, y), new SimulationDistance(0, 0), KeptZoneObjects);
                     }
 
                 // Overlapping zones share cells, and the same ZDO twice would have the
@@ -717,7 +718,7 @@ namespace AstvardServerMod
                 for (var x = min.x; x <= max.x; x++)
                 {
                     cells++;
-                    if (system != null && system.IsZoneLoaded(new Vector2i(x, y))) loadedCells++;
+                    if (system != null && system.IsZoneLoaded(new Vector2s(x, y))) loadedCells++;
                 }
             }
 
