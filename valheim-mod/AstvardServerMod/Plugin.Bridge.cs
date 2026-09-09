@@ -604,8 +604,10 @@ namespace AstvardServerMod
             var scene = ZNetScene.instance;
             var placed = 0;
 
-            // Hoisted out of the loop below: SetCreator scans the world's player
-            // history for this id on every piece it stamps.
+            // Read once rather than per piece: this is a property chain through the
+            // distribution platform. It does NOT avoid the linear scan of the world's
+            // player history that SetCreator itself runs for every piece - that cost
+            // is inside the call and stays.
             var creatorPlatform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
 
             foreach (var piece in pieces)

@@ -609,8 +609,10 @@ namespace AstvardServerMod
             var origin = GhostRoot != null ? GhostRoot.transform.position : player.transform.position;
             var rotation = GhostRoot != null ? GhostRoot.transform.rotation : player.transform.rotation;
             var creator = player.GetPlayerID();
-            // Hoisted out of the loop below: SetCreator scans the world's player
-            // history for this id on every piece it stamps.
+            // Read once rather than per piece: this is a property chain through the
+            // distribution platform. It does NOT avoid the linear scan of the world's
+            // player history that SetCreator itself runs for every piece - that cost
+            // is inside the call and stays.
             var creatorPlatform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
 
             // Before the pieces, not after: a floor dropped onto a slope and then
