@@ -10,6 +10,8 @@ namespace AstvardServerMod
 
         internal static GameObject SpawnerHint;
 
+        internal static GameObject SpawnerRemoveButton;
+
         internal const int MaxSpawnerButtons = 8;
 
         internal static readonly GameObject[] SpawnerGroupButtons = new GameObject[MaxSpawnerButtons];
@@ -205,6 +207,51 @@ namespace AstvardServerMod
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                 $"{kind.Label}: ЛКМ — поставить");
             Log.LogInfo($"[AstvardServerMod] Placing spawner {kind.Prefab}.");
+        }
+
+        /// <summary>How far the undo button reaches.</summary>
+        internal const float SpawnerRemoveRadius = 8f;
+
+        /// <summary>
+        /// Takes back the last one. A placed spawner has no model and no Piece, so the
+        /// hammer cannot see it and neither can the player — without this, putting one
+        /// down is permanent short of a console command.
+        ///
+        /// It removes whatever spawners are in reach, including the ones the world
+        /// generated, because a spawner carries nothing that says who made it.
+        /// </summary>
+        internal static void RemoveNearbySpawners()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null || ZNetScene.instance == null) return;
+
+            var origin = player.transform.position;
+            var sqrRadius = SpawnerRemoveRadius * SpawnerRemoveRadius;
+            var removed = 0;
+
+            foreach (var spawner in FindObjectsByType<CreatureSpawner>(FindObjectsSortMode.None))
+            {
+                if (spawner == null) continue;
+                if ((spawner.transform.position - origin).sqrMagnitude > sqrRadius) continue;
+
+                // The preview stands in the same scene as the real thing.
+                if (GhostRoot != null && spawner.transform.IsChildOf(GhostRoot.transform)) continue;
+
+                var view = spawner.GetComponent<ZNetView>();
+                if (view == null || !view.IsValid()) continue;
+
+                // ZNetScene.Destroy only drops the ZDO when we own it; without the claim
+                // the object comes straight back the next time the zone is read.
+                if (!view.IsOwner()) view.ClaimOwnership();
+                ZNetScene.instance.Destroy(spawner.gameObject);
+                removed++;
+            }
+
+            player.Message(MessageHud.MessageType.Center,
+                removed == 0
+                    ? $"Спавнеров в {SpawnerRemoveRadius:0} м нет"
+                    : $"Убрано спавнеров: {removed}");
+            Log.LogInfo($"[AstvardServerMod] Removed {removed} spawners within {SpawnerRemoveRadius} m.");
         }
     }
 }

@@ -611,7 +611,8 @@ namespace AstvardServerMod
 
             // Before the pieces, not after: a floor dropped onto a slope and then
             // levelled underneath would already have decided what it was resting on.
-            if (IsLevelGroundEnabled) LevelUnderBuild(origin, rotation);
+            if (IsLevelGroundEnabled && ClipboardHasBuildPieces())
+                LevelUnderBuild(origin, rotation);
 
             for (var i = 0; i < Clipboard.Count; i++)
             {
@@ -677,6 +678,9 @@ namespace AstvardServerMod
                     foreach (var behaviour in ghost.GetComponentsInChildren<MonoBehaviour>())
                         behaviour.enabled = false;
 
+                    if (ghost.GetComponentsInChildren<Renderer>().Length == 0)
+                        AddGhostMarker(ghost, prefab);
+
                     Ghosts.Add(ghost);
                 }
             }
@@ -688,6 +692,60 @@ namespace AstvardServerMod
             CollectGhostSnapPoints();
 
             Log.LogInfo($"[AstvardServerMod] Ghost preview: {Ghosts.Count(g => g != null)}/{Clipboard.Count} pieces");
+        }
+
+        /// <summary>The stand-in for a modelless piece that is not a creature spawner.</summary>
+        private const string GhostMarkerPrefab = "wood_pole";
+
+        /// <summary>
+        /// Gives a piece with no model something to look at. A spawner is a bare
+        /// transform, so its preview drew nothing and there was no way to aim one. The
+        /// spawner knows which creature it releases, and that model is the honest
+        /// marker: it stands on the spot and says what is being planted there.
+        /// </summary>
+        private static void AddGhostMarker(GameObject ghost, GameObject prefab)
+        {
+            GameObject markerPrefab = null;
+
+            var spawner = prefab.GetComponent<CreatureSpawner>();
+            if (spawner != null) markerPrefab = spawner.m_creaturePrefab;
+
+            if (markerPrefab == null && ZNetScene.instance != null)
+                markerPrefab = ZNetScene.instance.GetPrefab(GhostMarkerPrefab);
+
+            if (markerPrefab == null) return;
+
+            var marker = Instantiate(markerPrefab, ghost.transform);
+            marker.transform.localPosition = Vector3.zero;
+            marker.transform.localRotation = Quaternion.identity;
+
+            foreach (var collider in marker.GetComponentsInChildren<Collider>())
+                collider.enabled = false;
+            foreach (var behaviour in marker.GetComponentsInChildren<MonoBehaviour>())
+                behaviour.enabled = false;
+
+            // A creature carries a Rigidbody, and a Rigidbody with its scripts switched
+            // off still answers to gravity - the marker would sink out of the preview.
+            foreach (var body in marker.GetComponentsInChildren<Rigidbody>())
+                body.isKinematic = true;
+        }
+
+        /// <summary>
+        /// Whether this placement actually stands on the ground. Levelling is there to
+        /// give a building a flat pad; a spawner is an empty point resting on nothing,
+        /// and flattening a circle of terrain under it changes the world for no reason.
+        /// </summary>
+        private static bool ClipboardHasBuildPieces()
+        {
+            if (ZNetScene.instance == null) return false;
+
+            foreach (var entry in Clipboard)
+            {
+                var prefab = ZNetScene.instance.GetPrefab(entry.Prefab);
+                if (prefab != null && prefab.GetComponent<Piece>() != null) return true;
+            }
+
+            return false;
         }
 
         private static void ClearGhosts()

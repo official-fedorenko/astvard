@@ -351,7 +351,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nСтавится проекцией:\nЛКМ — поставить, Esc — отмена.\nБуфер копирования будет занят.");
+            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена.\nСпавнер невидим — в проекции\nпоказан сам зверь.\nВ базе игрока (верстак, костёр)\nон молчит, и работает, только\nпока игрок ближе 60 м.\n«Убрать рядом» сносит все\nспавнеры в 8 м, и родные тоже.\nБуфер копирования будет занят.");
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
@@ -364,6 +364,8 @@ namespace AstvardServerMod
                 var slot = i;
                 SpawnerKindButtons[slot] = MakeButton(gui, "", () => PlaceSpawner(slot));
             }
+
+            SpawnerRemoveButton = MakeButton(gui, "Убрать рядом", RemoveNearbySpawners);
 
             WeatherButton = MakeButton(gui, "Настройка погоды", () =>
             {
@@ -1007,6 +1009,8 @@ namespace AstvardServerMod
                 SetActive(SpawnerKindButtons[i], admin && MenuState == StateSpawnerList
                                                  && i < _shownSpawnerKinds);
             }
+            SetActive(SpawnerRemoveButton, admin && (MenuState == StateSpawners
+                                                    || MenuState == StateSpawnerList));
 
             SetActive(CopyButton, admin && MenuState == StateBuild);
             SetActive(PasteButton, admin && MenuState == StateBuild);
