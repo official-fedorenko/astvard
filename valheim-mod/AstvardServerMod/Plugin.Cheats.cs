@@ -271,6 +271,40 @@ namespace AstvardServerMod
         private const int FoodServings = 3;
 
         /// <summary>
+        /// Everything that is the input of some recipe: raw meat, dough, anything the
+        /// player is meant to put on a fire first.
+        ///
+        /// Asked of the stations themselves rather than listed here. A cooking station
+        /// and a fermenter each carry their conversions as from-to pairs, so anything
+        /// appearing as a "from" has a better version of itself one step away and is by
+        /// definition not what you hand somebody to eat.
+        /// </summary>
+        private static HashSet<string> Uncooked()
+        {
+            var raw = new HashSet<string>();
+            if (ZNetScene.instance == null) return raw;
+
+            foreach (var prefab in ZNetScene.instance.m_prefabs)
+            {
+                if (prefab == null) continue;
+
+                var cooking = prefab.GetComponent<CookingStation>();
+                if (cooking != null && cooking.m_conversion != null)
+                    foreach (var step in cooking.m_conversion)
+                        if (step != null && step.m_from != null)
+                            raw.Add(step.m_from.gameObject.name);
+
+                var fermenting = prefab.GetComponent<Fermenter>();
+                if (fermenting != null && fermenting.m_conversion != null)
+                    foreach (var step in fermenting.m_conversion)
+                        if (step != null && step.m_from != null)
+                            raw.Add(step.m_from.gameObject.name);
+            }
+
+            return raw;
+        }
+
+        /// <summary>
         /// Three plates, one per belly slot, each the best of its kind this build knows.
         ///
         /// The roster is read out of ObjectDB rather than written down here. A list of
@@ -288,6 +322,8 @@ namespace AstvardServerMod
             var player = Player.m_localPlayer;
             if (player == null || ObjectDB.instance == null) return;
 
+            var uncooked = Uncooked();
+
             var edible = new List<ItemDrop>();
             foreach (var prefab in ObjectDB.instance.m_items)
             {
@@ -296,6 +332,11 @@ namespace AstvardServerMod
                 if (shared == null) continue;
                 if (shared.m_food <= 0f && shared.m_foodStamina <= 0f && shared.m_foodEitr <= 0f)
                     continue;
+
+                // Raw meat and its like feed a starving man, so they carry food values
+                // and slipped through - but handing someone a plate of them is handing
+                // them a job. Anything a station turns into something else is dropped.
+                if (uncooked.Contains(prefab.name)) continue;
 
                 edible.Add(drop);
             }
