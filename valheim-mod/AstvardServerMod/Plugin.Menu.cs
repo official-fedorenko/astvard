@@ -55,6 +55,8 @@ namespace AstvardServerMod
 
         internal static GameObject ActivateButton;
 
+        internal static GameObject AdminAskButton;
+
         internal static GameObject RadiusInput;
 
         internal static GameObject HeightInput;
@@ -136,6 +138,13 @@ namespace AstvardServerMod
                 MenuState = StateAdmin;
                 RefreshMenu();
             });
+
+            // Everyone sees this one, because whether you may press it is not a
+            // question the client can answer - it asks the server, which decides from
+            // adminlist.txt. It replaces the astvardadmin console command as the way
+            // in: that command was marked OnlyServer, and the game refuses those on a
+            // client outright, so it only ever worked while another mod relayed it.
+            AdminAskButton = MakeButton(gui, "Админка", RequestAdmin);
 
             FeaturesButton = MakeButton(gui, "Функции", () =>
             {
@@ -924,6 +933,7 @@ namespace AstvardServerMod
             SetActive(InfoButton, MenuState == StateRoot);
             SetActive(InfoText, MenuState == StateRoot && IsInfoShown);
             SetActive(ActivateButton, admin && MenuState == StateRoot);
+            SetActive(AdminAskButton, !admin && MenuState == StateRoot);
 
             // Everything below is open to every player, not just admins.
             SetActive(FeaturesButton, MenuState == StateRoot);
