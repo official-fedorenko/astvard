@@ -12,21 +12,29 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <!-- Game assemblies come from the client: it is a client-side mod, and the client
+         install carries every type the server one does plus the client-only ones. -->
     <ValheimDir>C:\Games\steamapps\common\Valheim</ValheimDir>
-    <JotunnDll>C:\Users\offic\Downloads\ValheimModding-Jotunn-2.29.2\plugins\Jotunn.dll</JotunnDll>
+
+    <!-- BepInEx, Harmony and Jotunn come from the DEDICATED SERVER install instead.
+         The client was cleaned back to vanilla on 09.09.2026, so it has no BepInEx to
+         reference, and pointing at a Downloads folder (as JotunnDll used to) breaks the
+         build the moment someone tidies up. The server keeps the mod stack, and building
+         against what the server actually runs is the version we want anyway. -->
+    <BepInExDir>C:\Games\steamapps\common\Valheim dedicated server\BepInEx</BepInExDir>
   </PropertyGroup>
 
   <ItemGroup>
     <Reference Include="BepInEx">
-      <HintPath>$(ValheimDir)\BepInEx\core\BepInEx.dll</HintPath>
+      <HintPath>$(BepInExDir)\core\BepInEx.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(ValheimDir)\BepInEx\core\0Harmony.dll</HintPath>
+      <HintPath>$(BepInExDir)\core\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Jotunn">
-      <HintPath>$(JotunnDll)</HintPath>
+      <HintPath>$(BepInExDir)\plugins\Jotunn.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="assembly_valheim">
