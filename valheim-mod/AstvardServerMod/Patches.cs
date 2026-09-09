@@ -30,16 +30,17 @@ namespace AstvardServerMod
     {
         public override string Name => "astvardadmin";
         public override string Help => "Astvard: разблокировать админ-кнопки в меню (только для админов сервера)";
-        public override bool OnlyServer => true;
 
         public override void Run(string[] args)
         {
-            // OnlyServer commands only reach here if the server's own admin check
-            // (adminlist.txt) let it through — same gate as devcommands/kick.
-            Plugin.IsAdminUnlocked = true;
-            Plugin.RefreshMenu();
-            Plugin.Log.LogInfo("[AstvardServerMod] Admin unlocked via astvardadmin command");
-            Chat.instance?.AddString("Astvard: админ-кнопки разблокированы.");
+            // This used to be OnlyServer, on the assumption that the flag was the admin
+            // check. It is not: Terminal.ConsoleCommand.IsValid answers OnlyServer with
+            // ZNet.IsServer(), which is false on every client, so the command was simply
+            // refused - it only ever ran because ServerDevcommands relayed it to the
+            // server. The rights question is now asked where it belongs, over our own
+            // RPC, against adminlist.txt.
+            Plugin.RequestAdmin();
+            Chat.instance?.AddString("Astvard: спрашиваю сервер…");
         }
     }
 

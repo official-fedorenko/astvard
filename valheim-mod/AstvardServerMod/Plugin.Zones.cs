@@ -184,6 +184,7 @@ namespace AstvardServerMod
             rpc.Register<string, int>(RpcZoneList, OnZoneList);
 
             RegisterTemplateRpcs();
+            RegisterAdminRpcs();
         }
 
         /// <summary>
