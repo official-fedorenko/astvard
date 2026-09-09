@@ -50,6 +50,20 @@ namespace AstvardServerMod
         private const float LegTopDrop = Module * 0.5f;
         private const float RampDrop = Module * 0.5f;
 
+        // A post does not stop at the roof, it goes into it.
+        //
+        // The eaves post says so first: it stands at deck + 2, so its top edge is at
+        // deck + 3 while the roof surface it meets there is at deck + 2.5. And "Тест
+        // тройного моста", built by hand for exactly this question, does the same over
+        // the ridge - its topmost centre pole sits at deck + 3.5 with the ridge at
+        // deck + 4, half a metre of pole inside the piece it carries.
+        //
+        // Ending level with the roof surface, which is what the arithmetic says a
+        // column "reaching" the roof means, leaves half a metre of daylight under every
+        // ridge - and half a metre is a whole step of the pole grid, so it reads as a
+        // column that missed rather than one that is short.
+        private const float RoofBite = 0.5f;
+
         // Every rise here was measured off the covered bridge saved in game, whose deck
         // sits at -0.5. They chain because the pivots are central: the deck meets a one
         // metre post, the post meets the beam, and a two metre post carries on from the
@@ -132,9 +146,20 @@ namespace AstvardServerMod
             var columns = new List<float>();
             if (!IsBridgeCovered || width < 3) return columns;
 
+            // Down the middle first, whatever the width. The roof peaks over the centre
+            // line of every deck: an odd one has a ridge piece sitting there and an even
+            // one has its two inner slopes meeting, and both come to the same height.
+            //
+            // A column was briefly moved off the centre on even decks, on the reasoning
+            // that there is no lane there to hold it up. That was the wrong question -
+            // the column carries the roof and stands on the ground, and the deck it
+            // passes through has a seam at the centre of an even width, which is where
+            // every other leg stands anyway. It left a six wide bridge with nothing under
+            // its ridge at all.
             columns.Add(0f);
 
-            // Never on the outermost lane: the eaves already stand there.
+            // Then outward a couple of lanes at a time. Never the outermost: the eaves
+            // post already stands there.
             var reach = (width - 1) * 0.5f * Module - 1f;
             for (var at = ColumnSpacing; at <= reach; at += ColumnSpacing)
             {
@@ -627,6 +652,10 @@ namespace AstvardServerMod
         private static void Column(List<CopiedPiece> into, float across, float top,
                                    float bottom, float along, Quaternion turn)
         {
+            // Every caller measures to the roof surface; the pole goes half a metre past
+            // it, the way the hand-built bridge does.
+            top += RoofBite;
+
             var span = top - bottom;
             if (span <= 0f) return;
 
