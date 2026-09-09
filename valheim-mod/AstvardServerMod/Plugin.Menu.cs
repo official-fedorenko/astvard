@@ -374,12 +374,6 @@ namespace AstvardServerMod
             TodApplyButton = MakeButton(gui, "Установить", ApplyTimeOfDay);
 
 
-            SpawnerButton = MakeButton(gui, "Спавнеры", () =>
-            {
-                MenuState = StateSpawners;
-                RefreshMenu();
-            });
-
             SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена.\nСпавнер невидим — в проекции\nпоказан сам зверь.\nВ базе игрока (верстак, костёр)\nон молчит, и работает, только\nпока игрок ближе 60 м.\n«Убрать рядом» сносит все\nспавнеры в 8 м, и родные тоже.\nБуфер копирования будет занят.");
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
@@ -691,6 +685,12 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            SpawnerButton = MakeButton(gui, "Спавнеры", () =>
+            {
+                MenuState = StateSpawners;
+                RefreshMenu();
+            });
+
             TemplateHint = MakeText(gui, "");
 
             // One button per category and per template, filled in from whatever the
@@ -842,7 +842,7 @@ namespace AstvardServerMod
                          MenuState == StateForceDelete ||
                          MenuState == StateWeather) MenuState = StateCheats;
                 else if (MenuState == StateWind || MenuState == StateEnv) MenuState = StateWeather;
-                else if (MenuState == StateSpawners) MenuState = StateCheats;
+                else if (MenuState == StateSpawners) MenuState = StateBuild;
                 else if (MenuState == StateSpawnerList) MenuState = StateSpawners;
                 else if (MenuState == StateTemplates) MenuState = StateBuild;
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
@@ -1034,7 +1034,6 @@ namespace AstvardServerMod
             SetActive(FoodButton, admin && MenuState == StateCheats);
             SetActive(TodButton, admin && MenuState == StateCheats);
             SetActive(WeatherButton, admin && MenuState == StateCheats);
-            SetActive(SpawnerButton, admin && MenuState == StateCheats);
             SetActive(RepairButton, admin && MenuState == StateCheats);
             SetActive(ForceDeleteButton, admin && MenuState == StateCheats);
 
@@ -1081,6 +1080,7 @@ namespace AstvardServerMod
             SetActive(CopyButton, admin && MenuState == StateBuild);
             SetActive(PasteButton, admin && MenuState == StateBuild);
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
+            SetActive(SpawnerButton, admin && MenuState == StateBuild);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
