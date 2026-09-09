@@ -409,7 +409,12 @@ namespace AstvardServerMod
                         AcceptScratch.Add(conversion.m_from.gameObject.name);
 
                 var ore = TakeSupply(origin, supply, any, AcceptScratch);
-                if (ore != null) view.InvokeRPC("RPC_AddOre", ore);
+                // 1.0 added a trailing cheated flag to RPC_AddOre. Sending the old
+                // single argument made the receiver read a bool past the end of the
+                // package: an EndOfStreamException thrown straight into this coroutine,
+                // which killed every automation sweep for the rest of the session.
+                // The ore came out of a chest, so it is not cheated.
+                if (ore != null) view.InvokeRPC("RPC_AddOre", ore, false);
             }
         }
 
@@ -438,7 +443,8 @@ namespace AstvardServerMod
                     AcceptScratch.Add(conversion.m_from.gameObject.name);
 
             var raw = TakeSupply(origin, supply, any, AcceptScratch);
-            if (raw != null) view.InvokeRPC("RPC_AddItem", raw);
+            // Same trailing cheated flag as the smelter, same crash without it.
+            if (raw != null) view.InvokeRPC("RPC_AddItem", raw, false);
         }
 
         private static void FillFermenter(Fermenter fermenter, List<Container> supply, List<Container> any)
@@ -447,8 +453,11 @@ namespace AstvardServerMod
 
             var view = fermenter.GetComponent<ZNetView>();
             // Status.Empty is exactly "no content stored", so the ZDO answers this
-            // without reaching for the private enum.
-            if (!string.IsNullOrEmpty(view.GetZDO().GetString(ZDOVars.s_content))) return;
+            // without reaching for the private enum. 1.0 stores that content as the
+            // stable hash of the prefab name rather than the name, and ZDO keeps ints
+            // and strings in separate stores - so the old GetString returned "" for
+            // every fermenter, full or empty, and this guard never once fired.
+            if (view.GetZDO().GetInt(ZDOVars.s_content) != 0) return;
 
             AcceptScratch.Clear();
             foreach (var conversion in fermenter.m_conversion)
@@ -456,7 +465,11 @@ namespace AstvardServerMod
                     AcceptScratch.Add(conversion.m_from.gameObject.name);
 
             var brew = TakeSupply(fermenter.transform.position, supply, any, AcceptScratch);
-            if (brew != null) view.InvokeRPC("RPC_AddItem", brew);
+            // Register<int, bool> in 1.0, not <string>. Sending the name made the
+            // receiver read four bytes of UTF-8 as a hash, reject the unknown item,
+            // and leave the brew destroyed - TakeSupply had already removed it from
+            // the chest. Hash it the way the game does, and say it is not cheated.
+            if (brew != null) view.InvokeRPC("RPC_AddItem", brew.GetStableHashCode(), false);
         }
 
         private static void FillFireplace(Fireplace fireplace, List<Container> supply, List<Container> any)
