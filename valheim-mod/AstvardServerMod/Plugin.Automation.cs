@@ -158,6 +158,36 @@ namespace AstvardServerMod
             return target.GetInventory().AddItem(prefab, amount);
         }
 
+        private static readonly System.Reflection.MethodInfo MSpawnProcessed =
+            AccessTools.Method(typeof(Smelter), "SpawnProcessed");
+
+        /// <summary>
+        /// Tips out what the smelter is still holding back.
+        ///
+        /// A stacking smelter does not hand over each bar as it is made. QueueProcessed
+        /// counts them up in its own ZDO and only calls Spawn once the count reaches the
+        /// item's max stack size - fifty coal, say - so the patch that routes Spawn into
+        /// a chest never sees the remainder. It sits inside the kiln looking like nothing
+        /// was produced, which is exactly what "it does not take everything" means.
+        ///
+        /// SpawnProcessed is the game's own way of emptying that counter, and it goes
+        /// through Spawn, so calling it here needs no new path into the chest: whatever
+        /// was being held simply arrives one sweep later.
+        /// </summary>
+        private static void FlushSmelter(Smelter smelter)
+        {
+            if (MSpawnProcessed == null || !smelter.m_spawnStack) return;
+
+            var view = smelter.GetComponent<ZNetView>();
+            if (view == null || !view.IsValid()) return;
+
+            // The counter lives in the ZDO, and only its owner may write there.
+            if (!view.IsOwner()) return;
+            if (view.GetZDO().GetInt(ZDOVars.s_spawnAmount) <= 0) return;
+
+            MSpawnProcessed.Invoke(smelter, null);
+        }
+
         /// <summary>
         /// Routes a smelter's finished product into a nearby chest. Covers smelters,
         /// blast furnaces and charcoal kilns alike — the game gives them all the same
@@ -296,7 +326,11 @@ namespace AstvardServerMod
                     }
 
                     var smelter = piece.GetComponentInChildren<Smelter>();
-                    if (smelter != null && feeding) FillSmelter(smelter, supplyChests, anyChests);
+                    if (smelter != null)
+                    {
+                        if (feeding) FillSmelter(smelter, supplyChests, anyChests);
+                        FlushSmelter(smelter);
+                    }
 
                     var fireplace = piece.GetComponentInChildren<Fireplace>();
                     if (fireplace != null && feeding) FillFireplace(fireplace, supplyChests, anyChests);
