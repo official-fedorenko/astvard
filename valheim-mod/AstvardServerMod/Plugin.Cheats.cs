@@ -270,119 +270,118 @@ namespace AstvardServerMod
         /// <summary>How many of each to hand over.</summary>
         private const int FoodServings = 3;
 
-        /// <summary>
-        /// Everything that is the input of some recipe: raw meat, dough, anything the
-        /// player is meant to put on a fire first.
-        ///
-        /// Asked of the stations themselves rather than listed here. A cooking station
-        /// and a fermenter each carry their conversions as from-to pairs, so anything
-        /// appearing as a "from" has a better version of itself one step away and is by
-        /// definition not what you hand somebody to eat.
-        /// </summary>
-        private static HashSet<string> Uncooked()
+        /// <summary>What the button says, and the three dishes behind it.</summary>
+        private sealed class FoodSet
         {
-            var raw = new HashSet<string>();
-            if (ZNetScene.instance == null) return raw;
-
-            foreach (var prefab in ZNetScene.instance.m_prefabs)
+            public FoodSet(string label, params string[] prefabs)
             {
-                if (prefab == null) continue;
-
-                var cooking = prefab.GetComponent<CookingStation>();
-                if (cooking != null && cooking.m_conversion != null)
-                    foreach (var step in cooking.m_conversion)
-                        if (step != null && step.m_from != null)
-                            raw.Add(step.m_from.gameObject.name);
-
-                var fermenting = prefab.GetComponent<Fermenter>();
-                if (fermenting != null && fermenting.m_conversion != null)
-                    foreach (var step in fermenting.m_conversion)
-                        if (step != null && step.m_from != null)
-                            raw.Add(step.m_from.gameObject.name);
+                Label = label;
+                Prefabs = prefabs;
             }
 
-            return raw;
+            public string Label { get; }
+
+            public string[] Prefabs { get; }
+        }
+
+        /// <summary>How many buttons the panel keeps room for.</summary>
+        internal const int MaxFoodButtons = 9;
+
+        /// <summary>
+        /// A meal per stage of the game, three dishes each.
+        ///
+        /// This used to read ObjectDB and hand over whatever scored highest on health,
+        /// stamina and eitr - which is defensible arithmetic and a useless meal. The
+        /// strongest three dishes in the build are all Ashlands dishes, so a player who
+        /// had just left the Meadows got food he could not have cooked, and the button
+        /// had exactly one answer no matter what it was asked.
+        ///
+        /// These are the combinations the game's own players settled on: two health
+        /// dishes and one stamina dish, since the belly holds three and a third health
+        /// dish buys less than the stamina it costs. Mistlands and Ashlands get a second
+        /// button for the eitr meal, because from Mistlands on there is a real choice
+        /// between hitting things and casting at them, and no single trio serves both.
+        ///
+        /// Names were checked against the shipped game data rather than typed from
+        /// memory - every prefab below was found by scanning the install - and they are
+        /// checked again at the moment the button is pressed, so one that a future
+        /// update renames goes quiet instead of handing over nothing and saying nothing.
+        /// </summary>
+        private static readonly FoodSet[] FoodSets =
+        {
+            new FoodSet("Луга", "CookedDeerMeat", "CookedMeat", "Honey"),
+            new FoodSet("Чёрный лес", "DeerStew", "MinceMeatSauce", "CarrotSoup"),
+            new FoodSet("Болото", "SerpentStew", "SerpentMeatCooked", "TurnipStew"),
+            new FoodSet("Горы", "SerpentStew", "SerpentMeatCooked", "Eyescream"),
+            new FoodSet("Равнины", "SerpentStew", "LoxPie", "BloodPudding"),
+            new FoodSet("Мистленд", "MisthareSupreme", "MeatPlatter", "FishAndBread"),
+            new FoodSet("Мистленд — магия",
+                        "SeekerAspic", "YggdrasilPorridge", "MagicallyStuffedShroom"),
+            new FoodSet("Пепельные земли", "PiquantPie", "MashedMeat", "RoastedCrustPie"),
+            new FoodSet("Пепельные земли — магия",
+                        "MarinatedGreens", "SparklingShroomshake", "SizzlingBerryBroth"),
+        };
+
+        internal static int FoodSetCount
+        {
+            get { return FoodSets.Length; }
+        }
+
+        internal static string FoodSetLabel(int slot)
+        {
+            return slot >= 0 && slot < FoodSets.Length ? FoodSets[slot].Label : "";
         }
 
         /// <summary>
-        /// Three plates, one per belly slot, each the best of its kind this build knows.
+        /// Hands over one meal: three of each dish, one belly slot apiece.
         ///
-        /// The roster is read out of ObjectDB rather than written down here. A list of
-        /// names would go stale on the next update the way our spawner names nearly did,
-        /// and worse, it would encode one person's opinion of "good food" instead of the
-        /// game's own numbers. Whatever the strongest health, stamina and eitr dishes
-        /// are, that is what arrives - so the answer improves by itself when the game
-        /// adds a better one.
-        ///
-        /// Three of the same axis is not a balanced meal, so each pick is taken from the
-        /// dishes the earlier ones did not already claim.
+        /// A dish the build does not know is skipped rather than aborting the rest -
+        /// two thirds of a meal beats none - and it is named in the log, which is the
+        /// only place anyone would look to find out that the game renamed something.
         /// </summary>
-        internal static void GiveFood()
+        internal static void GiveFoodSet(int slot)
         {
             var player = Player.m_localPlayer;
             if (player == null || ObjectDB.instance == null) return;
+            if (slot < 0 || slot >= FoodSets.Length) return;
 
-            var uncooked = Uncooked();
+            var set = FoodSets[slot];
+            var given = new List<string>();
+            var missing = new List<string>();
+            var full = false;
 
-            var edible = new List<ItemDrop>();
-            foreach (var prefab in ObjectDB.instance.m_items)
+            foreach (var name in set.Prefabs)
             {
-                var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
-                var shared = drop != null && drop.m_itemData != null ? drop.m_itemData.m_shared : null;
-                if (shared == null) continue;
-                if (shared.m_food <= 0f && shared.m_foodStamina <= 0f && shared.m_foodEitr <= 0f)
-                    continue;
-
-                // Raw meat and its like feed a starving man, so they carry food values
-                // and slipped through - but handing someone a plate of them is handing
-                // them a job. Anything a station turns into something else is dropped.
-                if (uncooked.Contains(prefab.name)) continue;
-
-                edible.Add(drop);
-            }
-
-            var picks = new List<ItemDrop>();
-            var axes = new System.Func<ItemDrop.ItemData.SharedData, float>[]
-            {
-                s => s.m_food,
-                s => s.m_foodStamina,
-                s => s.m_foodEitr,
-            };
-
-            foreach (var axis in axes)
-            {
-                ItemDrop best = null;
-                foreach (var candidate in edible)
+                var prefab = ObjectDB.instance.GetItemPrefab(name);
+                if (prefab == null)
                 {
-                    if (picks.Contains(candidate)) continue;
-                    if (axis(candidate.m_itemData.m_shared) <= 0f) continue;
-                    if (best == null ||
-                        axis(candidate.m_itemData.m_shared) > axis(best.m_itemData.m_shared))
-                        best = candidate;
+                    missing.Add(name);
+                    continue;
                 }
 
-                if (best != null) picks.Add(best);
-            }
+                if (!player.GetInventory().AddItem(prefab, FoodServings))
+                {
+                    full = true;
+                    continue;
+                }
 
-            if (picks.Count == 0)
-            {
-                player.Message(MessageHud.MessageType.Center, "Еды не нашлось");
-                return;
-            }
-
-            var given = new List<string>();
-            foreach (var pick in picks)
-            {
-                if (!player.GetInventory().AddItem(pick.gameObject, FoodServings)) continue;
                 // The prefab name, not m_shared.m_name: the latter is a token like
                 // $item_serpentstew, and Localization lives in an assembly we do not
                 // reference. An admin reading a log wants the prefab name anyway.
-                given.Add(pick.gameObject.name);
+                given.Add(name);
             }
 
-            player.Message(MessageHud.MessageType.Center,
-                given.Count == 0 ? "Некуда положить" : string.Join(", ", given));
-            Log.LogInfo($"[AstvardServerMod] Food given: {string.Join(", ", given)}.");
+            var said = given.Count > 0
+                ? set.Label + ": " + given.Count + " из " + set.Prefabs.Length
+                : (full ? "Некуда положить" : "Еды не нашлось");
+
+            player.Message(MessageHud.MessageType.Center, said);
+            Log.LogInfo($"[AstvardServerMod] Food set '{set.Label}': gave "
+                        + $"{string.Join(", ", given)}"
+                        + (missing.Count > 0
+                           ? $"; unknown to this build: {string.Join(", ", missing)}"
+                           : "")
+                        + (full ? "; inventory full" : "") + ".");
         }
 
         /// <summary>

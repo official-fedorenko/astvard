@@ -46,6 +46,7 @@ namespace AstvardServerMod
         private const int StateBridge = 28;     // мост между двумя точками
         private const int StateSpawners = 29;   // спавнеры, сгруппированные по биому
         private const int StateSpawnerList = 30; // спавнеры одного биома
+        private const int StateFood = 31;       // готовые наборы еды по биомам
 
         internal static GameObject Panel;
 
@@ -89,6 +90,11 @@ namespace AstvardServerMod
         internal static GameObject CheatsButton;
 
         internal static GameObject FeaturesButton;
+
+        internal static GameObject FoodHint;
+
+        internal static readonly GameObject[] FoodSetButtons =
+            new GameObject[MaxFoodButtons];
 
         internal static bool IsInfoShown;
 
@@ -349,7 +355,20 @@ namespace AstvardServerMod
                 Log.LogInfo($"[AstvardServerMod] God mode: {newState}");
             });
 
-            FoodButton = MakeButton(gui, "Выдать еду", GiveFood);
+            FoodButton = MakeButton(gui, "Еда", () =>
+            {
+                MenuState = StateFood;
+                RefreshMenu();
+            });
+
+            FoodHint = MakeText(gui, "Два блюда на здоровье и одно\nна выносливость — живот держит\nтри. По три порции каждого.\nС Мистленда есть второй набор,\nна эйтр: для посоха вместо меча.");
+
+            for (var i = 0; i < MaxFoodButtons; i++)
+            {
+                var slot = i;
+                FoodSetButtons[slot] = MakeButton(gui, FoodSetLabel(slot),
+                                                  () => GiveFoodSet(slot));
+            }
 
             DebugModeButton = MakeButton(gui, "Debugmode", () =>
             {
@@ -843,6 +862,7 @@ namespace AstvardServerMod
                          MenuState == StateWeather) MenuState = StateCheats;
                 else if (MenuState == StateWind || MenuState == StateEnv) MenuState = StateWeather;
                 else if (MenuState == StateSpawners) MenuState = StateBuild;
+                else if (MenuState == StateFood) MenuState = StateCheats;
                 else if (MenuState == StateSpawnerList) MenuState = StateSpawners;
                 else if (MenuState == StateTemplates) MenuState = StateBuild;
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
@@ -1032,6 +1052,10 @@ namespace AstvardServerMod
             SetActive(GodButton, admin && MenuState == StateCheats);
             SetActive(DebugModeButton, admin && MenuState == StateCheats);
             SetActive(FoodButton, admin && MenuState == StateCheats);
+            SetActive(FoodHint, admin && MenuState == StateFood);
+            for (var i = 0; i < MaxFoodButtons; i++)
+                SetActive(FoodSetButtons[i],
+                          admin && MenuState == StateFood && i < FoodSetCount);
             SetActive(TodButton, admin && MenuState == StateCheats);
             SetActive(WeatherButton, admin && MenuState == StateCheats);
             SetActive(RepairButton, admin && MenuState == StateCheats);
