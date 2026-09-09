@@ -67,10 +67,6 @@ namespace AstvardServerMod
                     : "Выравнивать землю: выкл";
         }
 
-        /// <summary>Applies the level operation at the player's position.</summary>
-        private static readonly System.Reflection.MethodInfo MPaintCleared =
-            AccessTools.Method(typeof(TerrainComp), "PaintCleared");
-
         // Long enough for a real stretch of road, short enough that one press does not
         // rewrite the terrain of a dozen zones at once.
         private const float MaxRoadLength = 200f;

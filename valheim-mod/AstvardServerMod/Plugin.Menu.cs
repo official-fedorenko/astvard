@@ -96,6 +96,24 @@ namespace AstvardServerMod
 
         private void CreatePanel()
         {
+            // Jotunn raises OnCustomGUIAvailable again on every scene load, so this runs
+            // more than once a session - the log shows two panels, one for the start
+            // scene and one for the world.
+            //
+            // Both used to survive. The fields below point at whichever was built last,
+            // but the earlier panel is still in the scene with its buttons still live,
+            // so a click landed on two of them and the interface answered twice - which
+            // is what a doubled click sound is. Every widget is a child of the panel, so
+            // taking the panel takes them with it.
+            if (Panel != null) Destroy(Panel);
+
+            // And the text boxes cached for keyboard blocking belong to the panel that
+            // has just gone, so the cache has to go too: held on to, every entry in it
+            // is null, the block never engages, and letters typed into a field reach the
+            // game as hotkeys instead.
+            _panelInputs = null;
+            _inputBlocked = false;
+
             var gui = GUIManager.Instance;
             if (gui == null || GUIManager.CustomGUIFront == null)
             {
@@ -330,6 +348,8 @@ namespace AstvardServerMod
                 Player.m_localPlayer.SetGodMode(newState);
                 Log.LogInfo($"[AstvardServerMod] God mode: {newState}");
             });
+
+            FoodButton = MakeButton(gui, "Выдать еду", GiveFood);
 
             DebugModeButton = MakeButton(gui, "Debugmode", () =>
             {
@@ -976,6 +996,7 @@ namespace AstvardServerMod
 
             SetActive(GodButton, admin && MenuState == StateCheats);
             SetActive(DebugModeButton, admin && MenuState == StateCheats);
+            SetActive(FoodButton, admin && MenuState == StateCheats);
             SetActive(TodButton, admin && MenuState == StateCheats);
             SetActive(WeatherButton, admin && MenuState == StateCheats);
             SetActive(SpawnerButton, admin && MenuState == StateCheats);

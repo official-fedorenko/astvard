@@ -28,6 +28,8 @@ namespace AstvardServerMod
 
         private static ConfigEntry<bool> _autoFill;
 
+        private static ConfigEntry<string> _localAdminCommands;
+
         // Only the server reads these; a client keeps its own copy of whatever the
         // server last reported, purely to show it in the menu.
         private static ConfigEntry<string> _zones;
@@ -53,6 +55,14 @@ namespace AstvardServerMod
             _autoFill = Config.Bind("Функции", "AutoFill", false,
                 "Подавать сырьё и топливо из ближайшего сундука.");
 
+            _localAdminCommands = Config.Bind("Функции", "LocalAdminCommands",
+                "debugmode fly nocost exploremap resetmap tod env resetenv wind resetwind",
+                "Команды, которые мод разрешает админу выполнить на своём клиенте. "
+                + "Игра запрещает их вне сервера, хотя действуют они только на того, кто ввёл. "
+                + "Через пробел; пусто — не разрешать ничего; * — все, какие игра "
+                + "отказывает клиенту. Команды, которые игра ретранслирует сама, не "
+                + "затрагиваются никогда — иначе они выполнились бы у нас вместо сервера.");
+
             _zones = Config.Bind("Зона", "Zones", "",
                 "Области, которые сервер держит загруженными: X,Z,радиус_в_метрах через ';'. "
                 + "Радиус округляется наружу до целых зон по 64 м.");
@@ -62,7 +72,6 @@ namespace AstvardServerMod
             _harmony.PatchAll();
             Log.LogInfo("AstvardServerMod loaded");
 
-            RegisterCommand(new HiCommand());
             RegisterCommand(new AdminUnlockCommand());
 
             if (GUIManager.IsHeadless())
@@ -154,7 +163,7 @@ namespace AstvardServerMod
         /// </summary>
         private static void OnAdminAsk(long sender, long nonce)
         {
-            if (!ServerAllows(sender))
+            if (!ServerAllows(sender) && !AdminFileAllows(sender))
             {
                 // The id, not just the fact: a refusal is almost always the list holding
                 // a different identity from the one the socket reports - a Steam id in
@@ -166,6 +175,125 @@ namespace AstvardServerMod
 
             ZRoutedRpc.instance?.InvokeRoutedRPC(ReplyTarget(sender), RpcAdminGrant, nonce);
             Log.LogInfo($"[AstvardServerMod] Admin granted to {sender}.");
+        }
+
+        private static string _localAdminCommandsRaw;
+
+        private static readonly HashSet<string> LocalAdminCommandSet = new HashSet<string>();
+
+        /// <summary>
+        /// Whether this command is one the admin may run on their own machine. Reparsed
+        /// only when the setting's text changes, since it is asked once per command per
+        /// keystroke while the console builds its suggestions.
+        /// </summary>
+        internal static bool IsLocalAdminCommand(string command)
+        {
+            if (_localAdminCommands == null || string.IsNullOrEmpty(command)) return false;
+
+            var raw = (_localAdminCommands.Value ?? "").Trim();
+            if (raw == "*") return true;
+
+            if (raw != _localAdminCommandsRaw)
+            {
+                _localAdminCommandsRaw = raw;
+                LocalAdminCommandSet.Clear();
+                foreach (var name in raw.Split(new[] { ' ', ',', ';' },
+                             System.StringSplitOptions.RemoveEmptyEntries))
+                    LocalAdminCommandSet.Add(name.Trim().ToLowerInvariant());
+            }
+
+            return LocalAdminCommandSet.Contains(command.ToLowerInvariant());
+        }
+
+        /// <summary>Our own list, beside the game's adminlist.txt.</summary>
+        private const string AdminFileName = "astvard-admins.txt";
+
+        private static readonly string[] AdminFileHeader =
+        {
+            "# Кто может открыть админ-меню Astvard, помимо adminlist.txt самой игры.",
+            "# Одна запись на строку, # — комментарий. Файл перечитывается на лету.",
+            "#",
+            "# SteamID64, например 76561198425108760 — надёжно. Сервер сверяет его с",
+            "#   сокетом, подделать нельзя. Префикс V_ дописывать не нужно: мод",
+            "#   сравнивает с тем, что сообщает сокет, а не с форматом списка игры.",
+            "#",
+            "# Имя игрока, например Meliowar — удобно, но НЕ ЗАЩИТА: имя игрок",
+            "#   выбирает сам, и любой может назваться так же. Годится для своего",
+            "#   круга, не годится для открытого сервера."
+        };
+
+        private static string AdminFilePath
+        {
+            get { return System.IO.Path.Combine(Paths.ConfigPath, AdminFileName); }
+        }
+
+        private static readonly List<string> AdminEntries = new List<string>();
+
+        private static System.DateTime _adminFileStamp = System.DateTime.MinValue;
+
+        /// <summary>
+        /// Rereads the list when the file has changed, so an admin can be added without
+        /// restarting the server. Creates it with its own explanation the first time,
+        /// because a file nobody can find is a file nobody edits.
+        /// </summary>
+        private static void LoadAdminFile()
+        {
+            try
+            {
+                var path = AdminFilePath;
+                if (!System.IO.File.Exists(path))
+                {
+                    System.IO.File.WriteAllLines(path, AdminFileHeader);
+                    _adminFileStamp = System.IO.File.GetLastWriteTimeUtc(path);
+                    AdminEntries.Clear();
+                    return;
+                }
+
+                var stamp = System.IO.File.GetLastWriteTimeUtc(path);
+                if (stamp == _adminFileStamp) return;
+                _adminFileStamp = stamp;
+
+                AdminEntries.Clear();
+                foreach (var line in System.IO.File.ReadAllLines(path))
+                {
+                    var entry = line.Trim();
+                    if (entry.Length == 0 || entry.StartsWith("#")) continue;
+                    AdminEntries.Add(entry);
+                }
+
+                Log.LogInfo($"[AstvardServerMod] {AdminFileName}: {AdminEntries.Count} entries.");
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogError($"[AstvardServerMod] Could not read {AdminFileName}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Whether our own list lets this one in. The id comes off the socket and cannot
+        /// be renamed by the person on the other end; the player name is whatever they
+        /// typed at character creation, so a name entry is convenience and is documented
+        /// as such in the file itself.
+        /// </summary>
+        private static bool AdminFileAllows(long sender)
+        {
+            if (ZNet.instance == null || !ZNet.instance.IsServer()) return false;
+
+            LoadAdminFile();
+            if (AdminEntries.Count == 0) return false;
+
+            var id = SenderHostName();
+            var name = SenderName(sender);
+
+            foreach (var entry in AdminEntries)
+            {
+                // A bare id, or the game's own V_-prefixed spelling, both match.
+                if (entry == id || entry.EndsWith("_" + id)) return true;
+                if (!string.IsNullOrEmpty(name) &&
+                    string.Equals(entry, name, System.StringComparison.OrdinalIgnoreCase)) return true;
+            }
+
+            return false;
         }
 
         /// <summary>

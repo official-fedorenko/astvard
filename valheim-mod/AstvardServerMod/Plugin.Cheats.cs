@@ -16,6 +16,8 @@ namespace AstvardServerMod
     {
         internal static GameObject GodButton;
 
+        internal static GameObject FoodButton;
+
         internal static GameObject DebugModeButton;
 
         internal static GameObject TodButton;
@@ -263,6 +265,84 @@ namespace AstvardServerMod
 
         private static readonly System.Reflection.MethodInfo MSmelterSetFuel =
             AccessTools.Method(typeof(Smelter), "SetFuel");
+
+
+        /// <summary>How many of each to hand over.</summary>
+        private const int FoodServings = 3;
+
+        /// <summary>
+        /// Three plates, one per belly slot, each the best of its kind this build knows.
+        ///
+        /// The roster is read out of ObjectDB rather than written down here. A list of
+        /// names would go stale on the next update the way our spawner names nearly did,
+        /// and worse, it would encode one person's opinion of "good food" instead of the
+        /// game's own numbers. Whatever the strongest health, stamina and eitr dishes
+        /// are, that is what arrives - so the answer improves by itself when the game
+        /// adds a better one.
+        ///
+        /// Three of the same axis is not a balanced meal, so each pick is taken from the
+        /// dishes the earlier ones did not already claim.
+        /// </summary>
+        internal static void GiveFood()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null || ObjectDB.instance == null) return;
+
+            var edible = new List<ItemDrop>();
+            foreach (var prefab in ObjectDB.instance.m_items)
+            {
+                var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
+                var shared = drop != null && drop.m_itemData != null ? drop.m_itemData.m_shared : null;
+                if (shared == null) continue;
+                if (shared.m_food <= 0f && shared.m_foodStamina <= 0f && shared.m_foodEitr <= 0f)
+                    continue;
+
+                edible.Add(drop);
+            }
+
+            var picks = new List<ItemDrop>();
+            var axes = new System.Func<ItemDrop.ItemData.SharedData, float>[]
+            {
+                s => s.m_food,
+                s => s.m_foodStamina,
+                s => s.m_foodEitr,
+            };
+
+            foreach (var axis in axes)
+            {
+                ItemDrop best = null;
+                foreach (var candidate in edible)
+                {
+                    if (picks.Contains(candidate)) continue;
+                    if (axis(candidate.m_itemData.m_shared) <= 0f) continue;
+                    if (best == null ||
+                        axis(candidate.m_itemData.m_shared) > axis(best.m_itemData.m_shared))
+                        best = candidate;
+                }
+
+                if (best != null) picks.Add(best);
+            }
+
+            if (picks.Count == 0)
+            {
+                player.Message(MessageHud.MessageType.Center, "Еды не нашлось");
+                return;
+            }
+
+            var given = new List<string>();
+            foreach (var pick in picks)
+            {
+                if (!player.GetInventory().AddItem(pick.gameObject, FoodServings)) continue;
+                // The prefab name, not m_shared.m_name: the latter is a token like
+                // $item_serpentstew, and Localization lives in an assembly we do not
+                // reference. An admin reading a log wants the prefab name anyway.
+                given.Add(pick.gameObject.name);
+            }
+
+            player.Message(MessageHud.MessageType.Center,
+                given.Count == 0 ? "Некуда положить" : string.Join(", ", given));
+            Log.LogInfo($"[AstvardServerMod] Food given: {string.Join(", ", given)}.");
+        }
 
         /// <summary>
         /// Mirrors the game's own "forcedelete" console command, including its list of

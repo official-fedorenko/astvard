@@ -345,6 +345,40 @@ namespace AstvardServerMod
         public const float MaxMetresBetweenLegs = 6f;
 
         /// <summary>
+        /// How far apart legs may stand under a roofed deck of this width.
+        ///
+        /// The deck is not what fails first once there is a roof on it. Support arrives
+        /// at the ridge through beam, post and slope, four connections above the floor,
+        /// and each one takes its share: simulated on the shipped 1.0 rules, a three
+        /// wide covered bridge on six metre spacing leaves its ridge at 9.79 against a
+        /// collapse threshold of 10, and a five wide one at 6.58. The deck underneath
+        /// is fine in every one of those cases, which is why this was invisible until
+        /// the superstructure was simulated on its own.
+        ///
+        /// Four metres puts every width tested back over the line; five wide only just,
+        /// at 10.53, so it gets two.
+        /// </summary>
+        public static float LegSpacingFor(bool covered, int width)
+        {
+            // Only an odd deck carries a ridge, and the ridge is the piece that fails:
+            // it hangs a step above the slopes with nothing under its own centre. Even
+            // decks let their two inner slopes meet instead, and hold at six metres -
+            // three wide comes out at 9.79 there against a threshold of 10, while four
+            // wide, one lane wider and heavier, sits comfortably at 11.26.
+            if (!covered || width < 3) return MaxMetresBetweenLegs;
+
+            // Straight off the simulation of the finished gable, at six metres:
+            //   3 -> 9.79   4 -> 9.46   5 -> 6.29   6 -> 6.08   all under the ten
+            // Four carries three and four (17.00, 15.43). Five and six need two: five
+            // comes out at 10.92 on four, which is inside this model's error rather
+            // than a margin, and six frankly fails there at 9.91.
+            //
+            // Seven does not stand at any spacing we can offer - 8.19 even at two - so
+            // its number here is a formality and the roof is what has to give.
+            return width >= 5 ? 2f : 4f;
+        }
+
+        /// <summary>
         /// Where a bridge stands its legs, and whether what is left between them holds.
         /// </summary>
         public sealed class BridgePlan
@@ -378,7 +412,8 @@ namespace AstvardServerMod
         /// <param name="ground">Ground height at evenly spaced samples along the centreline.</param>
         /// <param name="step">Distance between two samples, in metres.</param>
         /// <param name="deck">Height the deck will sit at.</param>
-        public static BridgePlan PlanPiers(IList<float> ground, float step, float deck)
+        public static BridgePlan PlanPiers(IList<float> ground, float step, float deck,
+                                          float maxBetweenLegs = MaxMetresBetweenLegs)
         {
             var plan = new BridgePlan();
 
@@ -411,7 +446,7 @@ namespace AstvardServerMod
                     if ((j - at) * step > allowed) continue;
 
                     stretch = j;
-                    if ((j - at) * step <= MaxMetresBetweenLegs) reach = j;
+                    if ((j - at) * step <= maxBetweenLegs) reach = j;
                 }
 
                 if (reach < 0) reach = stretch;

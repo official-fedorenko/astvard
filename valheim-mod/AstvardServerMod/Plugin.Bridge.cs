@@ -32,6 +32,8 @@ namespace AstvardServerMod
         private const string BeamPrefab = "wood_beam";
         private const string RailPostPrefab = "wood_pole";
         private const string RidgePrefab = "wood_roof_top";
+
+        private const string SlopePrefab = "wood_roof";
         private const string GablePrefab = "wood_wall_roof";
         private const float Module = 2f;
 
@@ -57,6 +59,14 @@ namespace AstvardServerMod
         private const float RoofPostRise = 2f;
         private const float RidgeRise = 3f;
 
+        // A roofed deck wider than one lane is a gable, not a tunnel: the slopes sit
+        // a step under the ridge and the ridge climbs to make room for them. Both
+        // numbers come off "Мост 3шт.", where the deck sits at -4, the slopes at
+        // -1 and the ridge at 0.
+        private const float SlopeRise = 3f;
+
+        private const float WideRidgeRise = 4f;
+
         // Measured across three blueprints built by hand, every one of them agreeing to
         // the millimetre: a stair covers one metre of drop over 1.974 of run. Assuming a
         // whole module of drop is what left the treads a metre apart with daylight
@@ -65,7 +75,16 @@ namespace AstvardServerMod
         private const float RampRun = 1.974f;
 
         // Sixteen treads walk down sixteen metres, past the height any wooden leg stands.
-        private const int MaxRampSteps = 16;
+        /// <summary>
+        /// How many treads a flight may walk down before it falls over.
+        ///
+        /// A stair hangs off the deck and reaches the ground only at its foot, so it is
+        /// a cantilever until the last tread lands. Simulated on the shipped 1.0 rules:
+        /// nine treads hold at 11.32 against a threshold of 10, ten come out at 8.34 and
+        /// go. Sixteen, which is what this used to allow, is 1.98 - a flight that builds
+        /// and then falls down behind you.
+        /// </summary>
+        private const int MaxRampSteps = 9;
 
         // Long enough for any crossing worth a tool, short enough that one press does not
         // put six hundred pieces into the world in a single frame.
@@ -73,6 +92,58 @@ namespace AstvardServerMod
 
         /// <summary>Whether a bridge gets its railing and roof, or is left open.</summary>
         internal static bool IsBridgeCovered = true;
+
+        /// <summary>
+        /// Whether this bridge gets a column down its middle. Only a roofed deck of
+        /// three lanes or more: a narrower one has nothing overhead worth carrying, and
+        /// an uncovered deck stands on its two feet the way the hand-built ones do.
+        ///
+        /// It does stand in the middle lane, which is the price - a wide covered bridge
+        /// gets a row of posts down the centre, the way a real one does.
+        /// </summary>
+        /// <summary>How far apart the inner columns stand across the deck.</summary>
+        private const float ColumnSpacing = Module * 2f;
+
+        /// <summary>
+        /// Where the inner columns stand, measured across from the centre line.
+        ///
+        /// Support reaches a piece from the ground at full strength and decays with
+        /// every joint after it, so what a wide roof needs is not stronger eaves but a
+        /// shorter way down. One column under the middle carries a deck up to seven
+        /// lanes; past that the outer slopes are too far from it and fail on their own
+        /// (9.91 at eight, against a threshold of ten). A row every four metres puts
+        /// every slope within two lanes of a grounded post and takes ten lanes in its
+        /// stride - eight comes out at 14.86 where a single column left it at 9.91.
+        ///
+        /// They do stand on the deck, so a wide covered bridge gets rows of posts down
+        /// it. That is what a real one looks like.
+        /// </summary>
+        /// <summary>
+        /// Whether the canopy gets a post down its middle too. Only where the deck is
+        /// wide enough that one would not stand in the doorway of the stairs.
+        /// </summary>
+        private static bool CanopyRidgePost(int width)
+        {
+            return width >= 3;
+        }
+
+        private static List<float> ColumnsAcross(int width)
+        {
+            var columns = new List<float>();
+            if (!IsBridgeCovered || width < 3) return columns;
+
+            columns.Add(0f);
+
+            // Never on the outermost lane: the eaves already stand there.
+            var reach = (width - 1) * 0.5f * Module - 1f;
+            for (var at = ColumnSpacing; at <= reach; at += ColumnSpacing)
+            {
+                columns.Add(at);
+                columns.Add(-at);
+            }
+
+            return columns;
+        }
 
         private static Vector3 _bridgeStart;
 
@@ -180,7 +251,10 @@ namespace AstvardServerMod
             // over a rise in the middle.
             var lift = Mathf.Clamp(ParseField(BridgeLiftInput, 0f), 0f, 16f);
             survey.Deck = Mathf.Max(from.y, to.y) + lift;
-            survey.Width = Mathf.Clamp(Mathf.RoundToInt(ParseField(BridgeWidthInput, 2f)), 1, 4);
+            // Eight lanes is sixteen metres of deck - a road, not a footbridge, and as
+            // wide as anyone has asked for. The columns would carry ten (11.39 simulated),
+            // so this is a choice rather than a limit.
+            survey.Width = Mathf.Clamp(Mathf.RoundToInt(ParseField(BridgeWidthInput, 2f)), 1, 8);
 
             var dir = flat / survey.Length;
             survey.Facing = Quaternion.LookRotation(dir, Vector3.up);
@@ -221,7 +295,8 @@ namespace AstvardServerMod
                 survey.Ground.Add(middle ? survey.Deck - 1000f : height);
             }
 
-            survey.Plan = Geometry.PlanPiers(survey.Ground, ProbeStep, survey.Deck);
+            survey.Plan = Geometry.PlanPiers(survey.Ground, ProbeStep, survey.Deck,
+                Geometry.LegSpacingFor(IsBridgeCovered, survey.Width));
             return survey;
         }
 
@@ -268,20 +343,38 @@ namespace AstvardServerMod
 
             foreach (var probe in legs)
             {
-                var drop = survey.Deck - survey.Ground[probe];
-
-                // Resting on the bank already: a pole here would push up through the deck.
-                if (drop <= Module * 0.5f) continue;
-
-                var poles = Mathf.CeilToInt(drop / Module);
+                var along = probe * ProbeStep;
 
                 // Always a pair, under the two outer edges of the deck rather than down
                 // its middle — which is how the same bridge gets built by hand, and it
                 // stands a narrow deck on two feet instead of balancing it on one.
+                //
+                // Each side measures its own ground. They are not the same depth
+                // anywhere the bank has a slope to it, and one figure for both is what
+                // left the outer legs short over the shallows.
                 foreach (var offset in new[] { -edge, edge })
+                {
+                    var drop = survey.Deck
+                               - GroundUnder(survey, offset, along, survey.Ground[probe]);
+
+                    // Resting on the bank already: a pole here would push up through
+                    // the deck.
+                    if (drop <= Module * 0.5f) continue;
+
+                    var poles = Mathf.CeilToInt(drop / Module);
                     for (var p = 0; p < poles; p++)
                         Add(into, LegPrefab, offset, rise - LegTopDrop - p * Module,
-                            probe * ProbeStep, straight);
+                            along, straight);
+                }
+
+                // A third foot down the middle once the deck is three lanes or more.
+                // Support arrives at a piece from the ground at full strength and decays
+                // with every joint after, so a column standing under the centre gives the
+                // ridge a short path down instead of the long one out to the eaves and
+                // back: simulated, it lifts a seven wide deck's worst piece from 9.75,
+                // which falls, to 24.74, and its ridge from 7.02 to 15.58.
+                // The inner columns are raised with the roof, further down, because
+                // only there is its height known.
             }
 
             var nearSteps = RampDown(survey, into, 0f, -1f, rise);
@@ -306,21 +399,127 @@ namespace AstvardServerMod
                         probe * ProbeStep, straight);
                 }
 
-            // A ridge over every two metre lane, not one down the middle. One line roofs
-            // the deck it was measured on and leaves half of a wider one open to the sky,
-            // which is exactly what a two-wide bridge came out looking like.
+
+            // One roof, not a row of them. The previous version put a ridge over every
+            // lane, which is several roofs side by side with a valley between each pair -
+            // and that is exactly what a wide bridge came out looking like.
+            //
+            // "Мост 3шт." shows the real shape: a single ridge down the centre line
+            // with a slope over each lane beside it, mirrored so both fall away from the
+            // middle. A one lane deck has no lane beside the centre, so it keeps the
+            // lower ridge it was measured with and grows no slopes.
             //
             // The overhang matches the flight beneath it, tread for tread. A stair is
-            // 1.974 long against the ridge's 2, so one ridge per tread covers it with a
+            // 1.974 long against the ridge's 2, so one piece per tread covers it with a
             // little to spare; a fixed one-module overhang covered the top step and left
             // a long flight walking out from under its own roof.
             //
             // The roof stays level while the stairs go down, so the headroom grows as
             // they descend. Stepping it down with them would want its own measurements.
+            var wide = width > 1;
+
+            // Where the roof starts and stops across the deck. The innermost slope is
+            // one lane from the centre on an odd deck, half a lane on an even one, where
+            // the two inner slopes meet over the middle instead of leaving it to a
+            // ridge; the outermost is simply the last lane.
+            var innermost = width % 2 == 1 ? Module : Module * 0.5f;
+            var outermost = half;
+
+            // The eaves are fixed and the ridge is what moves. Beam, rail and roof post
+            // stand at the deck edge at heights measured off "Мост 3шт." and have no
+            // reason to change with the deck's width, so the roof has to meet THEM:
+            // the outer slope keeps its measured height and every step inward climbs.
+            //
+            // Doing it the other way, holding the ridge and stepping down to the edge,
+            // is what put a five wide deck's outer slope level with the post meant to
+            // carry it - and a seven wide one's below it.
+            var ridgeRise = wide
+                ? SlopeRise + (outermost - innermost) / Module + 1f
+                : RidgeRise;
+            // And the column continues above the deck to meet the ridge. Poles are two
+            // metres and centred, so they stack from one above the deck upward until the
+            // next one would stand proud of the roof.
+            // Inner columns run the whole way: from the roof they carry, through the
+            // deck, down into the ground. One piece of arithmetic instead of two halves
+            // meeting in the middle and missing.
+            foreach (var column in ColumnsAcross(width))
+                foreach (var probe in legs)
+                {
+                    var along = probe * ProbeStep;
+                    var ground = survey.Deck
+                                 - GroundUnder(survey, column, along, survey.Ground[probe]);
+
+                    Column(into, column, rise + RoofOver(column, width, half, ridgeRise),
+                           rise - ground, along, straight);
+                }
+
             for (var i = -nearSteps; i <= last + farSteps; i++)
-                for (var w = 0; w < width; w++)
-                    Add(into, RidgePrefab, w * Module - half, rise + RidgeRise,
-                        i * Module, acrossBridge);
+            {
+                if (wide)
+                    for (var w = 0; w < width; w++)
+                    {
+                        var lane = w * Module - half;
+                        // The ridge already covers the centre of an odd deck.
+                        if (Mathf.Approximately(lane, 0f)) continue;
+
+                        // A roof falls away from its ridge, and "Мост 3шт." says by how
+                        // much: the ridge sits at +4 and the slope beside it at +3, one
+                        // metre down over two metres across. Every further lane out is
+                        // another step down.
+                        //
+                        // Laying them all at the innermost height, as this did, is only
+                        // right when there IS one lane a side - which is why three wide
+                        // looked correct and five wide came out as a flat lid with a
+                        // bump down the middle.
+                        var steps = (outermost - Mathf.Abs(lane)) / Module;
+
+                        Add(into, SlopePrefab, lane, rise + SlopeRise + steps, i * Module,
+                            lane < 0f ? acrossBridge : alongBridge);
+                    }
+
+                // Only an odd deck has a lane on the centre line, and only that lane
+                // needs capping: on an even one the two inner slopes already meet over
+                // the middle, and a ridge laid on top of that seam is a spare piece
+                // standing proud of the roof.
+                if (width % 2 == 1)
+                    Add(into, RidgePrefab, 0f, rise + ridgeRise, i * Module, acrossBridge);
+            }
+
+            // Posts under the overhang.
+            //
+            // Everything past the deck is a cantilever with the stairs falling away
+            // beneath it, so it carries nothing of its own - simulated, the canopy comes
+            // out unsupported at any length, which is why it lets go once it is more
+            // than a couple of modules long. A post under every module of it, standing
+            // on the tread below, is exactly what the piers do for the deck.
+            //
+            // The stairs drop as they go out while the roof stays level, so each post is
+            // taller than the one before it. Poles are two metres, and the count rounds
+            // up so the last one finishes at or below the tread rather than hanging over
+            // it - the same trick the legs use to reach the ground.
+            foreach (var end in new[] { -1, 1 })
+            {
+                var overhang = end < 0 ? nearSteps : farSteps;
+
+                for (var k = 1; k <= overhang; k++)
+                {
+                    var along = end < 0 ? -k * Module : (last + k) * Module;
+
+                    // Which tread is under this module, and how far it has fallen.
+                    var tread = Mathf.Max(0f, (k * Module - Module) / RampRun);
+                    var drop = RampDrop + tread * RampRise;
+
+                    foreach (var offset in new[] { -edge, edge })
+                        Column(into, offset, rise + RoofOver(offset, width, half, ridgeRise),
+                               rise - drop, along, straight);
+
+                    // And under the ridge as well, where the canopy is tallest and has
+                    // the least beneath it.
+                    if (CanopyRidgePost(width))
+                        Column(into, 0f, rise + RoofOver(0f, width, half, ridgeRise),
+                               rise - drop, along, straight);
+                }
+            }
 
             // Gables close the two ends. They are mirrored, which is why the near and far
             // ones do not share a facing.
@@ -400,6 +599,65 @@ namespace AstvardServerMod
             return treads;
         }
 
+        /// <summary>
+        /// How high the roof sits over this point across the deck, measured from the
+        /// deck. The ridge caps the centre of an odd deck; everywhere else the slopes
+        /// fall away from the middle a metre at a time. Past the outermost lane the
+        /// eaves overhang, and they are still at the outer slope's height.
+        /// </summary>
+        private static float RoofOver(float across, int width, float half, float ridgeRise)
+        {
+            if (width < 2) return ridgeRise;
+            if (width % 2 == 1 && Mathf.Approximately(across, 0f)) return ridgeRise;
+
+            var lane = Mathf.Min(Mathf.Abs(across), half);
+            return SlopeRise + (half - lane) / Module;
+        }
+
+        /// <summary>
+        /// A column, built downwards from what it carries.
+        ///
+        /// It used to be two halves - posts stacked up from the deck and legs stacked
+        /// down from it - each guessing where the other ended, and the roof was left
+        /// with daylight under it wherever the guess was short. Anchoring at the top
+        /// instead means the highest pole always meets the roof, and rounding the count
+        /// up means the lowest one finishes in the ground rather than above it. Poles
+        /// are two metres and centred, hence the half-module offset at the top.
+        /// </summary>
+        private static void Column(List<CopiedPiece> into, float across, float top,
+                                   float bottom, float along, Quaternion turn)
+        {
+            var span = top - bottom;
+            if (span <= 0f) return;
+
+            var poles = Mathf.CeilToInt(span / Module);
+            for (var p = 0; p < poles; p++)
+                Add(into, LegPrefab, across, top - LegTopDrop - p * Module, along, turn);
+        }
+
+        /// <summary>
+        /// The ground under one leg, at its own place rather than the bridge's.
+        ///
+        /// The survey walks a single line down the middle and keeps one height per step,
+        /// which is all the pier planner needs - it only asks how deep the crossing is.
+        /// A leg is a different question: it stands out at the deck edge, or on one of
+        /// the inner columns, and a bank or a riverbed that falls away sideways is metres
+        /// lower there than on the centre line. Cutting every leg to the middle's depth
+        /// is what leaves the outer ones hanging over the shallows.
+        ///
+        /// Falls back to the surveyed line when the ground cannot be read, which is at
+        /// worst the answer we had before.
+        /// </summary>
+        private static float GroundUnder(BridgeSurvey survey, float across, float along,
+                                         float fallback)
+        {
+            var zones = ZoneSystem.instance;
+            if (zones == null) return fallback;
+
+            var at = _bridgeStart + survey.Facing * new Vector3(across, 0f, along);
+            return zones.GetGroundHeight(at, out var height) ? height : fallback;
+        }
+
         private static void Add(List<CopiedPiece> into, string prefab, float across, float up,
                                 float along, Quaternion turn)
         {
@@ -442,6 +700,35 @@ namespace AstvardServerMod
         /// its root, and only walking further along adds a section. Rebuilding it four
         /// times a second would be hundreds of instantiations a second for nothing.
         /// </summary>
+        /// <summary>
+        /// Where the far end of the bridge goes.
+        ///
+        /// Not the player's own feet, which is what it used to be: the deck closed around
+        /// whoever was placing it, and once the thing grew a roof that meant standing
+        /// inside the last span looking at the inside of a wall. Held back a couple of
+        /// sections instead - far enough to see what is being built, near enough that it
+        /// still feels like dragging the end along behind you.
+        ///
+        /// Preview and build both come through here, so the two cannot disagree about
+        /// where the bridge stops.
+        /// </summary>
+        private const float AimSetback = Module * 2f;
+
+        private static Vector3 BridgeAim(Player player)
+        {
+            var flat = player.transform.position - _bridgeStart;
+            flat.y = 0f;
+
+            var reach = flat.magnitude;
+            // Standing on the mark: nothing to hold back from, and the survey will
+            // rightly decide there is no bridge yet.
+            if (reach <= AimSetback) return _bridgeStart;
+
+            var end = _bridgeStart + flat / reach * (reach - AimSetback);
+            end.y = player.transform.position.y;
+            return end;
+        }
+
         internal static void UpdateBridgePreview()
         {
             var player = Player.m_localPlayer;
@@ -467,7 +754,7 @@ namespace AstvardServerMod
             if (Time.time - _bridgeSurveyAt <= 0.25f) return;
             _bridgeSurveyAt = Time.time;
 
-            var plan = Survey(_bridgeStart, player.transform.position);
+            var plan = Survey(_bridgeStart, BridgeAim(player));
             Layout(plan, BridgePlanned);
 
             if (!SameLayout(BridgePlanned, BridgeShown)) RaiseGhost(plan);
@@ -557,7 +844,7 @@ namespace AstvardServerMod
             // Surveyed again rather than trusting what the projection last drew: that is
             // a quarter of a second old at worst, and a quarter of a second of walking is
             // most of a section.
-            var survey = Survey(_bridgeStart, player.transform.position);
+            var survey = Survey(_bridgeStart, BridgeAim(player));
             if (survey.Problem != null)
             {
                 player.Message(MessageHud.MessageType.Center, survey.Problem);

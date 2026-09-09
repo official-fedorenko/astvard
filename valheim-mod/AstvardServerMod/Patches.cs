@@ -13,19 +13,6 @@ using UnityEngine.UI;
 namespace AstvardServerMod
 {
 
-    public class HiCommand : ConsoleCommand
-    {
-        public override string Name => "hi";
-        public override string Help => "Astvard: печатает приветствие";
-        public override bool OnlyServer => true;
-
-        public override void Run(string[] args)
-        {
-            Plugin.Log.LogInfo("[AstvardServerMod] hi command executed");
-            Chat.instance?.AddString("Приветас мир");
-        }
-    }
-
     public class AdminUnlockCommand : ConsoleCommand
     {
         public override string Name => "astvardadmin";
@@ -140,6 +127,82 @@ namespace AstvardServerMod
             __instance.m_spawnEffect.Create(__instance.m_spawnPoint.position, Quaternion.identity);
             view.GetZDO().Set(ZDOVars.s_level, 0);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Makes the client admit that cheats are on for a confirmed admin.
+    ///
+    /// This is the piece that was missing, and it is why the panel's Debugmode button
+    /// logged a cheerful "true" and did nothing. Player.m_debugMode has exactly one
+    /// reader in the whole game:
+    ///
+    ///     if (m_debugMode &amp;&amp; Console.instance.IsCheatsEnabled())
+    ///
+    /// and IsCheatsEnabled answers ZNet.IsServer(), which is false on every client no
+    /// matter what devcommands was told. So the flag was set and then ignored. The same
+    /// gate hides every isCheat command from IsValid, which is the other half of why
+    /// none of this worked away from a host.
+    ///
+    /// Being an admin is enough here; we do not also demand devcommands first. The
+    /// button lives behind a panel the server itself unlocked, and every control in
+    /// that panel is a cheat by definition - asking the player to type a second
+    /// incantation would add friction and no safety. God mode needs none of this, by
+    /// the way: Character reads InGodMode() directly, which is why that one worked.
+    ///
+    /// Console inherits this method rather than overriding it, so patching Terminal
+    /// covers Console.instance too.
+    /// </summary>
+    [HarmonyPatch(typeof(Terminal), "IsCheatsEnabled")]
+    public static class AdminCheatsEnabled
+    {
+        private static void Postfix(ref bool __result)
+        {
+            if (!__result && Plugin.IsAdminUnlocked) __result = true;
+        }
+    }
+
+    /// <summary>
+    /// Puts a few purely local commands back within reach of a confirmed admin.
+    ///
+    /// The game refuses them on a client twice over, and both refusals are about where
+    /// the code runs rather than who is asking: IsCheatsEnabled() returns
+    /// ZNet.IsServer() no matter what devcommands was told, and OnlyServer then asks
+    /// the same question again. Yet debugmode only flips Player.m_debugMode, fly calls
+    /// ToggleDebugFly on the local player, exploremap talks to Minimap.instance - none
+    /// of them leaves the machine. Relaying them to a headless server would do nothing
+    /// at all, because there is no player there to fly.
+    ///
+    /// So they are allowed here instead, and only for someone the server has already
+    /// confirmed - IsAdminUnlocked is set by the server's answer, never by the client.
+    /// Which commands is a setting, because "local" is a judgement about each one.
+    /// </summary>
+    [HarmonyPatch(typeof(Terminal.ConsoleCommand), "IsValid")]
+    public static class LocalAdminCommandsPatch
+    {
+        private static void Postfix(Terminal.ConsoleCommand __instance, Terminal context,
+            ref bool __result)
+        {
+            if (__result || !Plugin.IsAdminUnlocked) return;
+
+            // Never touch a command the game already relays. TryRunCommand asks IsValid
+            // FIRST and only sends the line to the server when the answer is no, so
+            // saying yes here would hijack the relay and run it on this client instead:
+            // "sleep" would pass the night for us alone and leave the server at dusk.
+            if (__instance.RemoteCommand) return;
+
+            // Only ever lift the OnlyServer refusal. IsValid folds four conditions into
+            // one bool, so an unconditional "true" here overrode all of them - including
+            // ones that had nothing to do with us.
+            if (!__instance.OnlyServer) return;
+
+            // And only in the console. Chat overrides isAllowedCommand to refuse every
+            // cheat command outright, which is a deliberate rule of the game's, not an
+            // accident of where the code runs - the blunt version above was quietly
+            // opening cheats in the chat window too.
+            if (!(context is Console)) return;
+
+            if (Plugin.IsLocalAdminCommand(__instance.Command)) __result = true;
         }
     }
 

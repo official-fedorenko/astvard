@@ -219,4 +219,41 @@ public class BridgeTests
         Assert.True(Geometry.PlanPiers(new[] { 0f, 0f }, 2f, 0f).Stands);
         Assert.False(Geometry.PlanPiers(null, 2f, 0f).Stands);
     }
+
+    /// <summary>
+    /// The height ceiling, pinned. Nothing in PlanPiers says "too high" out loud - a
+    /// leg past MaxPierHeight is refused because MaxPierSpacing hands back a zero span
+    /// for it, so no sample is ever near enough to carry the next one. That is a fine
+    /// mechanism and an easy one to break by accident, hence a test that names the
+    /// behaviour rather than the arithmetic.
+    /// </summary>
+    [Theory]
+    [InlineData(13f, true)]    // inside the ceiling, legs allowed, tight spacing
+    [InlineData(14f, true)]    // exactly at it
+    [InlineData(15f, false)]   // past it: no leg may stand, so nothing carries the deck
+    [InlineData(40f, false)]   // and a gorge is not a special case, only a bigger one
+    public void ADeckTooFarAboveTheGroundRefusesToStand(float depth, bool expected)
+    {
+        // Flat ground all the way across, far enough that the banks cannot carry the
+        // middle between them: any crossing here has to stand on its own legs.
+        var ground = Under(0f, depth, depth, depth, depth, depth, depth,
+                           depth, depth, depth, depth, depth, 0f);
+
+        Assert.Equal(expected, Geometry.PlanPiers(ground, 2f, 0f).Stands);
+    }
+
+    /// <summary>
+    /// And the refusal has to point somewhere useful, not at the far bank by default -
+    /// a person reading "0 to 24 m" learns nothing they did not already see.
+    /// </summary>
+    [Fact]
+    public void ATooDeepCrossingNamesWhereTheGroundDropsAway()
+    {
+        var ground = Under(0f, 2f, 30f, 30f, 30f, 30f, 30f, 30f, 30f, 30f, 2f, 0f);
+        var plan = Geometry.PlanPiers(ground, 2f, 0f);
+
+        Assert.False(plan.Stands);
+        Assert.Equal(1, plan.GapFrom);
+        Assert.Equal(10, plan.GapTo);
+    }
 }
