@@ -13,6 +13,8 @@ namespace AstvardServerMod
 
         internal static GameObject BridgeWidthInput;
 
+        internal static GameObject BridgeGapInput;
+
         internal static GameObject BridgeLiftInput;
 
         internal static GameObject BridgeStartButton;
@@ -743,17 +745,30 @@ namespace AstvardServerMod
         /// </summary>
         private const float AimSetback = Module * 2f;
 
+        /// <summary>
+        /// Far enough back to see the far end without walking away from it; near enough
+        /// that a bridge does not need a hike to finish. Two spans by default, and a
+        /// field because how far away you want to stand is a matter of taste and of
+        /// which end you are looking at.
+        /// </summary>
+        private static float AimGap()
+        {
+            return Mathf.Clamp(ParseField(BridgeGapInput, AimSetback), 0f, 20f);
+        }
+
         private static Vector3 BridgeAim(Player player)
         {
             var flat = player.transform.position - _bridgeStart;
             flat.y = 0f;
 
+            var gap = AimGap();
             var reach = flat.magnitude;
+
             // Standing on the mark: nothing to hold back from, and the survey will
             // rightly decide there is no bridge yet.
-            if (reach <= AimSetback) return _bridgeStart;
+            if (reach <= gap) return _bridgeStart;
 
-            var end = _bridgeStart + flat / reach * (reach - AimSetback);
+            var end = _bridgeStart + flat / reach * (reach - gap);
             end.y = player.transform.position.y;
             return end;
         }

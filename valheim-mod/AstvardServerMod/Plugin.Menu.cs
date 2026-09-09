@@ -607,7 +607,7 @@ namespace AstvardServerMod
             BridgeWidthInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "ширина 1-4, напр. 2", 16, 160f, 32f);
+                InputField.ContentType.DecimalNumber, "ширина 1-8, напр. 2", 16, 160f, 32f);
             AddFixedSize(BridgeWidthInput, 160f, 32f);
 
             BridgeLiftInput = gui.CreateInputField(
@@ -615,6 +615,12 @@ namespace AstvardServerMod
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
                 InputField.ContentType.DecimalNumber, "подъём, напр. 0", 16, 160f, 32f);
             AddFixedSize(BridgeLiftInput, 160f, 32f);
+
+            BridgeGapInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "отступ, м, напр. 4", 16, 160f, 32f);
+            AddFixedSize(BridgeGapInput, 160f, 32f);
 
             BridgeCoverButton = MakeButton(gui, "", () =>
             {
@@ -1109,6 +1115,7 @@ namespace AstvardServerMod
             SetActive(BridgeWidthInput, MenuState == StateBridge);
             SetActive(BridgeCoverButton, MenuState == StateBridge);
             SetActive(BridgeLiftInput, MenuState == StateBridge);
+            SetActive(BridgeGapInput, MenuState == StateBridge);
             SetActive(BridgeStartButton, MenuState == StateBridge);
             SetActive(BridgeEndButton, MenuState == StateBridge);
             SetActive(BridgeCancelButton, MenuState == StateBridge && BridgeInProgress);
