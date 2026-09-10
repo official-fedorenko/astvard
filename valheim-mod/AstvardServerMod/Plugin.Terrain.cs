@@ -262,12 +262,13 @@ namespace AstvardServerMod
         /// What counts as in the way is decided by what a thing is, never by what it is
         /// called. A tree is anything with a TreeBase, a log a TreeLog, a stump a
         /// Destructible the game itself types as a tree. A rock counts only when all it
-        /// would ever drop is stone - one rule that keeps copper, tin, silver and obsidian
-        /// deposits, muddy scrap piles and the Mistlands' giant bones where they are, with
-        /// no list of names to go stale. Left alone as well: anything somebody built,
-        /// anything inside a location's radius - villages, ruins, dolmens, cave mouths -
-        /// and everything ForceDelete already protects. Pickables stay; a berry bush or a
-        /// stone lying on the ground is not an obstacle.
+        /// would ever drop is stone, down to what it turns into when broken - one rule
+        /// that keeps copper, tin, silver and obsidian deposits, muddy scrap piles and the
+        /// Mistlands' giant bones where they are, with no list of names to go stale. Left
+        /// alone as well: anything somebody built, anything inside a location's radius -
+        /// villages, ruins, dolmens, cave mouths - and everything ForceDelete already
+        /// protects. Pickables stay; a berry bush or a stone lying on the ground is not an
+        /// obstacle.
         ///
         /// The test is flat, like the paint. The path carries no terrain height, only a
         /// straight line between the heights of its two ends, so a vertical window would
@@ -279,7 +280,12 @@ namespace AstvardServerMod
         /// still there for everyone else, and back for this player on the next load.
         /// Destroy is also silent, which is the point: Destructible.Destroy would drop the
         /// wood and stone and play its effects, and a hundred metres of forest road would
-        /// come out paved with loot.
+        /// come out paved with loot. A whole boulder it would not even remove - it would
+        /// put the broken one in its place.
+        ///
+        /// What went and what was seen in the way and left are both logged by name. The
+        /// question this gets is always why that one is still standing, and the log
+        /// answers it without another trip into the game.
         /// </summary>
         private static int ClearAlongPath(List<Vector3> path, float radius)
         {
@@ -297,103 +303,187 @@ namespace AstvardServerMod
 
             var reach = radius + ClearSlack;
             var area = Rect.MinMaxRect(minX - reach, minZ - reach, maxX + reach, maxZ + reach);
-            var doomed = new HashSet<ZNetView>();
+            var run = new ClearingRun(path, radius, area);
 
             foreach (var tree in Object.FindObjectsByType<TreeBase>(FindObjectsSortMode.None))
-                Consider(tree, path, radius, area, doomed);
+                run.Consider(tree, null);
 
             foreach (var log in Object.FindObjectsByType<TreeLog>(FindObjectsSortMode.None))
-                Consider(log, path, radius, area, doomed);
+                run.Consider(log, null);
 
             foreach (var rock in Object.FindObjectsByType<MineRock>(FindObjectsSortMode.None))
-                if (DropsOnly(rock.m_dropItems, StoneOnly))
-                    Consider(rock, path, radius, area, doomed);
+                if (rock != null)
+                    run.Consider(rock, DropsOnly(rock.m_dropItems, StoneOnly) ? null : "drops more than stone");
 
             foreach (var rock in Object.FindObjectsByType<MineRock5>(FindObjectsSortMode.None))
-                if (DropsOnly(rock.m_dropItems, StoneOnly))
-                    Consider(rock, path, radius, area, doomed);
+                if (rock != null)
+                    run.Consider(rock, DropsOnly(rock.m_dropItems, StoneOnly) ? null : "drops more than stone");
 
             foreach (var thing in Object.FindObjectsByType<Destructible>(FindObjectsSortMode.None))
             {
                 if (thing == null) continue;
 
-                if (thing.m_destructibleType == DestructibleType.Tree)
-                {
-                    Consider(thing, path, radius, area, doomed);
-                    continue;
-                }
-
-                var drops = thing.GetComponent<DropOnDestroyed>();
-                if (drops != null && DropsOnly(drops.m_dropWhenDestroyed, WoodAndStone))
-                    Consider(thing, path, radius, area, doomed);
+                var bare = thing.m_destructibleType == DestructibleType.Tree
+                           || BreaksDownTo(thing.gameObject, WoodAndStone, 0);
+                run.Consider(thing, bare ? null : "not bare rock or brush");
             }
 
-            var removed = 0;
-            foreach (var view in doomed)
+            var removed = new Dictionary<string, int>();
+            foreach (var view in run.Doomed)
             {
                 // Something removed earlier in this loop can take a neighbour with it.
                 if (view == null || !view.IsValid()) continue;
 
+                Tally(removed, Utils.GetPrefabName(view.gameObject));
                 view.ClaimOwnership();
                 ZNetScene.instance.Destroy(view.gameObject);
-                removed++;
             }
 
-            return removed;
+            if (removed.Count > 0 || run.Kept.Count > 0)
+                Log.LogInfo($"[AstvardServerMod] Clearing removed: {Listing(removed)}; " +
+                            $"left in the way: {Listing(run.Kept)}");
+
+            var total = 0;
+            foreach (var count in removed.Values) total += count;
+            return total;
         }
 
-        private static void Consider(Component thing, List<Vector3> path, float radius,
-                                     Rect area, HashSet<ZNetView> doomed)
+        /// <summary>One clearing pass: what it will take out, and what it saw in the way and left.</summary>
+        private sealed class ClearingRun
         {
-            if (thing == null) return;
+            public readonly List<ZNetView> Doomed = new List<ZNetView>();
 
-            // The networked root is the thing that exists in the world. A part with no
-            // view is scenery the zone rebuilds on every load, and removing it would last
-            // until the next one.
-            var view = thing.GetComponentInParent<ZNetView>();
-            if (view == null || !view.IsValid() || doomed.Contains(view)) return;
+            public readonly Dictionary<string, int> Kept = new Dictionary<string, int>();
 
-            // Only when the tree or rock IS the networked object. The same component on
-            // a child would lead up to whatever that child belongs to, and the whole of
-            // it would go. Vanilla trees, logs, stumps and rocks all carry theirs on the
-            // root, so this costs nothing and rules out a class of accident.
-            var go = view.gameObject;
-            if (go != thing.gameObject) return;
-            if (go.GetComponent<Pickable>() != null) return;
-            var at = go.transform.position;
-            if (!area.Contains(new Vector2(at.x, at.z))) return;
+            // A thing can carry more than one of the components the pass looks for; it
+            // is judged once, on the first look that finds it in the way.
+            private readonly HashSet<ZNetView> _judged = new HashSet<ZNetView>();
 
-            // A sapling somebody planted is a Piece until it grows up.
-            if (go.GetComponentInParent<Piece>() != null) return;
-            if (IsProtectedFromDelete(go)) return;
-            if (Location.IsInsideLocation(at, 0f)) return;
+            private readonly List<Vector3> _path;
 
-            if (FootprintDistance(go, path) > radius) return;
+            private readonly float _radius;
 
-            doomed.Add(view);
+            private readonly Rect _area;
+
+            public ClearingRun(List<Vector3> path, float radius, Rect area)
+            {
+                _path = path;
+                _radius = radius;
+                _area = area;
+            }
+
+            /// <param name="refusal">Why this kind of thing stays, whatever else is true of it; null if it need not.</param>
+            public void Consider(Component thing, string refusal)
+            {
+                if (thing == null) return;
+
+                // The networked root is the thing that exists in the world. A part with
+                // no view is scenery the zone rebuilds on every load, and removing it
+                // would last until the next one.
+                var view = thing.GetComponentInParent<ZNetView>();
+                if (view == null || !view.IsValid() || _judged.Contains(view)) return;
+
+                // Only when the tree or rock IS the networked object. The same component
+                // on a child would lead up to whatever that child belongs to, and the
+                // whole of it would go. Vanilla trees, logs, stumps and rocks all carry
+                // theirs on the root, so this costs nothing and rules out a class of
+                // accident.
+                var go = view.gameObject;
+                if (go != thing.gameObject) return;
+
+                var at = go.transform.position;
+                if (!_area.Contains(new Vector2(at.x, at.z))) return;
+
+                if (refusal == null)
+                {
+                    if (go.GetComponent<Pickable>() != null) refusal = "pickable";
+                    // A sapling somebody planted is a Piece until it grows up.
+                    else if (go.GetComponentInParent<Piece>() != null) refusal = "built";
+                    else if (IsProtectedFromDelete(go)) refusal = "protected";
+                    else if (Location.IsInsideLocation(at, 0f)) refusal = "inside a location";
+                }
+
+                if (FootprintDistance(go, _path) > _radius) return;
+
+                _judged.Add(view);
+                if (refusal == null) Doomed.Add(view);
+                else Tally(Kept, $"{Utils.GetPrefabName(go)} ({refusal})");
+            }
+        }
+
+        /// <summary>
+        /// Whether a Destructible is bare rock or plain brush all the way down: all it
+        /// drops is on the list, and what it turns into when broken is bare rock too.
+        ///
+        /// The second half is what the boulders need. A whole one drops nothing: the
+        /// first hit replaces it with a broken copy - m_spawnWhenDestroyed, one of the
+        /// game's "_frac" prefabs - and it is the copy, a MineRock5, that holds the stone.
+        /// Judged by that first link alone, a boulder was a thing of unknown use, and it
+        /// stayed standing in the middle of a cleared road. Copper and silver deposits are
+        /// made the same way, and following the chain is also what keeps them: their copy
+        /// drops ore.
+        /// </summary>
+        private static bool BreaksDownTo(GameObject go, string[] allowed, int depth)
+        {
+            // The game's chains are one link long; the bound only guards against a
+            // prefab that names itself.
+            if (go == null || depth > 3) return false;
+
+            // A rock at the end of the chain is held to the same rule as one met
+            // already broken: stone and nothing else.
+            var mine = go.GetComponent<MineRock>();
+            if (mine != null) return DropsOnly(mine.m_dropItems, StoneOnly);
+
+            var mine5 = go.GetComponent<MineRock5>();
+            if (mine5 != null) return DropsOnly(mine5.m_dropItems, StoneOnly);
+
+            var destructible = go.GetComponent<Destructible>();
+            if (destructible == null) return false;
+
+            var drops = go.GetComponent<DropOnDestroyed>();
+            var table = drops != null ? drops.m_dropWhenDestroyed : null;
+            var dropsSomething = table != null && table.m_drops != null && table.m_drops.Count > 0;
+            if (dropsSomething && !DropsOnly(table, allowed)) return false;
+
+            var next = destructible.m_spawnWhenDestroyed;
+            if (next == null) return dropsSomething;
+
+            // Debris flying off is the break itself, not something left behind.
+            if (next.GetComponent<Gibber>() != null && next.GetComponent<Destructible>() == null
+                && next.GetComponent<MineRock5>() == null && next.GetComponent<MineRock>() == null)
+                return dropsSomething;
+
+            return BreaksDownTo(next, allowed, depth + 1);
         }
 
         /// <summary>
         /// How close a thing comes to the path, measured from its footprint rather than
         /// its centre: a boulder that pushes three metres into the road is in the way
-        /// even with its middle beside it. The footprint is the flat box round its solid
-        /// colliders; with none, just where it stands.
+        /// even with its middle beside it. The footprint is the flat box of each solid
+        /// collider, the nearest one counting; with none, just where the thing stands.
+        ///
+        /// Each collider on its own, not one box round all of them. That box also covers
+        /// the ground between the pieces of anything built of several, and a road passing
+        /// one corner of it would take the whole thing.
         /// </summary>
         private static float FootprintDistance(GameObject go, List<Vector3> path)
         {
-            var have = false;
-            var box = new Bounds(go.transform.position, Vector3.zero);
+            var best = float.MaxValue;
+            var solid = false;
             foreach (var col in go.GetComponentsInChildren<Collider>())
             {
                 if (col == null || !col.enabled || col.isTrigger) continue;
-                if (have) box.Encapsulate(col.bounds);
-                else
-                {
-                    box = col.bounds;
-                    have = true;
-                }
+                solid = true;
+                best = Mathf.Min(best, BoxDistanceSq(col.bounds, path));
             }
 
+            if (!solid) best = BoxDistanceSq(new Bounds(go.transform.position, Vector3.zero), path);
+            return Mathf.Sqrt(best);
+        }
+
+        /// <summary>Squared flat distance from the nearest path point to a box.</summary>
+        private static float BoxDistanceSq(Bounds box, List<Vector3> path)
+        {
             var best = float.MaxValue;
             foreach (var p in path)
             {
@@ -403,7 +493,7 @@ namespace AstvardServerMod
                 if (d < best) best = d;
             }
 
-            return Mathf.Sqrt(best);
+            return best;
         }
 
         /// <summary>
@@ -419,6 +509,21 @@ namespace AstvardServerMod
                     return false;
 
             return true;
+        }
+
+        private static void Tally(Dictionary<string, int> counts, string key)
+        {
+            counts.TryGetValue(key, out var count);
+            counts[key] = count + 1;
+        }
+
+        private static string Listing(Dictionary<string, int> counts)
+        {
+            if (counts.Count == 0) return "nothing";
+
+            return string.Join(", ", counts
+                .OrderByDescending(entry => entry.Value)
+                .Select(entry => entry.Value > 1 ? $"{entry.Key} x{entry.Value}" : entry.Key));
         }
 
         // ---------------- smoothing ----------------
@@ -794,9 +899,11 @@ namespace AstvardServerMod
         /// Every zone the work can reach, resolved once. Asking find-or-create per point
         /// would query the same zone dozens of times, and a creation landing on a zone
         /// that already has a compiler makes the new one destroy the old — taking the
-        /// paint already laid into it along with it.
+        /// paint already laid into it along with it. Null when the work has to wait or
+        /// cannot be done at all; see <see cref="MayMakeCompiler"/>.
         /// </summary>
-        private static List<TerrainComp> CompsForStamps(List<Vector3> points, float radius, float y)
+        private static List<TerrainComp> CompsForStamps(List<Vector3> points, float radius, float y,
+                                                        out bool unloaded)
         {
             var zones = new HashSet<Vector2s>();
             foreach (var point in points)
@@ -807,21 +914,19 @@ namespace AstvardServerMod
                 zones.Add(ZoneSystem.GetZone(point + new Vector3(radius, 0f, radius)));
             }
 
-            var comps = new List<TerrainComp>();
+            var found = new List<TerrainComp>();
+            var missing = new List<Vector3>();
             foreach (var zone in zones)
             {
                 var zoneCenter = ZoneSystem.GetZonePos(zone);
                 var at = new Vector3(zoneCenter.x, y, zoneCenter.z);
 
-                var comp = TerrainComp.FindTerrainCompiler(at) ?? CreateTerrainCompiler(at);
-                if (comp == null) continue;
-
-                var nview = comp.GetComponent<ZNetView>();
-                if (nview != null && !nview.IsOwner()) nview.ClaimOwnership();
-                comps.Add(comp);
+                var comp = TerrainComp.FindTerrainCompiler(at);
+                if (comp != null) found.Add(comp);
+                else missing.Add(at);
             }
 
-            return comps;
+            return WithMissingCompilers(found, missing, out unloaded);
         }
 
         // ---------------- the two tools ----------------
@@ -870,7 +975,16 @@ namespace AstvardServerMod
             // Smoothing reaches past the paint into the blend band, and every zone it
             // writes has to be in the list - that is also what undo records.
             var comps = CompsForStamps(RoadPath,
-                IsRoadSmoothing ? radius + SmoothBlend(radius) : radius, from.y);
+                IsRoadSmoothing ? radius + SmoothBlend(radius) : radius, from.y, out var unloaded);
+            if (comps == null)
+            {
+                // The start stays marked, so waiting and pressing again is all it takes.
+                player.Message(MessageHud.MessageType.Center, unloaded
+                    ? "Начало дорожки дальше прогруженной земли — сделай её короче"
+                    : "Земля по пути ещё прогружается — подожди пару секунд и нажми снова");
+                return;
+            }
+
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp for the road.");
@@ -902,7 +1016,15 @@ namespace AstvardServerMod
             RoadPath.Add(centre);
 
             var comps = CompsForStamps(RoadPath,
-                IsRoadSmoothing ? area + SmoothBlend(area) : area, centre.y);
+                IsRoadSmoothing ? area + SmoothBlend(area) : area, centre.y, out var unloaded);
+            if (comps == null)
+            {
+                player.Message(MessageHud.MessageType.Center, unloaded
+                    ? "Площадка выходит за прогруженную землю"
+                    : "Земля вокруг ещё прогружается — подожди пару секунд и нажми снова");
+                return;
+            }
+
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp for the area.");
@@ -1049,7 +1171,16 @@ namespace AstvardServerMod
             // that setting down a hut reshapes the whole hillside around it.
             var blend = Mathf.Clamp(radius * 0.35f, 2f, 8f);
 
-            var comps = CollectTerrainComps(target, radius + blend);
+            var comps = CollectTerrainComps(target, radius + blend, out _);
+            if (comps == null)
+            {
+                // The build goes down regardless, as it always did when there was nothing
+                // to level into - only now the player hears why the ground stayed.
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "Землю под постройкой не выровнять — она ещё не прогружена");
+                return;
+            }
+
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp under the build.");
@@ -1109,7 +1240,15 @@ namespace AstvardServerMod
             // Each zone keeps its own heightmap, so an operation spilling over a
             // zone border has to be handed to every TerrainComp it touches —
             // otherwise the neighbour keeps its old heights and the seam tears open.
-            var comps = CollectTerrainComps(target, reach);
+            var comps = CollectTerrainComps(target, reach, out var unloaded);
+            if (comps == null)
+            {
+                player.Message(MessageHud.MessageType.Center, unloaded
+                    ? "Выравнивание выходит за прогруженную землю — уменьши радиус"
+                    : "Земля вокруг ещё прогружается — подожди пару секунд и нажми снова");
+                return;
+            }
+
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp available for the area.");
@@ -1217,10 +1356,15 @@ namespace AstvardServerMod
             FLastOpRadius.SetValue(comp, reach);
         }
 
-        /// <summary>Every TerrainComp whose zone is touched by the given reach, created if missing.</summary>
-        private static List<TerrainComp> CollectTerrainComps(Vector3 center, float reach)
+        /// <summary>
+        /// Every TerrainComp whose zone is touched by the given reach, created if missing.
+        /// Null when the work has to wait or cannot be done at all; see
+        /// <see cref="MayMakeCompiler"/>.
+        /// </summary>
+        private static List<TerrainComp> CollectTerrainComps(Vector3 center, float reach, out bool unloaded)
         {
-            var comps = new List<TerrainComp>();
+            var found = new List<TerrainComp>();
+            var missing = new List<Vector3>();
             var seen = new HashSet<Vector2s>();
 
             // Sample a grid across the affected square; a half-zone step is fine
@@ -1238,17 +1382,13 @@ namespace AstvardServerMod
                     var zoneCenter = ZoneSystem.GetZonePos(zone);
                     var probeAtZone = new Vector3(zoneCenter.x, center.y, zoneCenter.z);
 
-                    var comp = TerrainComp.FindTerrainCompiler(probeAtZone)
-                               ?? CreateTerrainCompiler(probeAtZone);
-                    if (comp == null) continue;
-
-                    var nview = comp.GetComponent<ZNetView>();
-                    if (nview != null && !nview.IsOwner()) nview.ClaimOwnership();
-                    comps.Add(comp);
+                    var comp = TerrainComp.FindTerrainCompiler(probeAtZone);
+                    if (comp != null) found.Add(comp);
+                    else missing.Add(probeAtZone);
                 }
             }
 
-            return comps;
+            return WithMissingCompilers(found, missing, out unloaded);
         }
 
         /// <summary>
@@ -1269,6 +1409,88 @@ namespace AstvardServerMod
 
             if (ClutterSystem.instance != null)
                 ClutterSystem.instance.ResetGrass(center, reach);
+        }
+
+        private static readonly int TerrainCompilerHash = "_TerrainCompiler".GetStableHashCode();
+
+        private static readonly int ZoneCtrlHash = "_ZoneCtrl".GetStableHashCode();
+
+        /// <summary>
+        /// Whether a new terrain compiler may be made for the zone at a point. Asked only
+        /// where no live one was found; <paramref name="unloaded"/> tells the two reasons
+        /// for a no apart.
+        ///
+        /// A zone keeps all its terrain edits in one compiler, and the game allows one
+        /// per zone: a compiler waking up where there already is one removes the other,
+        /// with everything in it - "Found another terrain compiler in this area, removing
+        /// it". So not finding one among the live objects is not enough. The zone's own
+        /// can exist in the world and not have been built here yet, and a new one made in
+        /// that window is the one it removes when it does wake. The client log has two of
+        /// exactly that, straight after a 172 m road on 10.09.2026 made seven compilers.
+        ///
+        /// The world's records settle it. The server sends terrain records ahead of
+        /// ordinary ones - ZDOMan.ServerSendCompare sorts by type - and every generated
+        /// zone has a controller, an ordinary record standing on the very spot a compiler
+        /// does. Once the controller is here, any compiler of the zone is here too; and a
+        /// compiler record that is here but not live is one ZNetScene has still to build.
+        /// Both the types and the positions were read out of the world save, not assumed.
+        ///
+        /// No heightmap means the zone is outside the loaded ground altogether. A compiler
+        /// made there finds nothing in its Awake, never joins the registry, and leaves a
+        /// record in the world that holds no edits and waits to collide with the real one.
+        /// </summary>
+        private static bool MayMakeCompiler(Vector3 at, out bool unloaded)
+        {
+            unloaded = Heightmap.FindHeightmap(at) == null;
+            if (unloaded || ZDOMan.instance == null) return false;
+
+            var records = new List<ZDO>();
+            ZDOMan.instance.FindSectorObjects(ZoneSystem.GetZone(at), new SimulationDistance(0, 0), records);
+
+            var known = false;
+            foreach (var zdo in records)
+            {
+                var prefab = zdo.GetPrefab();
+                if (prefab == TerrainCompilerHash) return false;
+                if (prefab == ZoneCtrlHash) known = true;
+            }
+
+            return known;
+        }
+
+        /// <summary>
+        /// Adds the compilers still missing - for every zone or for none. All of them are
+        /// checked before any is made, so a job turned down leaves nothing behind: half a
+        /// set of new compilers would be records in the world for work that never
+        /// happened. Null when turned down.
+        /// </summary>
+        private static List<TerrainComp> WithMissingCompilers(List<TerrainComp> found, List<Vector3> missing,
+                                                              out bool unloaded)
+        {
+            unloaded = false;
+            foreach (var at in missing)
+            {
+                if (MayMakeCompiler(at, out unloaded)) continue;
+
+                var zone = ZoneSystem.GetZone(at);
+                Log.LogInfo($"[AstvardServerMod] Terrain work turned down: zone {zone.x},{zone.y} " +
+                            (unloaded ? "is not loaded" : "may have a compiler still on its way"));
+                return null;
+            }
+
+            foreach (var at in missing)
+            {
+                var comp = CreateTerrainCompiler(at);
+                if (comp != null) found.Add(comp);
+            }
+
+            foreach (var comp in found)
+            {
+                var nview = comp.GetComponent<ZNetView>();
+                if (nview != null && !nview.IsOwner()) nview.ClaimOwnership();
+            }
+
+            return found;
         }
 
         private static TerrainComp CreateTerrainCompiler(Vector3 pos)
