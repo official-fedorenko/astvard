@@ -176,6 +176,20 @@ namespace AstvardServerMod
 
         private static bool _bridgeStarted;
 
+        // Pinned, the far bank stays where it was aimed instead of following the player,
+        // who can then walk the crossing and look at it from the side; the arrows move it.
+        private static bool _bridgePinned;
+
+        private static Vector3 _bridgePinnedAim;
+
+        private static void ToggleBridgePin(Player player)
+        {
+            if (!_bridgePinned) _bridgePinnedAim = BridgeAim(player);
+            _bridgePinned = !_bridgePinned;
+            UpdateBridgeHint();
+            SayPinned(_bridgePinned);
+        }
+
         internal static bool BridgeInProgress
         {
             get { return _bridgeStarted; }
@@ -186,6 +200,7 @@ namespace AstvardServerMod
             if (!_bridgeStarted) return;
 
             _bridgeStarted = false;
+            _bridgePinned = false;
             ClearBridgeGhost();
             UpdateBridgeHint();
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Отменено");
@@ -198,6 +213,7 @@ namespace AstvardServerMod
 
             _bridgeStart = player.transform.position;
             _bridgeStarted = true;
+            _bridgePinned = false;
             NoteToolStart();
             UpdateBridgeHint();
             InventoryGui.instance?.Hide();
@@ -212,7 +228,8 @@ namespace AstvardServerMod
             label.text = _bridgeStarted
                 ? $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
                   + $"Проекция белая — устоит,{NEWLINE}красная — нет.{NEWLINE}"
-                  + $"ЛКМ или «Построить». Esc — отменить."
+                  + $"ЛКМ или «Построить». Esc — отменить.{NEWLINE}"
+                  + $"P — закрепить берег, стрелки — сдвиг."
                 : $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
                   + $"Встань на этом берегу{NEWLINE}и нажми «Начать».";
         }
@@ -758,6 +775,8 @@ namespace AstvardServerMod
 
         private static Vector3 BridgeAim(Player player)
         {
+            if (_bridgePinned) return _bridgePinnedAim;
+
             var flat = player.transform.position - _bridgeStart;
             flat.y = 0f;
 
@@ -786,7 +805,7 @@ namespace AstvardServerMod
             // the player or it lags a quarter second behind its own preview.
             if (BridgeGhostRoot != null)
             {
-                var flat = player.transform.position - _bridgeStart;
+                var flat = (_bridgePinned ? _bridgePinnedAim : player.transform.position) - _bridgeStart;
                 flat.y = 0f;
                 if (flat.sqrMagnitude > 0.01f)
                     BridgeGhostRoot.transform.SetPositionAndRotation(
@@ -923,6 +942,7 @@ namespace AstvardServerMod
             }
 
             _bridgeStarted = false;
+            _bridgePinned = false;
             UpdateBridgeHint();
 
             var placed = Raise(BridgePlanned, survey.Facing, player.GetPlayerID());

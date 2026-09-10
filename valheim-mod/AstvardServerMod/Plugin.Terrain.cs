@@ -164,6 +164,7 @@ namespace AstvardServerMod
 
             _roadCancelled = _roadLaying;
             _roadStarted = false;
+            _roadPinned = false;
             if (_roadPreview != null) _roadPreview.SetActive(false);
             UpdateRoadHint();
 
@@ -172,6 +173,26 @@ namespace AstvardServerMod
         }
 
         private static Vector3 _roadStart;
+
+        // Pinned, the far end of a marked road stays where it was left instead of being
+        // wherever the player stands; the arrows move it.
+        private static bool _roadPinned;
+
+        private static Vector3 _roadPinnedEnd;
+
+        /// <summary>Where a marked road would end: where it was pinned, or the player.</summary>
+        private static Vector3 RoadEnd(Player player)
+        {
+            return _roadPinned ? _roadPinnedEnd : player.transform.position;
+        }
+
+        private static void ToggleRoadPin(Player player)
+        {
+            _roadPinned = !_roadPinned;
+            if (_roadPinned) _roadPinnedEnd = player.transform.position;
+            UpdateRoadHint();
+            SayPinned(_roadPinned);
+        }
 
         /// <summary>The road page, or one of the pages behind its buttons.</summary>
         private static bool IsRoadPage(int state)
@@ -245,7 +266,7 @@ namespace AstvardServerMod
                 default:
                     label.text = _roadStarted
                         ? $"Начало отмечено — иди в конец{NEWLINE}и нажми ЛКМ или «Закончить».{NEWLINE}"
-                          + $"Esc — отменить.{notes}"
+                          + $"Esc — отменить. P — закрепить{NEWLINE}конец, стрелки — сдвинуть.{notes}"
                         : $"Встань в начало дорожки{NEWLINE}и нажми «Начать».{notes}";
                     break;
             }
@@ -918,7 +939,7 @@ namespace AstvardServerMod
 
             if (_roadLine == null && !CreateRoadPreview()) return;
 
-            var to = player.transform.position;
+            var to = RoadEnd(player);
             var length = new Vector3(to.x - _roadStart.x, 0f, to.z - _roadStart.z).magnitude;
             var width = RoadWidth();
 
@@ -1031,7 +1052,7 @@ namespace AstvardServerMod
             }
 
             var from = _roadStart;
-            var to = player.transform.position;
+            var to = RoadEnd(player);
             var length = new Vector3(to.x - from.x, 0f, to.z - from.z).magnitude;
 
             if (length < 1f)
@@ -1091,6 +1112,7 @@ namespace AstvardServerMod
             }
 
             _roadStarted = false;
+            _roadPinned = false;
             UpdateRoadHint();
 
             Instance?.StartCoroutine(LayPaint(new List<Vector3>(RoadPath), comps, radius,

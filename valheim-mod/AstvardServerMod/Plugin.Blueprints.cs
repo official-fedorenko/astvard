@@ -108,6 +108,14 @@ namespace AstvardServerMod
             }
         }
 
+        // Pinned, the ghost stays where it was left - and faces the way it faced - instead
+        // of floating ahead of the player; Q/E still turn it and Shift+Q/E still lift it.
+        private static bool _ghostPinned;
+
+        private static Vector3 _ghostPinnedAt;
+
+        private static float _ghostPinnedHeading;
+
         // Placement adjustments driven by Q/E and shift+Q/E.
         private static float _placeYaw;
 
@@ -328,12 +336,16 @@ namespace AstvardServerMod
             SpawnGhosts();
             _placeYaw = 0f;
             _placeHeight = 0f;
+            _ghostPinned = false;
             IsPlacing = true;
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                "ЛКМ — поставить, Esc — отменить, P — закрепить");
         }
 
         private static void CancelPlacement()
         {
             IsPlacing = false;
+            _ghostPinned = false;
             ClearGhosts();
             Log.LogInfo("[AstvardServerMod] Placement cancelled.");
         }
@@ -399,6 +411,26 @@ namespace AstvardServerMod
                 return;
             }
 
+            // P and the arrows, as every projection has them: a marked road's far end or a
+            // bridge's far bank stays where it was left while the player walks round to look.
+            if ((RoadAwaitingEnd || BridgeInProgress) && !InventoryGui.IsVisible()
+                && Chat.instance?.HasFocus() != true && Player.m_localPlayer != null)
+            {
+                if (Input.GetKeyDown(PinKey))
+                {
+                    if (BridgeInProgress) ToggleBridgePin(Player.m_localPlayer);
+                    else ToggleRoadPin(Player.m_localPlayer);
+                    return;
+                }
+
+                if ((BridgeInProgress ? _bridgePinned : _roadPinned) && PinNudgeThisFrame(out var nudge))
+                {
+                    if (BridgeInProgress) _bridgePinnedAim += nudge;
+                    else _roadPinnedEnd += nudge;
+                    return;
+                }
+            }
+
             // A marked road or bridge finishes on a click as well as on its own button.
             // The panel is shut while you walk to the far end, and opening it to press
             // one button is a step nobody wants. Marking stays on the button: a click
@@ -442,6 +474,9 @@ namespace AstvardServerMod
                 else _placeYaw += RotationStep;
             }
 
+            if (Input.GetKeyDown(PinKey)) ToggleGhostPin(player);
+            else if (_ghostPinned && PinNudgeThisFrame(out var step)) _ghostPinnedAt += step;
+
             UpdateGhostTransform(player);
 
             if (Input.GetKeyDown(KeyCode.Escape))
@@ -454,9 +489,35 @@ namespace AstvardServerMod
             if (Input.GetMouseButtonDown(0) && !_building)
             {
                 IsPlacing = false;
+                _ghostPinned = false;
                 _inputHeldUntil = Time.time + 0.3f;
                 StartCoroutine(BuildFromGhost(player));
             }
+        }
+
+        /// <summary>
+        /// Pins the ghost where it floats now, facing the way it faces, or sends it back
+        /// out ahead of the player. Pinned, the ground under it is still read every frame,
+        /// so a nudge along a slope keeps it sitting on the land.
+        /// </summary>
+        private static void ToggleGhostPin(Player player)
+        {
+            _ghostPinned = !_ghostPinned;
+            if (_ghostPinned)
+            {
+                var forward = GhostForward(player);
+                _ghostPinnedAt = player.transform.position + forward * PlacementDistance;
+                _ghostPinnedHeading = Quaternion.LookRotation(forward).eulerAngles.y;
+            }
+
+            SayPinned(_ghostPinned);
+        }
+
+        private static Vector3 GhostForward(Player player)
+        {
+            var forward = player.transform.forward;
+            forward.y = 0f;
+            return forward.sqrMagnitude > 0.001f ? forward.normalized : Vector3.forward;
         }
 
         /// <summary>Parks the ghost a few metres ahead of the player, on the ground.</summary>
@@ -464,11 +525,20 @@ namespace AstvardServerMod
         {
             if (GhostRoot == null) return;
 
-            var forward = player.transform.forward;
-            forward.y = 0f;
-            forward = forward.sqrMagnitude > 0.001f ? forward.normalized : Vector3.forward;
+            Vector3 position;
+            float heading;
+            if (_ghostPinned)
+            {
+                position = _ghostPinnedAt;
+                heading = _ghostPinnedHeading;
+            }
+            else
+            {
+                var forward = GhostForward(player);
+                position = player.transform.position + forward * PlacementDistance;
+                heading = Quaternion.LookRotation(forward).eulerAngles.y;
+            }
 
-            var position = player.transform.position + forward * PlacementDistance;
             if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(position, out var ground))
                 position.y = ground;
             position.y += _placeHeight;
@@ -476,7 +546,7 @@ namespace AstvardServerMod
             // Snap the heading to the same 22.5° steps the game builds on. Using the
             // raw look direction would drop the structure at an arbitrary angle, and
             // anything added by hand afterwards then refuses to line up with it.
-            var yaw = Quaternion.LookRotation(forward).eulerAngles.y + _placeYaw;
+            var yaw = heading + _placeYaw;
             yaw = Mathf.Round(yaw / RotationStep) * RotationStep;
 
             GhostRoot.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));

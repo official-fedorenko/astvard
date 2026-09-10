@@ -105,15 +105,6 @@ namespace AstvardServerMod
 
         private static Vector3 _fencePinnedAt;
 
-        // P for «Закрепить»: the key that sits under «З». Nothing of the game's reads it;
-        // Z and B, the obvious ones, fly and build for free in debug mode, which is
-        // exactly the mode an admin placing a fence is likely to be in.
-        private const KeyCode FencePinKey = KeyCode.P;
-
-        // An arrow press moves a pinned projection a metre; with Shift, a quarter.
-        private const float FenceNudge = 1f;
-
-        private const float FenceFineNudge = 0.25f;
 
         private static List<ZDOID> _lastFence;
 
@@ -275,32 +266,7 @@ namespace AstvardServerMod
             _fenceGhostKey = null;
             UpdateFenceLabels();
 
-            player.Message(MessageHud.MessageType.Center, _fencePinned
-                ? "Закреплено: стрелки — сдвиг, P — открепить"
-                : "Проекция снова за тобой");
-        }
-
-        /// <summary>
-        /// Moves a pinned projection along the ground as the player sees it: up is away
-        /// from the camera, right is to its right. Levelling follows it: the height it
-        /// works to is the ground wherever the ring's middle has been moved to.
-        /// </summary>
-        private static void NudgeFence(float forward, float right)
-        {
-            var view = GameCamera.instance != null ? GameCamera.instance.transform : Player.m_localPlayer?.transform;
-            if (view == null) return;
-
-            var ahead = view.forward;
-            ahead.y = 0f;
-            if (ahead.sqrMagnitude < 1e-4f) return;
-            ahead.Normalize();
-            var aside = new Vector3(ahead.z, 0f, -ahead.x);
-
-            var step = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)
-                ? FenceFineNudge
-                : FenceNudge;
-            _fencePinnedAt += (ahead * forward + aside * right) * step;
-            _fenceGhostKey = null;
+            SayPinned(_fencePinned);
         }
 
         private static void CancelFencePreview()
@@ -394,21 +360,19 @@ namespace AstvardServerMod
                 return true;
             }
 
-            if (Input.GetKeyDown(FencePinKey))
+            if (Input.GetKeyDown(PinKey))
             {
                 ToggleFencePin();
                 return true;
             }
 
-            if (_fencePinned)
+            // Levelling follows a nudged ring: the height it works to is the ground
+            // wherever the ring's middle has been moved to.
+            if (_fencePinned && PinNudgeThisFrame(out var step))
             {
-                var forward = (Input.GetKeyDown(KeyCode.UpArrow) ? 1f : 0f) - (Input.GetKeyDown(KeyCode.DownArrow) ? 1f : 0f);
-                var right = (Input.GetKeyDown(KeyCode.RightArrow) ? 1f : 0f) - (Input.GetKeyDown(KeyCode.LeftArrow) ? 1f : 0f);
-                if (forward != 0f || right != 0f)
-                {
-                    NudgeFence(forward, right);
-                    return true;
-                }
+                _fencePinnedAt += step;
+                _fenceGhostKey = null;
+                return true;
             }
 
             if (Input.GetMouseButtonDown(0) && Time.time - _toolMarkedAt > MarkDeafSeconds)

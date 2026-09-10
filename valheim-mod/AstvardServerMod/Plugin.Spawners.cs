@@ -210,7 +210,7 @@ namespace AstvardServerMod
             InventoryGui.instance?.Hide();
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                $"{kind.Label}: ЛКМ — поставить");
+                $"{kind.Label}: ЛКМ — поставить, P — закрепить");
             Log.LogInfo($"[AstvardServerMod] Placing spawner {kind.Prefab}.");
         }
 

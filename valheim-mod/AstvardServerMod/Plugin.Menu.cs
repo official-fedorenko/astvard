@@ -419,7 +419,7 @@ namespace AstvardServerMod
             TodApplyButton = MakeButton(gui, "Установить", ApplyTimeOfDay);
 
 
-            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена.\nСпавнер невидим — в проекции\nпоказан сам зверь.\nВ базе игрока (верстак, костёр)\nон молчит, и работает, только\nпока игрок ближе 60 м.\n«Убрать рядом» сносит все\nспавнеры в 8 м, и родные тоже.\nБуфер копирования будет занят.");
+            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена,\nP — закрепить, стрелки — сдвиг.\nСпавнер невидим — в проекции\nпоказан сам зверь.\nВ базе игрока (верстак, костёр)\nон молчит, и работает, только\nпока игрок ближе 60 м.\n«Убрать рядом» сносит все\nспавнеры в 8 м, и родные тоже.\nБуфер копирования будет занят.");
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
@@ -603,6 +603,7 @@ namespace AstvardServerMod
 
                 _roadStart = player.transform.position;
                 _roadStarted = true;
+                _roadPinned = false;
                 NoteToolStart();
                 UpdateRoadHint();
                 InventoryGui.instance?.Hide();
@@ -916,7 +917,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            CopyHint = MakeText(gui, "Радиус (м).\nКопировать — проекция перед\nтобой, ЛКМ строит, Esc отменяет.\nQ/E — поворот, Shift+Q/E — высота.\nСкопировать — сохранить шаблоном,\nимя и категорию задай ниже.");
+            CopyHint = MakeText(gui, "Радиус (м).\nКопировать — проекция перед\nтобой, ЛКМ строит, Esc отменяет.\nQ/E — поворот, Shift+Q/E — высота,\nP — закрепить, стрелки — сдвиг.\nСкопировать — сохранить шаблоном,\nимя и категорию задай ниже.");
 
             CopyRadiusInput = gui.CreateInputField(
                 Panel.transform,
