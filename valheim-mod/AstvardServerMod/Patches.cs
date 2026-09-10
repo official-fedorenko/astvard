@@ -337,6 +337,25 @@ namespace AstvardServerMod
         }
     }
 
+    /// <summary>
+    /// Escape takes back a projection or a marked start - and used to open the pause
+    /// menu with the same press. The game's Menu reads the key in its own Update, in the
+    /// same frame as ours, and nothing told it the press was spoken for. While one of our
+    /// tools holds the key, or has just used it, the closed menu skips that frame; with
+    /// nothing of ours going Escape opens it as it always did, and an open menu is never
+    /// touched.
+    /// </summary>
+    [HarmonyPatch(typeof(Menu), "Update")]
+    public static class KeepMenuShutForToolEscape
+    {
+        private static bool Prefix()
+        {
+            if (Menu.IsVisible()) return true;
+            if (!ZInput.GetKeyDown(KeyCode.Escape, false)) return true;
+            return !Plugin.EscapeBelongsToTool;
+        }
+    }
+
     [HarmonyPatch(typeof(InventoryGui), "Show")]
     public static class InventoryShowPatch
     {

@@ -1259,6 +1259,7 @@ namespace AstvardServerMod
             SetActive(FenceRoofButton, admin && MenuState == StateFence);
             SetActive(FenceLevelButton, admin && MenuState == StateFence);
             SetActive(FenceBuildButton, admin && MenuState == StateFence);
+            SetActive(FenceCancelButton, admin && MenuState == StateFence && IsFencePreviewing);
             SetActive(FenceRemoveButton, admin && MenuState == StateFence && HasLastFence);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);

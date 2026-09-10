@@ -24,6 +24,8 @@ namespace AstvardServerMod
 
         internal static GameObject FenceBuildButton;
 
+        internal static GameObject FenceCancelButton;
+
         internal static GameObject FenceRemoveButton;
 
         private const string FencePrefab = "stake_wall";
@@ -82,6 +84,9 @@ namespace AstvardServerMod
         // Where under a stake the ground is tried: both ends and the middle.
         private static readonly float[] StakeFeet = { -0.9f, 0f, 0.9f };
 
+        // As the bridge's projection is tinted: the pieces themselves, see-through.
+        private static readonly Color FenceGhostTint = new Color(1f, 1f, 1f, 0.5f);
+
         internal static bool IsFenceWalkway;
 
         internal static bool IsFenceRoof;
@@ -89,6 +94,8 @@ namespace AstvardServerMod
         internal static bool IsFenceLevel;
 
         private static bool _fenceBuilding;
+
+        private static bool _fencePreviewing;
 
         private static List<ZDOID> _lastFence;
 
@@ -138,10 +145,12 @@ namespace AstvardServerMod
                 UpdateFenceLabels();
             });
 
-            FenceBuildButton = MakeButton(gui, "Построить", () =>
+            FenceBuildButton = MakeButton(gui, "Поставить", StartFencePreview);
+
+            FenceCancelButton = MakeButton(gui, "Отменить", () =>
             {
-                if (_fenceBuilding) return;
-                Instance?.StartCoroutine(BuildFence());
+                CancelFencePreview();
+                RefreshMenu();
             });
 
             FenceRemoveButton = MakeButton(gui, "Убрать последний забор", () =>
@@ -158,6 +167,12 @@ namespace AstvardServerMod
             get { return _lastFence != null && _lastFence.Count > 0; }
         }
 
+        /// <summary>A projection of the fence is following the player, waiting for a click.</summary>
+        internal static bool IsFencePreviewing
+        {
+            get { return _fencePreviewing; }
+        }
+
         private static void UpdateFenceLabels()
         {
             SetLabel(FenceWalkwayButton, IsFenceWalkway ? "Помост: вкл" : "Помост: выкл");
@@ -169,13 +184,323 @@ namespace AstvardServerMod
 
             var sections = IsFenceWalkway || IsFenceRoof;
             label.text = $"Частокол кольцом вокруг тебя.{NEWLINE}Расстояние — от тебя до стены,{NEWLINE}"
-                         + "от 4 до 64 м."
+                         + $"от 4 до 64 м. «Поставить» покажет{NEWLINE}проекцию: ЛКМ — построить,{NEWLINE}"
+                         + "Esc — отменить."
                          + (IsFenceLevel
                              ? $"{NEWLINE}Землю под ним выровняет{NEWLINE}по высоте, где ты стоишь."
                              : sections
                                  ? $"{NEWLINE}На склоне помост и крыша лягут{NEWLINE}по нижнему колу стороны."
                                  : "")
                          + $"{NEWLINE}Деревья и камни на линии снесёт —{NEWLINE}их уже не вернуть.";
+        }
+
+        // ---------------- projection ----------------
+
+        // Ghosts by prefab name, kept for the life of a projection and handed out again
+        // on every fresh look: a walk round the ring moves them rather than making new
+        // ones, which at a thousand pieces is the difference between smooth and not.
+        private static readonly Dictionary<string, List<GameObject>> FenceGhostPool =
+            new Dictionary<string, List<GameObject>>();
+
+        private static readonly Dictionary<Material, Material> FenceGhostTints = new Dictionary<Material, Material>();
+
+        private static readonly List<FencePlacement> FenceShown = new List<FencePlacement>();
+
+        private static readonly HashSet<string> FenceWarned = new HashSet<string>();
+
+        private static string _fenceGhostKey;
+
+        private static float _fenceLookedAt;
+
+        private static Vector3 _fenceLookedFrom;
+
+        /// <summary>
+        /// Shows the ring about to be built, round the player and following them, as the
+        /// pieces themselves. Nothing is built until the click; Esc takes it away.
+        /// </summary>
+        private static void StartFencePreview()
+        {
+            if (_fenceBuilding || Player.m_localPlayer == null || !IsAdminUnlocked) return;
+
+            _fencePreviewing = true;
+            _fenceGhostKey = null;
+
+            // The press that opened the projection is still going down; without a deaf
+            // moment it would carry on into the world and build straight away.
+            NoteToolStart();
+            InventoryGui.instance?.Hide();
+            Player.m_localPlayer.Message(MessageHud.MessageType.Center, "ЛКМ — построить, Esc — отменить");
+        }
+
+        private static void CancelFencePreview()
+        {
+            if (!_fencePreviewing) return;
+
+            _fencePreviewing = false;
+            ClearFenceGhost();
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Отменено");
+        }
+
+        /// <summary>
+        /// Keeps the projection on the player. It is looked at afresh - footings, the
+        /// water, anything built in the way - when the player has moved, when a setting
+        /// on the page has changed, and once a second regardless; the same judging and
+        /// the same layout as the build, so what the click puts up is what was shown.
+        /// Open the panel and change the distance or a switch, and the projection changes
+        /// with it behind the panel.
+        ///
+        /// With levelling on the ground is shown as it will be, flat at the player's
+        /// height, since that is where the build will find it.
+        /// </summary>
+        internal static void UpdateFencePreview()
+        {
+            if (!_fencePreviewing)
+            {
+                if (FenceShown.Count > 0 || FenceGhostPool.Count > 0) ClearFenceGhost();
+                return;
+            }
+
+            var player = Player.m_localPlayer;
+            var scene = ZNetScene.instance;
+            if (player == null || scene == null || ZoneSystem.instance == null)
+            {
+                _fencePreviewing = false;
+                ClearFenceGhost();
+                return;
+            }
+
+            var radius = Mathf.Clamp(ParseField(FenceRadiusInput, 20f), FenceMinRadius, FenceMaxRadius);
+            var key = $"{radius:F2} {IsFenceWalkway} {IsFenceRoof} {IsFenceLevel}";
+            var centre = player.transform.position;
+
+            // A big ring with a roof is a thousand pieces to move and as many questions
+            // to ask the physics; it can follow a walking player a little less eagerly.
+            var changed = key != _fenceGhostKey;
+            var moved = (centre - _fenceLookedFrom).sqrMagnitude > 0.0625f
+                        && Time.time - _fenceLookedAt > (FenceShown.Count > 300 ? 0.25f : 0.1f);
+            if (!changed && !moved && Time.time - _fenceLookedAt < 1f) return;
+
+            _fenceGhostKey = key;
+            _fenceLookedAt = Time.time;
+            _fenceLookedFrom = centre;
+
+            var kit = FenceKitFor(scene);
+            if (kit == null) return;
+
+            var plan = Geometry.FenceRing(radius, FenceMaxPerSide, StakeWidth);
+            var panels = Geometry.SectionPanels(plan.PerSide);
+            var posts = Geometry.SectionPosts(plan.PerSide);
+            float? flat = IsFenceLevel ? centre.y : (float?)null;
+            var stakeLift = PivotAboveBase(kit.Stake);
+
+            var placements = new List<FencePlacement>();
+            for (var side = 0; side < plan.Sides; side++)
+            {
+                var fs = JudgeFenceSide(plan, side, centre, radius, panels, posts, kit.Walkway, kit.Roofed, flat);
+                LayOutSide(fs, plan, kit, stakeLift, panels, posts, placements);
+            }
+
+            ShowFenceGhost(placements);
+        }
+
+        /// <summary>
+        /// The two keys a projection answers, read before anything else in the frame:
+        /// Esc takes it away, a click builds it where it stands. A click on the panel is
+        /// not a click in the world, and neither is one typed into the chat.
+        /// </summary>
+        internal static bool HandleFencePreviewInput()
+        {
+            if (!_fencePreviewing) return false;
+            if (InventoryGui.IsVisible() || Chat.instance?.HasFocus() == true) return false;
+
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                NoteEscapeUsed();
+                CancelFencePreview();
+                RefreshMenu();
+                return true;
+            }
+
+            if (Input.GetMouseButtonDown(0) && Time.time - _toolMarkedAt > MarkDeafSeconds)
+            {
+                // The same window a placed blueprint uses: this click must not also be a
+                // swing, and the game's own input can still run later in the same frame.
+                _inputHeldUntil = Time.time + 0.3f;
+                if (_fenceBuilding) return true;
+
+                _fencePreviewing = false;
+                ClearFenceGhost();
+                Instance?.StartCoroutine(BuildFence());
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void ShowFenceGhost(List<FencePlacement> placements)
+        {
+            var used = new Dictionary<string, int>();
+            foreach (var placement in placements)
+            {
+                var name = placement.Prefab.name;
+                if (!FenceGhostPool.TryGetValue(name, out var pool))
+                {
+                    pool = new List<GameObject>();
+                    FenceGhostPool[name] = pool;
+                }
+
+                used.TryGetValue(name, out var next);
+
+                // A ghost can go with its scene; a fresh one takes its place.
+                if (next < pool.Count && pool[next] == null) pool[next] = MakeFenceGhost(placement.Prefab);
+                if (next == pool.Count) pool.Add(MakeFenceGhost(placement.Prefab));
+
+                var ghost = pool[next];
+                used[name] = next + 1;
+                if (ghost == null) continue;
+
+                ghost.transform.SetPositionAndRotation(placement.At, placement.Turn);
+                if (!ghost.activeSelf) ghost.SetActive(true);
+            }
+
+            foreach (var entry in FenceGhostPool)
+            {
+                used.TryGetValue(entry.Key, out var shown);
+                for (var i = shown; i < entry.Value.Count; i++)
+                    if (entry.Value[i] != null && entry.Value[i].activeSelf) entry.Value[i].SetActive(false);
+            }
+
+            FenceShown.Clear();
+            FenceShown.AddRange(placements);
+        }
+
+        /// <summary>
+        /// One piece of the projection: the real prefab, made without joining the world,
+        /// with nothing in it left to collide or to run, and see-through. The tinted
+        /// materials are shared - one copy for each material the fence's four prefabs use
+        /// - rather than a copy for every ghost.
+        /// </summary>
+        private static GameObject MakeFenceGhost(GameObject prefab)
+        {
+            ZNetView.m_forceDisableInit = true;
+            try
+            {
+                var ghost = Instantiate(prefab);
+
+                foreach (var collider in ghost.GetComponentsInChildren<Collider>())
+                    collider.enabled = false;
+                foreach (var behaviour in ghost.GetComponentsInChildren<MonoBehaviour>())
+                    behaviour.enabled = false;
+
+                foreach (var renderer in ghost.GetComponentsInChildren<Renderer>())
+                {
+                    var materials = renderer.sharedMaterials;
+                    for (var i = 0; i < materials.Length; i++)
+                    {
+                        var original = materials[i];
+                        if (original == null) continue;
+
+                        if (!FenceGhostTints.TryGetValue(original, out var tinted))
+                        {
+                            tinted = new Material(original);
+                            if (tinted.HasProperty("_Color")) tinted.color = FenceGhostTint;
+                            FenceGhostTints[original] = tinted;
+                        }
+
+                        materials[i] = tinted;
+                    }
+
+                    renderer.sharedMaterials = materials;
+                }
+
+                return ghost;
+            }
+            finally
+            {
+                ZNetView.m_forceDisableInit = false;
+            }
+        }
+
+        private static void ClearFenceGhost()
+        {
+            foreach (var pool in FenceGhostPool.Values)
+                foreach (var ghost in pool)
+                    if (ghost != null) Destroy(ghost);
+            FenceGhostPool.Clear();
+
+            foreach (var tinted in FenceGhostTints.Values)
+                if (tinted != null) Destroy(tinted);
+            FenceGhostTints.Clear();
+
+            FenceShown.Clear();
+            _fenceGhostKey = null;
+        }
+
+        // ---------------- building ----------------
+
+        /// <summary>The prefabs a ring is built from, as the switches on the page ask for.</summary>
+        private sealed class FenceKit
+        {
+            public GameObject Stake;
+
+            public GameObject Floor;
+
+            public GameObject Roof;
+
+            public GameObject Post;
+
+            public bool Walkway
+            {
+                get { return Floor != null; }
+            }
+
+            public bool Roofed
+            {
+                get { return Roof != null && Post != null; }
+            }
+
+            public bool Sections
+            {
+                get { return Walkway || Roofed; }
+            }
+        }
+
+        private struct FencePlacement
+        {
+            public GameObject Prefab;
+
+            public Vector3 At;
+
+            public Quaternion Turn;
+
+            public FencePlacement(GameObject prefab, Vector3 at, Quaternion turn)
+            {
+                Prefab = prefab;
+                At = at;
+                Turn = turn;
+            }
+        }
+
+        private static FenceKit FenceKitFor(ZNetScene scene)
+        {
+            var kit = new FenceKit
+            {
+                Stake = FencePiecePrefab(scene, FencePrefab),
+                Floor = IsFenceWalkway ? FencePiecePrefab(scene, FloorPrefab) : null,
+                Roof = IsFenceRoof ? FencePiecePrefab(scene, RoofPrefab) : null,
+                Post = IsFenceRoof ? FencePiecePrefab(scene, PostPrefab) : null,
+            };
+            return kit.Stake != null ? kit : null;
+        }
+
+        private static GameObject FencePiecePrefab(ZNetScene scene, string name)
+        {
+            var prefab = scene.GetPrefab(name);
+
+            // Once, not at every look the projection takes.
+            if (prefab == null && FenceWarned.Add(name))
+                Log.LogWarning($"[AstvardServerMod] No fence prefab '{name}'.");
+            return prefab;
         }
 
         /// <summary>
@@ -187,16 +512,11 @@ namespace AstvardServerMod
         /// yet, or not loaded at all - and a turned-down fence should leave nothing
         /// behind, not a cleared ring. Then the line is cleared by the road's own rules,
         /// the ground levelled to where the player stands, and a frame later, once the
-        /// terrain a footing is read from is the new one, the fence goes up a side at a
-        /// time. A side stands complete in the frame it appears - a fresh piece starts at
-        /// full support, so that is all a roof needs - and the ring grows round rather
-        /// than stalling the game on a thousand pieces at once.
-        ///
-        /// On its own a stake stands on the lowest ground under it, so the ring steps
-        /// with a slope. With a walkway or a roof the floors and panels have to line up,
-        /// so a whole side takes its lowest footing - no stake may float - and on uneven
-        /// ground that is what levelling is for. Deep water, a no-build location or a
-        /// building on a stake's place leaves that place out, walkway and roof with it.
+        /// terrain a footing is read from is the new one, every place round the ring is
+        /// judged while none of it stands, and it goes up a side at a time. A side stands
+        /// complete in the frame it appears - a fresh piece starts at full support, so
+        /// that is all a roof needs - and the ring grows round rather than stalling the
+        /// game on a thousand pieces at once.
         ///
         /// Levelled, the fence is part of the undo step the levelling records, so undo
         /// puts the ground back and takes the fence down together.
@@ -212,21 +532,14 @@ namespace AstvardServerMod
             // since the pieces are free and the clearing cannot be undone.
             if (!IsAdminUnlocked) yield break;
 
-            var stakePrefab = FencePiecePrefab(scene, FencePrefab);
-            if (stakePrefab == null) yield break;
-
-            var floorPrefab = IsFenceWalkway ? FencePiecePrefab(scene, FloorPrefab) : null;
-            var roofPrefab = IsFenceRoof ? FencePiecePrefab(scene, RoofPrefab) : null;
-            var postPrefab = IsFenceRoof ? FencePiecePrefab(scene, PostPrefab) : null;
-            var walkway = floorPrefab != null;
-            var roof = roofPrefab != null && postPrefab != null;
-            var sections = walkway || roof;
+            var kit = FenceKitFor(scene);
+            if (kit == null) yield break;
 
             var radius = Mathf.Clamp(ParseField(FenceRadiusInput, 20f), FenceMinRadius, FenceMaxRadius);
             var centre = player.transform.position;
             var plan = Geometry.FenceRing(radius, FenceMaxPerSide, StakeWidth);
 
-            var levelHalf = sections ? SectionLevelHalf : FenceLevelHalf;
+            var levelHalf = kit.Sections ? SectionLevelHalf : FenceLevelHalf;
             var levelReach = levelHalf + FenceLevelBlend;
             List<TerrainComp> comps = null;
             List<Vector3> levelLine = null;
@@ -253,7 +566,7 @@ namespace AstvardServerMod
             try
             {
                 var cleared = ClearAlongPath(FenceLine(plan, centre, 0.5f),
-                                             sections ? SectionClearRadius : FenceClearRadius);
+                                             kit.Sections ? SectionClearRadius : FenceClearRadius);
 
                 TerrainUndoStep undo = null;
                 if (comps != null)
@@ -275,7 +588,7 @@ namespace AstvardServerMod
                     yield return null;
                 }
 
-                var stakeLift = PivotAboveBase(stakePrefab);
+                var stakeLift = PivotAboveBase(kit.Stake);
                 var panels = Geometry.SectionPanels(plan.PerSide);
                 var posts = Geometry.SectionPosts(plan.PerSide);
 
@@ -286,11 +599,13 @@ namespace AstvardServerMod
                 // posts, and its roof came down.
                 var sides = new List<FenceSide>(plan.Sides);
                 for (var side = 0; side < plan.Sides; side++)
-                    sides.Add(JudgeFenceSide(plan, side, centre, radius, panels, posts, walkway, roof));
+                    sides.Add(JudgeFenceSide(plan, side, centre, radius, panels, posts,
+                                             kit.Walkway, kit.Roofed, null));
 
                 var creator = player.GetPlayerID();
                 var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
                 var built = new List<ZDOID>();
+                var placements = new List<FencePlacement>();
                 var skipped = 0;
                 var roofless = 0;
 
@@ -299,45 +614,12 @@ namespace AstvardServerMod
                     if (ZNetScene.instance == null || Player.m_localPlayer == null) break;
 
                     skipped += fs.Skipped;
-                    if (roof && !fs.Roofed) roofless++;
+                    if (kit.Roofed && !fs.Roofed) roofless++;
 
-                    if (fs.Lowest < float.MaxValue)
-                    {
-                        var turn = Quaternion.Euler(0f, fs.Yaw, 0f);
-                        for (var j = 0; j < plan.PerSide; j++)
-                        {
-                            if (!fs.Standing[j]) continue;
-                            var baseY = sections ? fs.Lowest : fs.Feet[j].y;
-                            PlaceFencePiece(stakePrefab, new Vector3(fs.Feet[j].x, baseY + stakeLift, fs.Feet[j].z),
-                                            turn, creator, platform, built);
-                        }
-
-                        var pivot = Vector3.up * (fs.Lowest + stakeLift);
-                        for (var j = 0; j < panels.Length; j++)
-                        {
-                            var at = fs.Middle + fs.Along * panels[j] + pivot;
-
-                            if (fs.Floor[j])
-                                PlaceFencePiece(floorPrefab, at + Vector3.up * WalkwayRise - fs.Outward * WalkwayInset,
-                                                turn, creator, platform, built);
-
-                            if (fs.Roofed && fs.Roof[j])
-                            {
-                                PlaceFencePiece(roofPrefab, at + Vector3.up * RoofLowRise + fs.Outward * RoofReach,
-                                                turn, creator, platform, built);
-                                PlaceFencePiece(roofPrefab, at + Vector3.up * RoofHighRise - fs.Outward * RoofReach,
-                                                turn, creator, platform, built);
-                            }
-                        }
-
-                        if (fs.Roofed)
-                        {
-                            foreach (var post in posts)
-                                foreach (var rise in PostRises)
-                                    PlaceFencePiece(postPrefab, fs.Middle + fs.Along * post + pivot + Vector3.up * rise,
-                                                    turn, creator, platform, built);
-                        }
-                    }
+                    placements.Clear();
+                    LayOutSide(fs, plan, kit, stakeLift, panels, posts, placements);
+                    foreach (var placement in placements)
+                        PlaceFencePiece(placement.Prefab, placement.At, placement.Turn, creator, platform, built);
 
                     yield return null;
                 }
@@ -345,7 +627,7 @@ namespace AstvardServerMod
                 _lastFence = built;
                 if (undo != null) undo.Pieces = built;
 
-                var parts = "частокол" + (walkway ? ", помост" : "") + (roof ? ", крыша" : "");
+                var parts = "частокол" + (kit.Walkway ? ", помост" : "") + (kit.Roofed ? ", крыша" : "");
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     $"Забор {radius:0.#} м ({parts}): деталей {built.Count}"
                     + (undo != null ? ", выровнен" : "")
@@ -353,7 +635,7 @@ namespace AstvardServerMod
                     + (skipped > 0 ? $", мест пропущено: {skipped}" : "")
                     + (roofless > 0 ? $", сторон без крыши: {roofless}" : ""));
                 Log.LogInfo($"[AstvardServerMod] Fence r={radius:F1} sides={plan.Sides} perSide={plan.PerSide} " +
-                            $"spacing={plan.Spacing:F2} walkway={walkway} roof={roof} levelled={undo != null} " +
+                            $"spacing={plan.Spacing:F2} walkway={kit.Walkway} roof={kit.Roofed} levelled={undo != null} " +
                             $"pieces={built.Count} skipped={skipped} roofless={roofless} cleared={cleared} at {centre}");
             }
             finally
@@ -363,11 +645,50 @@ namespace AstvardServerMod
             }
         }
 
-        private static GameObject FencePiecePrefab(ZNetScene scene, string name)
+        /// <summary>
+        /// Every piece one judged side puts up, and how each stands - the build and the
+        /// projection both lay a side out through here, so they cannot disagree.
+        ///
+        /// On its own a stake stands on the lowest ground under it, so the ring steps with
+        /// a slope. With a walkway or a roof the floors and panels have to line up, so the
+        /// whole side takes its lowest footing and no stake floats; on uneven ground that
+        /// is what levelling is for.
+        /// </summary>
+        private static void LayOutSide(FenceSide fs, FencePlan plan, FenceKit kit, float stakeLift,
+                                       float[] panels, float[] posts, List<FencePlacement> into)
         {
-            var prefab = scene.GetPrefab(name);
-            if (prefab == null) Log.LogWarning($"[AstvardServerMod] No fence prefab '{name}'.");
-            return prefab;
+            if (fs.Lowest == float.MaxValue) return;
+
+            var turn = Quaternion.Euler(0f, fs.Yaw, 0f);
+            for (var j = 0; j < plan.PerSide; j++)
+            {
+                if (!fs.Standing[j]) continue;
+                var baseY = kit.Sections ? fs.Lowest : fs.Feet[j].y;
+                into.Add(new FencePlacement(kit.Stake,
+                    new Vector3(fs.Feet[j].x, baseY + stakeLift, fs.Feet[j].z), turn));
+            }
+
+            var pivot = Vector3.up * (fs.Lowest + stakeLift);
+            for (var j = 0; j < panels.Length; j++)
+            {
+                var at = fs.Middle + fs.Along * panels[j] + pivot;
+
+                if (fs.Floor[j])
+                    into.Add(new FencePlacement(kit.Floor,
+                        at + Vector3.up * WalkwayRise - fs.Outward * WalkwayInset, turn));
+
+                if (fs.Roofed && fs.Roof[j])
+                {
+                    into.Add(new FencePlacement(kit.Roof, at + Vector3.up * RoofLowRise + fs.Outward * RoofReach, turn));
+                    into.Add(new FencePlacement(kit.Roof, at + Vector3.up * RoofHighRise - fs.Outward * RoofReach, turn));
+                }
+            }
+
+            if (!fs.Roofed) return;
+
+            foreach (var post in posts)
+                foreach (var rise in PostRises)
+                    into.Add(new FencePlacement(kit.Post, fs.Middle + fs.Along * post + pivot + Vector3.up * rise, turn));
         }
 
         private static void PlaceFencePiece(GameObject prefab, Vector3 at, Quaternion turn, long creator,
@@ -386,8 +707,12 @@ namespace AstvardServerMod
         /// under it and a little below that. No footing in deep water - shallow water at
         /// a shore is fine, a ring round a lakeside base should not open onto the lake -
         /// nor in a no-build location, nor inside a building already standing on the line.
+        ///
+        /// <paramref name="flatGround"/>, when given, is the ground as levelling will
+        /// leave it, for a projection shown before the levelling has happened: the stake
+        /// is shown standing on that, and water it will fill is no reason to leave it out.
         /// </summary>
-        private static bool FindStakeFooting(Vector3 centre, Stake stake, out Vector3 footing)
+        private static bool FindStakeFooting(Vector3 centre, Stake stake, float? flatGround, out Vector3 footing)
         {
             footing = Vector3.zero;
             var zones = ZoneSystem.instance;
@@ -397,16 +722,24 @@ namespace AstvardServerMod
             var along = new Vector3(Mathf.Cos(yaw), 0f, -Mathf.Sin(yaw));
             var middle = new Vector3(centre.x + stake.At.X, 0f, centre.z + stake.At.Z);
 
-            var lowest = float.MaxValue;
-            var underMiddle = 0f;
-            foreach (var foot in StakeFeet)
+            float lowest;
+            if (flatGround.HasValue)
             {
-                if (!zones.GetGroundHeight(middle + along * foot, out var ground)) return false;
-                lowest = Mathf.Min(lowest, ground);
-                if (foot == 0f) underMiddle = ground;
+                lowest = flatGround.Value;
             }
+            else
+            {
+                lowest = float.MaxValue;
+                var underMiddle = 0f;
+                foreach (var foot in StakeFeet)
+                {
+                    if (!zones.GetGroundHeight(middle + along * foot, out var ground)) return false;
+                    lowest = Mathf.Min(lowest, ground);
+                    if (foot == 0f) underMiddle = ground;
+                }
 
-            if (underMiddle < zones.m_waterLevel - 1f) return false;
+                if (underMiddle < zones.m_waterLevel - 1f) return false;
+            }
 
             footing = new Vector3(middle.x, lowest - FenceSink, middle.z);
             if (Location.IsInsideNoBuildLocation(footing)) return false;
@@ -457,7 +790,8 @@ namespace AstvardServerMod
         /// stays shut either way.
         /// </summary>
         private static FenceSide JudgeFenceSide(FencePlan plan, int side, Vector3 centre, float radius,
-                                                float[] panels, float[] posts, bool walkway, bool roof)
+                                                float[] panels, float[] posts, bool walkway, bool roof,
+                                                float? flatGround)
         {
             var yaw = plan.Stakes[side * plan.PerSide].Yaw;
             var angle = yaw * Mathf.Deg2Rad;
@@ -476,7 +810,8 @@ namespace AstvardServerMod
 
             for (var j = 0; j < plan.PerSide; j++)
             {
-                fs.Standing[j] = FindStakeFooting(centre, plan.Stakes[side * plan.PerSide + j], out fs.Feet[j]);
+                fs.Standing[j] = FindStakeFooting(centre, plan.Stakes[side * plan.PerSide + j], flatGround,
+                                                  out fs.Feet[j]);
                 if (fs.Standing[j]) fs.Lowest = Mathf.Min(fs.Lowest, fs.Feet[j].y);
                 else fs.Skipped++;
             }

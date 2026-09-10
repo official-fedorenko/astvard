@@ -82,7 +82,30 @@ namespace AstvardServerMod
 
         internal static bool PlacementHoldsInput
         {
-            get { return IsPlacing || Time.time < _inputHeldUntil; }
+            get { return IsPlacing || IsFencePreviewing || Time.time < _inputHeldUntil; }
+        }
+
+        private static int _escapeUsedFrame = -1;
+
+        /// <summary>Called when one of our tools has taken an Escape press for itself.</summary>
+        internal static void NoteEscapeUsed()
+        {
+            _escapeUsedFrame = Time.frameCount;
+        }
+
+        /// <summary>
+        /// Whether an Escape press this frame is ours rather than the game's: a tool is
+        /// holding it, or one already used it. Both halves, because which Update reads the
+        /// key first - ours or the game's Menu - is not fixed: if the menu goes first our
+        /// tool is still up, if we go first it is just gone but the press was ours.
+        /// </summary>
+        internal static bool EscapeBelongsToTool
+        {
+            get
+            {
+                return RoadInProgress || BridgeInProgress || IsPlacing || IsFencePreviewing
+                       || _escapeUsedFrame == Time.frameCount;
+            }
         }
 
         // Placement adjustments driven by Q/E and shift+Q/E.
@@ -356,12 +379,18 @@ namespace AstvardServerMod
             UpdatePanelInputBlocking();
             UpdateRoadPreview();
             UpdateBridgePreview();
+            UpdateFencePreview();
+
+            // The fence's projection answers the same two keys a blueprint's does.
+            if (HandleFencePreviewInput()) return;
 
             // Escape gets the road and the bridge out of the way too, and it has to be
             // read before the placement guard below — a marked start is not a placement.
             if ((RoadInProgress || BridgeInProgress) && Input.GetKeyDown(KeyCode.Escape)
                 && !InventoryGui.IsVisible() && Chat.instance?.HasFocus() != true)
             {
+                NoteEscapeUsed();
+
                 // Asked separately: CancelRoad answers "Отменено" whether or not a road
                 // was going, so calling both would answer twice for one press.
                 if (RoadInProgress) CancelRoad();
@@ -417,6 +446,7 @@ namespace AstvardServerMod
 
             if (Input.GetKeyDown(KeyCode.Escape))
             {
+                NoteEscapeUsed();
                 CancelPlacement();
                 return;
             }
