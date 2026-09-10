@@ -34,8 +34,15 @@ npm start --prefix backend           # сайт на :3001, читает ../.env
 `-WindowStyle Hidden` — иначе на рабочем столе хозяина машины открывается окно cmd,
 которое там никому не нужно: весь вывод и так пишется в `-logFile`.
 
-```bash
-powershell -c "Start-Process 'C:\Games\steamapps\common\Valheim dedicated server\start_astvard.bat' -WorkingDirectory 'C:\Games\steamapps\common\Valheim dedicated server' -WindowStyle Hidden"
+**Запускать из PowerShell, не из Bash.** Сервер, поднятый из Bash через
+`powershell -c "Start-Process …"`, потом глух к Ctrl+C: `send_ctrl_c.ps1` отрабатывает с
+кодом 0, а игра не выходит. Похоже, запрет Ctrl+C наследуется от оболочки Bash через всю
+цепочку до `valheim_server.exe`. Проверено 10.09.2026 на двух экземплярах подряд:
+поднятый из Bash простоял минуту после сигнала и был убит; поднятый той же командой из
+PowerShell вышел за 4.4 с и записал сохранение № 19.
+
+```powershell
+Start-Process 'C:\Games\steamapps\common\Valheim dedicated server\start_astvard.bat' -WorkingDirectory 'C:\Games\steamapps\common\Valheim dedicated server' -WindowStyle Hidden
 ```
 
 **Останавливать — только Ctrl+C в его консоль.** Тогда игра пишет мир на выходе: в логе
@@ -45,8 +52,11 @@ powershell -c "Start-Process 'C:\Games\steamapps\common\Valheim dedicated server
 скрыто, поэтому Ctrl+C нажимает `valheim-mod/server/send_ctrl_c.ps1`, и только отдельным
 скрытым процессом: ему приходится бросить свою консоль и подцепиться к консоли сервера.
 `cmd.exe` от bat после этого остаётся висеть в скрытом окне (судя по всему, на «Terminate
-batch job (Y/N)?») — его добить. Проверено 10.09.2026: сервер вышел за 2.6 с и записал
-сохранение № 17. Из корня репозитория:
+batch job (Y/N)?») — его добить, но **только после того, как сервер вышел**: убитый
+раньше `cmd.exe` сервер не остановит. Если за минуту сервер не вышел, он глух к Ctrl+C
+(см. выше про Bash) — тогда сверить время последнего `World save (5/5) done` с последним
+действием игроков и только потом убивать. Проверено 10.09.2026: сервер вышел за 2.6 с и
+записал сохранение № 17. Из корня репозитория:
 
 ```powershell
 $server = (Get-Process valheim_server).Id
