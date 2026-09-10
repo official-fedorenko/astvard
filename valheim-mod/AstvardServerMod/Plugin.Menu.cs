@@ -603,6 +603,15 @@ namespace AstvardServerMod
             });
             UpdateRoadClearButtonLabel();
 
+            RoadSmoothButton = MakeButton(gui, "", () =>
+            {
+                IsRoadSmoothing = !IsRoadSmoothing;
+                UpdateRoadSmoothButtonLabel();
+                UpdateRoadHint();
+                Log.LogInfo($"[AstvardServerMod] Road smoothing: {IsRoadSmoothing}");
+            });
+            UpdateRoadSmoothButtonLabel();
+
             RoadLeftButton = MakeButton(gui, "Изгиб влево", () =>
             {
                 _roadBendLeft = true;
@@ -1261,6 +1270,7 @@ namespace AstvardServerMod
             SetActive(RoadStoneButton, MenuState == StateRoad);
             SetActive(RoadDirtButton, MenuState == StateRoad);
             SetActive(RoadClearButton, admin && MenuState == StateRoad);
+            SetActive(RoadSmoothButton, MenuState == StateRoad);
             SetActive(RoadLeftButton, MenuState == StateRoad);
             SetActive(RoadRightButton, MenuState == StateRoad);
             SetActive(RoadStartButton, MenuState == StateRoad);

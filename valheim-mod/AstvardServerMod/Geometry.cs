@@ -144,6 +144,104 @@ namespace AstvardServerMod
             maxZ = ZoneOf(z + radius - edge, zoneSize);
         }
 
+        /// <summary>
+        /// A height profile smoothed along its length, for a road that follows the land
+        /// without its bumps.
+        ///
+        /// Two passes of a centred moving average, which together make a triangular
+        /// kernel - no kink left where a lump used to be. The window shrinks towards
+        /// either end, down to nothing at the ends themselves, and that is what makes the
+        /// road meet the ground exactly where it starts and where it stops. And since
+        /// every window is symmetric, a profile that is already a straight slope comes
+        /// out as it went in: a road up an even hillside is left alone, and only the
+        /// lumps on it are taken off.
+        /// </summary>
+        public static float[] SmoothProfile(IList<float> heights, int halfWindow)
+        {
+            var n = heights.Count;
+            var result = new float[n];
+            for (var i = 0; i < n; i++) result[i] = heights[i];
+            if (n < 3 || halfWindow < 1) return result;
+
+            var source = new float[n];
+            for (var pass = 0; pass < 2; pass++)
+            {
+                Array.Copy(result, source, n);
+                for (var i = 0; i < n; i++)
+                {
+                    var h = Math.Min(halfWindow, Math.Min(i, n - 1 - i));
+                    var sum = 0.0;
+                    for (var k = i - h; k <= i + h; k++) sum += source[k];
+                    result[i] = (float)(sum / (2 * h + 1));
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Where along a polyline a point is nearest, as a fractional index - 2.5 is half
+        /// way from the third point to the fourth - together with the distance to it.
+        /// </summary>
+        public static float NearestOnPath(IList<Vec2> path, float x, float z, out float distance)
+        {
+            distance = float.MaxValue;
+            if (path.Count == 0) return 0f;
+
+            if (path.Count == 1)
+            {
+                var only = path[0];
+                distance = (float)Math.Sqrt((x - only.X) * (x - only.X) + (z - only.Z) * (z - only.Z));
+                return 0f;
+            }
+
+            var best = float.MaxValue;
+            var bestAlong = 0f;
+            for (var k = 0; k < path.Count - 1; k++)
+            {
+                var a = path[k];
+                var b = path[k + 1];
+
+                var abx = b.X - a.X;
+                var abz = b.Z - a.Z;
+                var lenSq = abx * abx + abz * abz;
+
+                var t = 0f;
+                if (lenSq > 1e-6f)
+                {
+                    t = ((x - a.X) * abx + (z - a.Z) * abz) / lenSq;
+                    if (t < 0f) t = 0f;
+                    else if (t > 1f) t = 1f;
+                }
+
+                var dx = x - (a.X + abx * t);
+                var dz = z - (a.Z + abz * t);
+                var d = dx * dx + dz * dz;
+                if (d < best)
+                {
+                    best = d;
+                    bestAlong = k + t;
+                }
+            }
+
+            distance = (float)Math.Sqrt(best);
+            return bestAlong;
+        }
+
+        /// <summary>A profile read at a fractional index, in a straight line between its points.</summary>
+        public static float ProfileAt(IList<float> profile, float index)
+        {
+            if (profile.Count == 0) return 0f;
+
+            var last = profile.Count - 1;
+            if (index <= 0f) return profile[0];
+            if (index >= last) return profile[last];
+
+            var k = (int)Math.Floor(index);
+            var f = index - k;
+            return profile[k] + (profile[k + 1] - profile[k]) * f;
+        }
+
         /// <summary>Mirrors Heightmap.WorldToVertexMask for one axis.</summary>
         public static int VertexAt(float world, float origin, float scale, int half)
         {

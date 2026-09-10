@@ -69,6 +69,25 @@ namespace AstvardServerMod
 
         internal static GameObject RoadClearButton;
 
+        internal static GameObject RoadSmoothButton;
+
+        /// <summary>
+        /// Whether a road also evens out the ground it runs over, the way a hoe would:
+        /// flat across its width, and along its length following the land with the lumps
+        /// taken off. Off by default. Unlike clearing, it is everybody's, like the road
+        /// and the levelling tool beside it - and unlike clearing, undo takes it back.
+        /// </summary>
+        internal static bool IsRoadSmoothing;
+
+        private static void UpdateRoadSmoothButtonLabel()
+        {
+            var label = RoadSmoothButton != null
+                ? RoadSmoothButton.GetComponentInChildren<Text>(true)
+                : null;
+            if (label != null)
+                label.text = IsRoadSmoothing ? "Сглаживать: вкл" : "Сглаживать: выкл";
+        }
+
         /// <summary>
         /// Whether a road, or a pad laid around the player, also takes out the trees and
         /// rocks standing in it. Off by default: unlike the paint, what it removes cannot
@@ -153,14 +172,15 @@ namespace AstvardServerMod
 
             var kind = _roadPaved ? "каменная" : "земляная";
             var bend = _roadBendLeft ? "влево" : "вправо";
+            var smooth = IsRoadSmoothing ? $"{NEWLINE}Землю под дорожкой сгладит." : "";
             var clear = RoadClearingActive
                 ? $"{NEWLINE}Деревья и камни на пути снесёт —{NEWLINE}откат их не вернёт."
                 : "";
             label.text = _roadStarted
                 ? $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
-                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить.{clear}"
+                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить.{smooth}{clear}"
                 : $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Встань в начало дорожки{NEWLINE}"
-                  + $"и нажми «Начать».{clear}";
+                  + $"и нажми «Начать».{smooth}{clear}";
         }
 
         private static readonly List<Vector3> RoadPath = new List<Vector3>();
@@ -399,6 +419,160 @@ namespace AstvardServerMod
                     return false;
 
             return true;
+        }
+
+        // ---------------- smoothing ----------------
+
+        /// <summary>
+        /// How far to either side of the road the reshaped ground runs out. Wide enough
+        /// that a road cut into a slope does not leave a wall at its edge, narrow enough
+        /// that it does not go on to reshape the hillside beside it.
+        /// </summary>
+        private static float SmoothBlend(float radius)
+        {
+            return Mathf.Clamp(radius * 1.5f, 2f, 6f);
+        }
+
+        /// <summary>
+        /// How far along the road the averaging reaches, in path points a metre apart.
+        /// Two passes make the kernel twice this wide, so a lump shorter than about twice
+        /// this is taken off while a hill longer than that is followed. A wider road gets
+        /// a longer reach, the way a wider road is laid at a gentler grade.
+        /// </summary>
+        private static int SmoothHalfWindow(float radius)
+        {
+            return Mathf.Clamp(Mathf.RoundToInt(radius * 2f + 2f), 4, 10);
+        }
+
+        /// <summary>
+        /// Evens out the ground along the path, the way a hoe would.
+        ///
+        /// The ground under each point of the path is read as it is now - the path's own
+        /// heights are no use for this, being a straight line between its two ends - and
+        /// that profile is smoothed along its length by Geometry.SmoothProfile, which
+        /// keeps the ends where they are and leaves an even slope alone. Every vertex
+        /// within the road's half-width is then set to the smoothed height of the nearest
+        /// place on the path, so the road is flat across; past that it eases back to the
+        /// ground over the blend band, as BlendLevel does for a pad.
+        ///
+        /// A single point, the pad «Вокруг меня» lays, smooths to itself: the pad comes
+        /// out level at the height of the ground under the player.
+        /// </summary>
+        private static void SmoothAlongPath(List<Vector3> path, List<TerrainComp> comps, float radius)
+        {
+            if (path == null || path.Count == 0 || comps == null || comps.Count == 0) return;
+
+            var heights = new List<float>(path.Count);
+            var last = path[0].y;
+            foreach (var p in path)
+            {
+                // A point over ground that is not loaded keeps the last height read, which
+                // is the least surprising thing a gap in the profile can be filled with.
+                if (Heightmap.GetHeight(p, out var h)) last = h;
+                heights.Add(last);
+            }
+
+            var profile = Geometry.SmoothProfile(heights, SmoothHalfWindow(radius));
+
+            var flat = new List<Vec2>(path.Count);
+            foreach (var p in path) flat.Add(new Vec2(p.x, p.z));
+
+            var blend = SmoothBlend(radius);
+            foreach (var comp in comps) LevelAlong(comp, flat, profile, radius, blend);
+        }
+
+        /// <summary>
+        /// Writes one zone's share of the smoothing into its TerrainComp, with the same
+        /// bookkeeping BlendLevel and the game's own LevelTerrain use.
+        /// </summary>
+        private static void LevelAlong(TerrainComp comp, List<Vec2> flat, float[] profile,
+                                       float radius, float blend)
+        {
+            var hmap = FHmap.GetValue(comp) as Heightmap;
+            var levelDelta = FLevelDelta.GetValue(comp) as float[];
+            var smoothDelta = FSmoothDelta.GetValue(comp) as float[];
+            var modified = FModified.GetValue(comp) as bool[];
+            if (hmap == null || levelDelta == null || smoothDelta == null || modified == null) return;
+
+            var width = (int)FWidth.GetValue(comp);
+            var size = width + 1;
+            var scale = hmap.m_scale;
+            if (scale <= 0f || levelDelta.Length < size * size) return;
+
+            // The height grid as Heightmap.WorldToVertex lays it out: a half-width offset
+            // of width / 2, the same number the paint grid's (width + 1) / 2 comes to for
+            // the game's even widths. Heights are relative to the heightmap's own
+            // transform, which is also the frame GetHeight answers in below.
+            var half = width / 2;
+            var origin = hmap.transform.position;
+            var reach = radius + blend;
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (var p in flat)
+            {
+                if (p.X < minX) minX = p.X;
+                if (p.X > maxX) maxX = p.X;
+                if (p.Z < minZ) minZ = p.Z;
+                if (p.Z > maxZ) maxZ = p.Z;
+            }
+
+            var j0 = Mathf.Max(0, Geometry.VertexAt(minX - reach, origin.x, scale, half));
+            var j1 = Mathf.Min(size - 1, Geometry.VertexAt(maxX + reach, origin.x, scale, half));
+            var i0 = Mathf.Max(0, Geometry.VertexAt(minZ - reach, origin.z, scale, half));
+            var i1 = Mathf.Min(size - 1, Geometry.VertexAt(maxZ + reach, origin.z, scale, half));
+            if (j0 > j1 || i0 > i1) return;
+
+            // Where in this zone anything moved, for the grass below.
+            float tMinX = float.MaxValue, tMaxX = float.MinValue;
+            float tMinZ = float.MaxValue, tMaxZ = float.MinValue;
+
+            for (var i = i0; i <= i1; i++)
+            {
+                var wz = Geometry.WorldAt(i, origin.z, scale, half);
+                for (var j = j0; j <= j1; j++)
+                {
+                    var wx = Geometry.WorldAt(j, origin.x, scale, half);
+
+                    var along = Geometry.NearestOnPath(flat, wx, wz, out var distance);
+                    if (distance > reach) continue;
+
+                    var target = Geometry.ProfileAt(profile, along) - origin.y;
+                    var current = hmap.GetHeight(j, i);
+
+                    var desired = distance <= radius
+                        ? target
+                        : Mathf.Lerp(target, current,
+                            Mathf.SmoothStep(0f, 1f, (distance - radius) / blend));
+
+                    // Fold in and clear any pending smooth delta, then stay inside the
+                    // engine's ±8 m budget - the game's own LevelTerrain does the same.
+                    var index = i * size + j;
+                    var delta = desired - current + smoothDelta[index];
+                    smoothDelta[index] = 0f;
+                    levelDelta[index] = Mathf.Clamp(levelDelta[index] + delta, -8f, 8f);
+                    modified[index] = true;
+
+                    if (wx < tMinX) tMinX = wx;
+                    if (wx > tMaxX) tMaxX = wx;
+                    if (wz < tMinZ) tMinZ = wz;
+                    if (wz > tMaxZ) tMaxZ = wz;
+                }
+            }
+
+            if (tMinX > tMaxX) return;
+
+            // Another player's client redraws grass only inside the last operation's
+            // circle when the count goes up by exactly one. BlendLevel's circle fits a
+            // pad; a road through this zone needs one round everything that moved, or
+            // grass would be left standing in the air over the lowered stretches.
+            var centre = new Vector3((tMinX + tMaxX) * 0.5f, origin.y, (tMinZ + tMaxZ) * 0.5f);
+            var spanX = tMaxX - tMinX;
+            var spanZ = tMaxZ - tMinZ;
+
+            FOperations.SetValue(comp, (int)FOperations.GetValue(comp) + 1);
+            FLastOpPoint.SetValue(comp, centre);
+            FLastOpRadius.SetValue(comp, Mathf.Sqrt(spanX * spanX + spanZ * spanZ) * 0.5f + scale);
         }
 
         // ---------------- painting ----------------
@@ -693,7 +867,10 @@ namespace AstvardServerMod
             RoadPoints(from, to, RoadSagitta(length), 1f, RoadPath);
             if (RoadPath.Count == 0) return;
 
-            var comps = CompsForStamps(RoadPath, radius, from.y);
+            // Smoothing reaches past the paint into the blend band, and every zone it
+            // writes has to be in the list - that is also what undo records.
+            var comps = CompsForStamps(RoadPath,
+                IsRoadSmoothing ? radius + SmoothBlend(radius) : radius, from.y);
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp for the road.");
@@ -724,7 +901,8 @@ namespace AstvardServerMod
             RoadPath.Clear();
             RoadPath.Add(centre);
 
-            var comps = CompsForStamps(RoadPath, area, centre.y);
+            var comps = CompsForStamps(RoadPath,
+                IsRoadSmoothing ? area + SmoothBlend(area) : area, centre.y);
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp for the area.");
@@ -769,6 +947,10 @@ namespace AstvardServerMod
             // rather than stretch by stretch: the paint takes twenty frames, far too
             // quick for a cancel to land between them.
             var cleared = RoadClearingActive ? ClearAlongPath(path, radius) : 0;
+
+            // Before the paint, so the first stretch's save carries both, and the
+            // heightmaps the paint rebuilds show the new ground under it.
+            if (IsRoadSmoothing) SmoothAlongPath(path, comps, radius);
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             var owned = 0;
@@ -818,7 +1000,8 @@ namespace AstvardServerMod
             _roadCancelled = false;
             if (_roadPreview != null) _roadPreview.SetActive(false);
 
-            var clearedNote = cleared > 0 ? $", снесено: {cleared}" : "";
+            var clearedNote = (IsRoadSmoothing ? ", сглажена" : "")
+                              + (cleared > 0 ? $", снесено: {cleared}" : "");
             if (!stopped)
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     kind == "area"
@@ -828,7 +1011,7 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] {kind} {(_roadPaved ? "paved" : "dirt")} " +
                         $"{length:F1} m width {width:F1} brush={radius:F2} grid={scale:F2} " +
                         $"nodes={path.Count} zones={comps.Count} owned={owned} verts={painted} " +
-                        $"cleared={cleared}");
+                        $"cleared={cleared} smoothed={IsRoadSmoothing}");
         }
 
         /// <summary>
