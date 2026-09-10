@@ -44,7 +44,7 @@ namespace AstvardServerMod
         private static void SetFieldText(GameObject inputGo, string text)
         {
             var field = inputGo != null
-                ? inputGo.GetComponentInChildren<UnityEngine.UI.InputField>()
+                ? inputGo.GetComponentInChildren<UnityEngine.UI.InputField>(true)
                 : null;
             if (field != null) field.text = text ?? "";
         }
@@ -52,7 +52,7 @@ namespace AstvardServerMod
         private static string FieldText(GameObject inputGo, string fallback)
         {
             var field = inputGo != null
-                ? inputGo.GetComponentInChildren<UnityEngine.UI.InputField>()
+                ? inputGo.GetComponentInChildren<UnityEngine.UI.InputField>(true)
                 : null;
             return field == null || string.IsNullOrEmpty(field.text) ? fallback : field.text;
         }
@@ -69,7 +69,7 @@ namespace AstvardServerMod
             for (var i = 0; i < MaxTemplateButtons; i++)
             {
                 var label = CategoryButtons[i] != null
-                    ? CategoryButtons[i].GetComponentInChildren<UnityEngine.UI.Text>()
+                    ? CategoryButtons[i].GetComponentInChildren<UnityEngine.UI.Text>(true)
                     : null;
                 if (label == null) continue;
 
@@ -84,7 +84,7 @@ namespace AstvardServerMod
             for (var i = 0; i < MaxTemplateButtons; i++)
             {
                 var label = TemplateButtons[i] != null
-                    ? TemplateButtons[i].GetComponentInChildren<UnityEngine.UI.Text>()
+                    ? TemplateButtons[i].GetComponentInChildren<UnityEngine.UI.Text>(true)
                     : null;
                 if (label == null) continue;
 
@@ -101,7 +101,7 @@ namespace AstvardServerMod
             for (var i = 0; i < MaxTemplateButtons; i++)
             {
                 var label = SharedButtons[i] != null
-                    ? SharedButtons[i].GetComponentInChildren<UnityEngine.UI.Text>()
+                    ? SharedButtons[i].GetComponentInChildren<UnityEngine.UI.Text>(true)
                     : null;
                 if (label == null) continue;
 
@@ -111,7 +111,7 @@ namespace AstvardServerMod
             }
 
             var hint = SharedHint != null
-                ? SharedHint.GetComponentInChildren<UnityEngine.UI.Text>()
+                ? SharedHint.GetComponentInChildren<UnityEngine.UI.Text>(true)
                 : null;
             if (hint == null) return;
 
@@ -136,7 +136,7 @@ namespace AstvardServerMod
         private static void UpdateTemplateHints(int categoryCount, int shownCount)
         {
             var hint = TemplateHint != null
-                ? TemplateHint.GetComponentInChildren<UnityEngine.UI.Text>()
+                ? TemplateHint.GetComponentInChildren<UnityEngine.UI.Text>(true)
                 : null;
             if (hint != null)
             {
@@ -155,7 +155,7 @@ namespace AstvardServerMod
             }
 
             var editHint = TemplateEditHint != null
-                ? TemplateEditHint.GetComponentInChildren<UnityEngine.UI.Text>()
+                ? TemplateEditHint.GetComponentInChildren<UnityEngine.UI.Text>(true)
                 : null;
             if (editHint == null) return;
 

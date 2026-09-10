@@ -206,7 +206,7 @@ namespace AstvardServerMod
 
         private static void UpdateBridgeHint()
         {
-            var label = BridgeHint != null ? BridgeHint.GetComponentInChildren<Text>() : null;
+            var label = BridgeHint != null ? BridgeHint.GetComponentInChildren<Text>(true) : null;
             if (label == null) return;
 
             label.text = _bridgeStarted
@@ -220,7 +220,7 @@ namespace AstvardServerMod
         private static void UpdateBridgeCoverLabel()
         {
             var label = BridgeCoverButton != null
-                ? BridgeCoverButton.GetComponentInChildren<Text>()
+                ? BridgeCoverButton.GetComponentInChildren<Text>(true)
                 : null;
             if (label != null) label.text = IsBridgeCovered ? "Крыша: вкл" : "Крыша: выкл";
         }

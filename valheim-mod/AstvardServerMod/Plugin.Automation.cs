@@ -55,13 +55,13 @@ namespace AstvardServerMod
 
         private static void UpdateAutoCollectButtonLabel()
         {
-            var label = AutoCollectButton != null ? AutoCollectButton.GetComponentInChildren<Text>() : null;
+            var label = AutoCollectButton != null ? AutoCollectButton.GetComponentInChildren<Text>(true) : null;
             if (label != null) label.text = IsAutoCollectEnabled ? "Сбор в сундук: вкл" : "Сбор в сундук: выкл";
         }
 
         private static void UpdateFillButtonLabel()
         {
-            var label = FillButton != null ? FillButton.GetComponentInChildren<Text>() : null;
+            var label = FillButton != null ? FillButton.GetComponentInChildren<Text>(true) : null;
             if (label != null) label.text = IsAutoFillEnabled ? "Наполнение: вкл" : "Наполнение: выкл";
         }
 

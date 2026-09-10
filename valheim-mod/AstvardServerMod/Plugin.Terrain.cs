@@ -59,7 +59,7 @@ namespace AstvardServerMod
         private static void UpdateLevelGroundButtonLabel()
         {
             var label = LevelGroundButton != null
-                ? LevelGroundButton.GetComponentInChildren<Text>()
+                ? LevelGroundButton.GetComponentInChildren<Text>(true)
                 : null;
             if (label != null)
                 label.text = IsLevelGroundEnabled
@@ -115,7 +115,7 @@ namespace AstvardServerMod
 
         private static void UpdateRoadHint()
         {
-            var label = RoadHint != null ? RoadHint.GetComponentInChildren<Text>() : null;
+            var label = RoadHint != null ? RoadHint.GetComponentInChildren<Text>(true) : null;
             if (label == null) return;
 
             var kind = _roadPaved ? "каменная" : "земляная";

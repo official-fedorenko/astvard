@@ -147,7 +147,7 @@ namespace AstvardServerMod
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
                 var label = SpawnerGroupButtons[i] != null
-                    ? SpawnerGroupButtons[i].GetComponentInChildren<Text>()
+                    ? SpawnerGroupButtons[i].GetComponentInChildren<Text>(true)
                     : null;
                 if (label != null)
                     label.text = i < SpawnerGroups.Length ? SpawnerGroups[i].Label : "";
@@ -159,7 +159,7 @@ namespace AstvardServerMod
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
                 var label = SpawnerKindButtons[i] != null
-                    ? SpawnerKindButtons[i].GetComponentInChildren<Text>()
+                    ? SpawnerKindButtons[i].GetComponentInChildren<Text>(true)
                     : null;
                 if (label != null) label.text = i < ShownKinds.Count ? ShownKinds[i].Label : "";
             }

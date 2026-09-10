@@ -520,13 +520,13 @@ namespace AstvardServerMod
 
             for (var i = 0; i < MaxZoneButtons; i++)
             {
-                var zoneLabel = ZoneButtons[i] != null ? ZoneButtons[i].GetComponentInChildren<Text>() : null;
+                var zoneLabel = ZoneButtons[i] != null ? ZoneButtons[i].GetComponentInChildren<Text>(true) : null;
                 if (zoneLabel != null)
                     zoneLabel.text = i < VisibleZones.Count
                         ? ZoneLabel(ShownZones[VisibleZones[i]])
                         : "";
 
-                var ownerLabel = OwnerButtons[i] != null ? OwnerButtons[i].GetComponentInChildren<Text>() : null;
+                var ownerLabel = OwnerButtons[i] != null ? OwnerButtons[i].GetComponentInChildren<Text>(true) : null;
                 if (ownerLabel != null)
                     ownerLabel.text = i < ZoneOwners.Count
                         ? $"{ZoneOwners[i]} ({CountZonesBy(ZoneOwners[i])})"
@@ -552,7 +552,7 @@ namespace AstvardServerMod
 
         private static void UpdateZoneEditHint()
         {
-            var label = ZoneEditHint != null ? ZoneEditHint.GetComponentInChildren<Text>() : null;
+            var label = ZoneEditHint != null ? ZoneEditHint.GetComponentInChildren<Text>(true) : null;
             if (label == null) return;
 
             var zone = EditedZone();
@@ -632,7 +632,7 @@ namespace AstvardServerMod
 
         private static void UpdateZoneHint()
         {
-            var label = ZoneHint != null ? ZoneHint.GetComponentInChildren<Text>() : null;
+            var label = ZoneHint != null ? ZoneHint.GetComponentInChildren<Text>(true) : null;
             if (label == null) return;
 
             if (MenuState == StateZoneOwner)

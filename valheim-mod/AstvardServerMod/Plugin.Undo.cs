@@ -104,7 +104,7 @@ namespace AstvardServerMod
         internal static void UpdateUndoButtonLabel()
         {
             var label = UndoButton != null
-                ? UndoButton.GetComponentInChildren<UnityEngine.UI.Text>()
+                ? UndoButton.GetComponentInChildren<UnityEngine.UI.Text>(true)
                 : null;
             // Naming what will be undone matters more here than elsewhere: the change
             // may be behind the player, or off in another zone entirely.

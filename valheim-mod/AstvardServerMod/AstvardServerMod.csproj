@@ -79,6 +79,11 @@
       <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- GUIUtility.systemCopyBuffer, for the seed button. -->
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>

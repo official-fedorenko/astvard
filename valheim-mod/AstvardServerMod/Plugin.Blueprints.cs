@@ -146,7 +146,7 @@ namespace AstvardServerMod
 
         private static void UpdateSnapButtonLabel()
         {
-            var label = SnapButton != null ? SnapButton.GetComponentInChildren<Text>() : null;
+            var label = SnapButton != null ? SnapButton.GetComponentInChildren<Text>(true) : null;
             if (label != null) label.text = IsSnapEnabled ? "Прилипание: вкл" : "Прилипание: выкл";
         }
 

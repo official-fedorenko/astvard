@@ -54,6 +54,8 @@ namespace AstvardServerMod
 
         internal static GameObject InfoText;
 
+        internal static GameObject SeedCopyButton;
+
         internal static GameObject ActivateButton;
 
         internal static GameObject AdminAskButton;
@@ -156,6 +158,8 @@ namespace AstvardServerMod
             });
 
             InfoText = MakeText(gui, ProjectDescription);
+
+            SeedCopyButton = MakeButton(gui, "Скопировать сид", CopySeed);
 
             ActivateButton = MakeButton(gui, "Админ-меню", () =>
             {
@@ -948,9 +952,41 @@ namespace AstvardServerMod
         /// world they stand in. Rebuilt on every open rather than cached, since both
         /// change under the panel while it is closed.
         /// </summary>
+        /// <summary>
+        /// Puts the world's seed on the system clipboard, for a map site or for the seed
+        /// box of a new world.
+        ///
+        /// A client knows the seed even on a dedicated server: RPC_PeerInfo hands it over
+        /// on connect, because the client generates the terrain itself. ZNet.World is a
+        /// static that nothing ever clears, though, so after leaving a server it still
+        /// holds the old world. The live ZNet instance is what says there is a world to
+        /// copy from.
+        ///
+        /// systemCopyBuffer is what the game itself uses to copy text, which is the
+        /// evidence it works in this runtime.
+        /// </summary>
+        private static void CopySeed()
+        {
+            var world = ZNet.instance != null ? ZNet.World : null;
+            if (world == null || string.IsNullOrEmpty(world.m_seedName))
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Мир не загружен");
+                return;
+            }
+
+            GUIUtility.systemCopyBuffer = world.m_seedName;
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                $"Сид скопирован: {world.m_seedName}");
+        }
+
         private static void UpdateInfoText()
         {
-            var label = InfoText != null ? InfoText.GetComponentInChildren<Text>() : null;
+            // The button calls this before RefreshMenu switches the text on, so the
+            // lookup has to reach a hidden object. Without that it came back null and
+            // the update was dropped - the page only refreshed when it was CLOSED, and
+            // each open showed the snapshot from the last close. The first open of a
+            // session showed no world, seed or position at all.
+            var label = InfoText != null ? InfoText.GetComponentInChildren<Text>(true) : null;
             if (label == null) return;
 
             var text = new System.Text.StringBuilder(ProjectDescription);
@@ -1062,6 +1098,7 @@ namespace AstvardServerMod
 
             SetActive(InfoButton, MenuState == StateRoot);
             SetActive(InfoText, MenuState == StateRoot && IsInfoShown);
+            SetActive(SeedCopyButton, MenuState == StateRoot && IsInfoShown);
             SetActive(ActivateButton, admin && MenuState == StateRoot);
             SetActive(AdminAskButton, !admin && MenuState == StateRoot);
 
