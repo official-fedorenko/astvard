@@ -212,7 +212,7 @@ namespace AstvardServerMod
                          + $"от 4 до 64 м. «Поставить» покажет{NEWLINE}проекцию: ЛКМ — построить,{NEWLINE}"
                          + $"Esc — отменить. P — закрепить её{NEWLINE}на месте, стрелки — сдвинуть."
                          + (IsFenceLevel
-                             ? $"{NEWLINE}Землю под ним выровняет{NEWLINE}по высоте, где ты стоишь."
+                             ? $"{NEWLINE}Землю под ним выровняет{NEWLINE}по земле в середине кольца."
                              : sections
                                  ? $"{NEWLINE}На склоне помост и крыша лягут{NEWLINE}по нижнему колу стороны."
                                  : "")
@@ -282,8 +282,8 @@ namespace AstvardServerMod
 
         /// <summary>
         /// Moves a pinned projection along the ground as the player sees it: up is away
-        /// from the camera, right is to its right. The height stays where it was pinned,
-        /// which is also the height levelling works to.
+        /// from the camera, right is to its right. Levelling follows it: the height it
+        /// works to is the ground wherever the ring's middle has been moved to.
         /// </summary>
         private static void NudgeFence(float forward, float right)
         {
@@ -322,8 +322,8 @@ namespace AstvardServerMod
         /// Open the panel and change the distance or a switch, and the projection changes
         /// with it behind the panel.
         ///
-        /// With levelling on the ground is shown as it will be, flat at the player's
-        /// height, since that is where the build will find it.
+        /// With levelling on the ground is shown as it will be, flat at the height of the
+        /// ground in the ring's middle, since that is where the build will find it.
         /// </summary>
         internal static void UpdateFencePreview()
         {
@@ -363,7 +363,7 @@ namespace AstvardServerMod
             var plan = Geometry.FenceRing(radius, FenceMaxPerSide, StakeWidth);
             var panels = Geometry.SectionPanels(plan.PerSide);
             var posts = Geometry.SectionPosts(plan.PerSide);
-            float? flat = IsFenceLevel ? centre.y : (float?)null;
+            float? flat = IsFenceLevel ? FenceLevelHeight(centre) : (float?)null;
             var stakeLift = PivotAboveBase(kit.Stake);
 
             var placements = new List<FencePlacement>();
@@ -604,7 +604,7 @@ namespace AstvardServerMod
         /// Levelling is settled first, because it can be turned down - ground not loaded
         /// yet, or not loaded at all - and a turned-down fence should leave nothing
         /// behind, not a cleared ring. Then the line is cleared by the road's own rules,
-        /// the ground levelled to where the player stands, and a frame later, once the
+        /// the ground levelled to the ground at the ring's middle, and a frame later, once the
         /// terrain a footing is read from is the new one, every place round the ring is
         /// judged while none of it stands, and it goes up a side at a time. A side stands
         /// complete in the frame it appears - a fresh piece starts at full support, so
@@ -668,7 +668,8 @@ namespace AstvardServerMod
                     var flat = new List<Vec2>(levelLine.Count);
                     foreach (var point in levelLine) flat.Add(new Vec2(point.x, point.z));
                     var profile = new float[flat.Count];
-                    for (var i = 0; i < profile.Length; i++) profile[i] = centre.y;
+                    var height = FenceLevelHeight(centre);
+                    for (var i = 0; i < profile.Length; i++) profile[i] = height;
 
                     foreach (var comp in comps) LevelAlong(comp, flat, profile, levelHalf, FenceLevelBlend);
 
@@ -966,6 +967,21 @@ namespace AstvardServerMod
 
             return Physics.CheckBox(box, new Vector3(0.8f, (top - 0.5f) * 0.5f, (outer - inner) * 0.5f),
                                     turn, PieceLayer, QueryTriggerInteraction.Ignore);
+        }
+
+        /// <summary>
+        /// The height a ring is levelled to: the ground at its middle, not the player.
+        /// The two are the same for somebody standing there, but an admin sizing up a
+        /// ring from above in debug flight - one of the first rings was put down from
+        /// 85 m over 51 m ground - would otherwise have the band raised the full eight
+        /// metres the terrain allows; so would anybody standing on a floor of their own.
+        /// </summary>
+        private static float FenceLevelHeight(Vector3 centre)
+        {
+            var zones = ZoneSystem.instance;
+            return zones != null && zones.GetGroundHeight(new Vector3(centre.x, 0f, centre.z), out var ground)
+                ? ground
+                : centre.y;
         }
 
         /// <summary>
