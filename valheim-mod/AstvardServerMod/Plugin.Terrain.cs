@@ -615,6 +615,18 @@ namespace AstvardServerMod
         }
 
         /// <summary>
+        /// The line a ward refusal gains while smoothing is on. The blend band runs out
+        /// past the paint the preview draws, so without it a road can be turned down over
+        /// ground it does not look as if it touches.
+        /// </summary>
+        private static string SmoothingNote(float radius)
+        {
+            return IsRoadSmoothing
+                ? $"{NEWLINE}Сглаживание захватывает ещё {SmoothBlend(radius):F0} м по краям"
+                : "";
+        }
+
+        /// <summary>
         /// How far along the road the averaging reaches, in path points a metre apart.
         /// Two passes make the kernel twice this wide, so a lump shorter than about twice
         /// this is taken off while a hill longer than that is followed. A wider road gets
@@ -1048,10 +1060,21 @@ namespace AstvardServerMod
             RoadPoints(from, to, RoadSagitta(length), 1f, RoadPath);
             if (RoadPath.Count == 0) return;
 
-            // Smoothing reaches past the paint into the blend band, and every zone it
-            // writes has to be in the list - that is also what undo records.
-            var comps = CompsForStamps(RoadPath,
-                IsRoadSmoothing ? radius + SmoothBlend(radius) : radius, from.y, out var unloaded);
+            // Smoothing reaches past the paint into the blend band. So does the ward
+            // check, and so does the list of zones: every zone the road writes has to be
+            // in it - that is also what undo records.
+            var reach = IsRoadSmoothing ? radius + SmoothBlend(radius) : radius;
+
+            // Before any zone is looked up, so a refusal makes no compiler either; and
+            // like the refusals below, it keeps the start marked for another end.
+            if (!WardsAllowStroke("road", RoadPath, reach))
+            {
+                player.Message(MessageHud.MessageType.Center,
+                    "Дорожка задевает чужой оберег — веди её в обход" + SmoothingNote(radius));
+                return;
+            }
+
+            var comps = CompsForStamps(RoadPath, reach, from.y, out var unloaded);
             if (comps == null)
             {
                 // The start stays marked, so waiting and pressing again is all it takes.
@@ -1091,8 +1114,15 @@ namespace AstvardServerMod
             RoadPath.Clear();
             RoadPath.Add(centre);
 
-            var comps = CompsForStamps(RoadPath,
-                IsRoadSmoothing ? area + SmoothBlend(area) : area, centre.y, out var unloaded);
+            var reach = IsRoadSmoothing ? area + SmoothBlend(area) : area;
+            if (!WardsAllowStroke("area", RoadPath, reach))
+            {
+                player.Message(MessageHud.MessageType.Center,
+                    "Площадка задевает чужой оберег — уменьши радиус или отойди" + SmoothingNote(area));
+                return;
+            }
+
+            var comps = CompsForStamps(RoadPath, reach, centre.y, out var unloaded);
             if (comps == null)
             {
                 player.Message(MessageHud.MessageType.Center, unloaded
@@ -1259,6 +1289,18 @@ namespace AstvardServerMod
             // that setting down a hut reshapes the whole hillside around it.
             var blend = Mathf.Clamp(radius * 0.35f, 2f, 8f);
 
+            // Asked as a round pad, which this always is - see the flag borrowed below.
+            // Only an admin can place a blueprint today, and an admin is never refused, so
+            // this is for the day blueprints open up; the pieces will want the same
+            // question asked then.
+            if (!WardsAllowPad("pad under a build", target, radius + blend, false))
+            {
+                // Like ground not yet loaded: the build still goes down, on the ground as it is.
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "Землю под постройкой не выровнять — рядом чужой оберег");
+                return;
+            }
+
             var comps = CollectTerrainComps(target, radius + blend, out _);
             if (comps == null)
             {
@@ -1324,6 +1366,14 @@ namespace AstvardServerMod
             // longer run-out, so the user only has to pick radius and height.
             var blend = Mathf.Clamp(radius * 0.75f, 4f, 24f);
             var reach = radius + blend;
+
+            // Before any zone is looked up, so a refusal makes no compiler either.
+            if (!WardsAllowPad("levelling", target, reach, _terrainSquare))
+            {
+                player.Message(MessageHud.MessageType.Center,
+                    "Выравнивание задевает чужой оберег — уменьши радиус или отойди");
+                return;
+            }
 
             // Each zone keeps its own heightmap, so an operation spilling over a
             // zone border has to be handed to every TerrainComp it touches —

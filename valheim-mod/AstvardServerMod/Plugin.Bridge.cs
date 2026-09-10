@@ -908,6 +908,20 @@ namespace AstvardServerMod
 
             Layout(survey, BridgePlanned);
 
+            // Every piece where Raise will put it, stairs and roof included. Like the
+            // refusals above, this keeps the start marked, so aiming elsewhere is all
+            // another try takes.
+            var places = new List<Vector3>(BridgePlanned.Count);
+            foreach (var piece in BridgePlanned)
+                places.Add(_bridgeStart + survey.Facing * piece.LocalPos);
+
+            if (!WardsAllowPieces("bridge", places))
+            {
+                player.Message(MessageHud.MessageType.Center,
+                    "Мост задевает чужой оберег — веди его в обход");
+                return;
+            }
+
             _bridgeStarted = false;
             UpdateBridgeHint();
 

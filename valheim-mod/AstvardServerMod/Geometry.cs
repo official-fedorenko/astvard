@@ -471,6 +471,60 @@ namespace AstvardServerMod
             return (float)Math.Pow(t, 0.1);
         }
 
+        // ---------------- covering with discs ----------------
+
+        /// <summary>
+        /// How wide a disc round every point of a polyline must be for the discs between
+        /// them to cover everything within <paramref name="reach"/> of the line.
+        ///
+        /// The samples are not the line. Between two of them it runs on, and a place
+        /// beside the middle of that step is further from both samples than from the
+        /// line - with samples a metre apart and a reach of one, 1.12 m from each. Every
+        /// point of a step lies within half its length of one end, so half the longest
+        /// step is all the discs need on top of the reach. It is measured rather than
+        /// assumed: a curve's samples are not evenly spaced.
+        /// </summary>
+        public static float DiscCover(IList<Vec2> path, float reach)
+        {
+            var longest = 0f;
+            for (var i = 1; i < path.Count; i++)
+            {
+                var dx = path[i].X - path[i - 1].X;
+                var dz = path[i].Z - path[i - 1].Z;
+                longest = Math.Max(longest, (float)Math.Sqrt(dx * dx + dz * dz));
+            }
+
+            return reach + longest * 0.5f;
+        }
+
+        /// <summary>
+        /// Centres of discs that between them cover an axis-aligned square: the square cut
+        /// into equal cells no wider than <paramref name="cell"/>, with a disc round each
+        /// cell reaching its corners.
+        ///
+        /// One disc round the whole square has to reach its corners too, and then stands
+        /// out past the middle of every side by two fifths of the half-width - over thirty
+        /// metres on the largest pad the levelling tool makes. A disc per cell stands out
+        /// by a fifth of a cell at most.
+        /// </summary>
+        public static List<Vec2> SquareCover(Vec2 centre, float half, float cell, out float radius)
+        {
+            half = Math.Max(half, 0f);
+            var count = Math.Max(1, (int)Math.Ceiling(2.0 * half / Math.Max(cell, 0.1f)));
+            var side = 2f * half / count;
+
+            // Half a cell's diagonal: the furthest any point of it is from its middle.
+            radius = side * (float)Math.Sqrt(0.5);
+
+            var centres = new List<Vec2>(count * count);
+            for (var i = 0; i < count; i++)
+            for (var j = 0; j < count; j++)
+                centres.Add(new Vec2(centre.X - half + side * (j + 0.5f),
+                                     centre.Z - half + side * (i + 0.5f)));
+
+            return centres;
+        }
+
         // ---------------- blueprint alignment ----------------
 
         /// <summary>Yaw in degrees from the Y component of a rotation quaternion.</summary>
