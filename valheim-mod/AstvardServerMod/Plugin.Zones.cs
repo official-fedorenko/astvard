@@ -110,6 +110,12 @@ namespace AstvardServerMod
             public float Z;
             public int Radius;
             public string Owner;
+
+            /// <summary>
+            /// A player's own zone: the platform id it belongs to. Kept in the server's
+            /// config and never sent out; empty for a zone an admin made.
+            /// </summary>
+            public string OwnerId;
         }
 
         // Server: the authoritative list. Client: left empty, see ShownZones.
@@ -121,7 +127,7 @@ namespace AstvardServerMod
 
         private static readonly List<ZDO> KeptZoneObjects = new List<ZDO>();
 
-        private static string PackZones(List<KeptZone> zones)
+        private static string PackZones(List<KeptZone> zones, bool withIds)
         {
             var packed = new System.Text.StringBuilder();
             foreach (var zone in zones)
@@ -131,6 +137,9 @@ namespace AstvardServerMod
                       .Append(zone.Z.ToString("F1", Invariant)).Append(',')
                       .Append(zone.Radius.ToString(Invariant)).Append(',')
                       .Append(CleanName(zone.Owner));
+                // The id is how the server tells whose a player's zone is; nobody else
+                // needs another player's platform id, so it stays in the config.
+                if (withIds && !string.IsNullOrEmpty(zone.OwnerId)) packed.Append(',').Append(CleanName(zone.OwnerId));
             }
             return packed.ToString();
         }
@@ -153,7 +162,8 @@ namespace AstvardServerMod
                     X = x,
                     Z = z,
                     Radius = Mathf.Clamp(radius, MinZoneRadius, MaxZoneRadius),
-                    Owner = parts.Length > 3 ? parts[3] : "?"
+                    Owner = parts.Length > 3 ? parts[3] : "?",
+                    OwnerId = parts.Length > 4 ? parts[4] : "",
                 });
             }
         }
@@ -210,6 +220,7 @@ namespace AstvardServerMod
 
             RegisterTemplateRpcs();
             RegisterAdminRpcs();
+            RegisterPlayerFeatureRpcs(rpc);
         }
 
         /// <summary>
@@ -358,7 +369,7 @@ namespace AstvardServerMod
         {
             // Dropping the cache forces the next frame to rebuild from the new list,
             // so a removed zone stops being kept alive immediately.
-            _zones.Value = PackZones(Zones);
+            _zones.Value = PackZones(Zones, true);
             _sectorCacheTime = float.NegativeInfinity;
             _pokeTime = float.NegativeInfinity;
         }
@@ -377,7 +388,7 @@ namespace AstvardServerMod
             var scene = ZNetScene.instance;
             var loaded = scene != null ? scene.NrOfInstances() : 0;
 
-            ZRoutedRpc.instance?.InvokeRoutedRPC(target, RpcZoneList, PackZones(Zones), loaded);
+            ZRoutedRpc.instance?.InvokeRoutedRPC(target, RpcZoneList, PackZones(Zones, false), loaded);
         }
 
         private static void RequestZoneList()

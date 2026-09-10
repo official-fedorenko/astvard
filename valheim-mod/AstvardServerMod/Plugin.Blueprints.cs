@@ -227,7 +227,7 @@ namespace AstvardServerMod
         /// perfectly aligned, unlike a copy taken from a hand-built structure.
         /// </summary>
         /// <summary>Fills the clipboard from everything around the player.</summary>
-        private static bool FillClipboard(Player player, float radius)
+        private static bool FillClipboard(Player player, float radius, bool ownOnly = false)
         {
             var origin = player.transform.position;
             var inverse = Quaternion.Inverse(player.transform.rotation);
@@ -245,6 +245,10 @@ namespace AstvardServerMod
                 // would swallow the ghost along with the building.
                 if (GhostRoot != null && piece.transform.IsChildOf(GhostRoot.transform)) continue;
 
+                // A player copies only what they built: anything else would be a way to
+                // take somebody's house home, or to double what they paid for.
+                if (ownOnly && piece.GetCreator() != player.GetPlayerID()) continue;
+
                 var prefabName = Utils.GetPrefabName(piece.gameObject);
                 if (string.IsNullOrEmpty(prefabName)) continue;
 
@@ -259,6 +263,7 @@ namespace AstvardServerMod
             if (Clipboard.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] Nothing to copy in radius.");
+                if (ownOnly) player.Message(MessageHud.MessageType.Center, "Рядом нет твоих построек");
                 return false;
             }
 
@@ -292,13 +297,20 @@ namespace AstvardServerMod
         {
             var player = Player.m_localPlayer;
             if (player == null || _building) return;
+            if (!RuleAllows("copy"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Копирование игрокам сейчас закрыто");
+                return;
+            }
 
-            var radius = Mathf.Clamp(ParseField(CopyRadiusInput, 10f), 1f, 64f);
-            if (!FillClipboard(player, radius)) return;
+            var radius = Mathf.Clamp(ParseField(CopyRadiusInput, 10f), 1f, RuleLimit("copy", 64f));
+            if (!FillClipboard(player, radius, !IsAdminUnlocked)) return;
 
             Log.LogInfo($"[AstvardServerMod] Copied {Clipboard.Count} pieces (r={radius}), placing.");
 
             StartPlacement("копия");
+            // A player's copy is paid for when it goes up.
+            if (!IsAdminUnlocked) _playerPaidPlacement = true;
             InventoryGui.instance?.Hide();
         }
 
@@ -312,9 +324,14 @@ namespace AstvardServerMod
         {
             var player = Player.m_localPlayer;
             if (player == null || _building) return;
+            if (!RuleAllows("copy"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Копирование игрокам сейчас закрыто");
+                return;
+            }
 
-            var radius = Mathf.Clamp(ParseField(CopyRadiusInput, 10f), 1f, 64f);
-            if (!FillClipboard(player, radius)) return;
+            var radius = Mathf.Clamp(ParseField(CopyRadiusInput, 10f), 1f, RuleLimit("copy", 64f));
+            if (!FillClipboard(player, radius, !IsAdminUnlocked)) return;
 
             var name = FieldText(TemplateNameInput, "");
             var category = FieldText(TemplateCategoryInput, "");
@@ -328,8 +345,26 @@ namespace AstvardServerMod
             player.Message(MessageHud.MessageType.Center,
                 $"Шаблон сохранён: {Clipboard.Count} деталей");
 
-            MenuState = StateBuild;
+            MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
             RefreshMenu();
+        }
+
+        private static string _adminCopyHint;
+
+        /// <summary>A player's copy form says what they may copy and what it costs; an admin's stays as it was.</summary>
+        private static void UpdateCopyHint()
+        {
+            var label = CopyHint != null ? CopyHint.GetComponentInChildren<Text>(true) : null;
+            if (label == null) return;
+            if (_adminCopyHint == null) _adminCopyHint = label.text;
+
+            label.text = IsAdminUnlocked
+                ? _adminCopyHint
+                : $"Радиус (м), до {RuleLimit("copy", 64f):0}.{NEWLINE}Копируются только твои детали.{NEWLINE}"
+                  + (_copyToFile
+                      ? $"Имя и категорию задай ниже —{NEWLINE}шаблон ляжет в «Мои шаблоны»."
+                      : $"Проекция перед тобой: ЛКМ —{NEWLINE}поставить из твоих материалов,{NEWLINE}"
+                        + "Esc — отмена, P — закрепить.");
         }
 
         // What the build now being placed is called, for «Отменить постройку».
@@ -342,7 +377,8 @@ namespace AstvardServerMod
             // the server each turn themselves on after, and a click still waiting on the
             // server's word belongs to the placement before.
             _playerPlacement = false;
-            _buildAsk = null;
+            _playerPaidPlacement = false;
+            ClearBuildAsk();
             if (_fillSeeding) EndFloorSeed();
             SpawnGhosts();
             _placeYaw = 0f;
@@ -534,8 +570,22 @@ namespace AstvardServerMod
                 if (_playerPlacement)
                 {
                     _inputHeldUntil = Time.time + 0.3f;
-                    AskToBuild();
+                    AskToBuild(_playerPlacementName, BuildOnServerWord, ResumePlacement, CancelPlacement);
                     return;
+                }
+
+                // A player's own copy or template is paid for, whole, before it goes up.
+                if (_playerPaidPlacement)
+                {
+                    var shortfall = BillShortfall(player, ClipboardBill());
+                    if (shortfall != null)
+                    {
+                        _inputHeldUntil = Time.time + 0.3f;
+                        player.Message(MessageHud.MessageType.Center, shortfall);
+                        return;
+                    }
+
+                    _buildPays = true;
                 }
 
                 IsPlacing = false;
@@ -603,7 +653,8 @@ namespace AstvardServerMod
             GhostRoot.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
 
             // A floor plate always snaps: meeting a wall is the whole point of it.
-            if (!IsSnapEnabled && !_fillSeeding) return;
+            // A player snaps only while the admins let players snap.
+            if (!(IsSnapEnabled && RuleAllows("snap")) && !_fillSeeding) return;
 
             // What is built nearby barely changes between frames, so it is
             // gathered on a timer while the pair search runs every frame.
@@ -770,6 +821,21 @@ namespace AstvardServerMod
         {
             _building = true;
             var record = BeginBuild(_placementLabel);
+
+            // Paid for whole here, and whatever does not go up - a prefab this game lacks,
+            // or the rest of a build stopped partway - handed back at the end.
+            Bill owed = null;
+            if (_buildPays)
+            {
+                _buildPays = false;
+                var bill = ClipboardBill();
+                if (PayBill(player, bill))
+                {
+                    owed = bill;
+                    record.Paid = true;
+                }
+            }
+
             try
             {
                 // The ghost is already sitting exactly where the build should land.
@@ -788,7 +854,11 @@ namespace AstvardServerMod
                 {
                     // Its pieces join the step, so undoing that pad takes the build with it.
                     record.Ground = LevelUnderBuild(origin, rotation);
-                    if (record.Ground != null) record.Ground.Pieces = record.Pieces;
+                    if (record.Ground != null)
+                    {
+                        record.Ground.Pieces = record.Pieces;
+                        record.Ground.PiecesPaid = record.Paid;
+                    }
                 }
 
                 // All at once is also the safest for what holds what up: a piece made by
@@ -820,6 +890,7 @@ namespace AstvardServerMod
 
                         var view = go.GetComponent<ZNetView>();
                         if (view != null && view.IsValid()) record.Pieces.Add(view.GetZDO().m_uid);
+                        owed?.Add(entry.Prefab, -1);
                     }
                     else
                     {
@@ -844,6 +915,8 @@ namespace AstvardServerMod
             }
             finally
             {
+                RefundBill(owed);
+
                 // In finally, so a build that throws partway cannot leave _building set:
                 // every later template, copy and spawner would refuse for the session.
                 ClearGhosts();

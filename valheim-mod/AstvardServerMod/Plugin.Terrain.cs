@@ -115,19 +115,19 @@ namespace AstvardServerMod
         /// </summary>
         private static bool RoadClearingActive
         {
-            get { return IsRoadClearing && TerrainAllowed("clear"); }
+            get { return IsRoadClearing && RuleAllows("clear"); }
         }
 
         /// <summary>Smoothing as it will actually happen: switched on, and open to whoever is laying.</summary>
         private static bool RoadSmoothingActive
         {
-            get { return IsRoadSmoothing && TerrainAllowed("smooth"); }
+            get { return IsRoadSmoothing && RuleAllows("smooth"); }
         }
 
         /// <summary>Torches as they will actually be set: chosen, and open to whoever is laying.</summary>
         private static bool RoadTorchesActive
         {
-            get { return IsRoadTorches && TerrainAllowed("torches"); }
+            get { return IsRoadTorches && RuleAllows("torches"); }
         }
 
         private static void UpdateRoadClearButtonLabel()
@@ -278,7 +278,7 @@ namespace AstvardServerMod
                     label.text = $"Шаг между факелами, от 4 до 50 м.{NEWLINE}Потом выбери, какие ставить.";
                     break;
                 case StateRoadArea:
-                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до {TerrainLimit("area", MaxAreaRadius):0} м. Кладка и всё{NEWLINE}"
+                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до {RuleLimit("area", MaxAreaRadius):0} м. Кладка и всё{NEWLINE}"
                                  + $"остальное — как у дорожки.{notes}";
                     break;
                 default:
@@ -286,7 +286,7 @@ namespace AstvardServerMod
                         ? $"Начало отмечено — иди в конец{NEWLINE}и нажми ЛКМ или «Закончить».{NEWLINE}"
                           + $"Esc — отменить. P — закрепить{NEWLINE}конец, стрелки — сдвинуть.{notes}"
                         : $"Встань в начало дорожки{NEWLINE}и нажми «Начать».{notes}"
-                          + TerrainLimitNote("road", MaxRoadLength);
+                          + RuleLimitNote("road", MaxRoadLength);
                     break;
             }
         }
@@ -1080,7 +1080,7 @@ namespace AstvardServerMod
             }
 
             // The start may have been marked before the admins closed roads.
-            if (!TerrainAllowed("road"))
+            if (!RuleAllows("road"))
             {
                 CancelRoad();
                 player.Message(MessageHud.MessageType.Center, "Дорожки игрокам сейчас закрыты");
@@ -1097,7 +1097,7 @@ namespace AstvardServerMod
                 return;
             }
 
-            var maxLength = TerrainLimit("road", MaxRoadLength);
+            var maxLength = RuleLimit("road", MaxRoadLength);
             if (length > maxLength)
             {
                 player.Message(MessageHud.MessageType.Center,
@@ -1166,13 +1166,13 @@ namespace AstvardServerMod
             var player = Player.m_localPlayer;
             if (player == null) return;
 
-            if (!TerrainAllowed("area"))
+            if (!RuleAllows("area"))
             {
                 player.Message(MessageHud.MessageType.Center, "Площадки игрокам сейчас закрыты");
                 return;
             }
 
-            var area = Mathf.Clamp(ParseField(RoadAreaInput, 8f), 2f, TerrainLimit("area", MaxAreaRadius));
+            var area = Mathf.Clamp(ParseField(RoadAreaInput, 8f), 2f, RuleLimit("area", MaxAreaRadius));
             var centre = player.transform.position;
             var scale = PaintGridScale(centre);
 
@@ -1410,7 +1410,7 @@ namespace AstvardServerMod
             if (player == null) return;
 
             // The page may have been open when the admins closed it.
-            if (!TerrainAllowed("level"))
+            if (!RuleAllows("level"))
             {
                 player.Message(MessageHud.MessageType.Center, "Выравнивание игрокам сейчас закрыто");
                 return;
@@ -1418,7 +1418,7 @@ namespace AstvardServerMod
 
             var radius = ParseField(RadiusInput, 8f);
             var asked = ParseField(HeightInput, 0f);
-            radius = Mathf.Clamp(radius, 1f, TerrainLimit("level", MaxLevelRadius));
+            radius = Mathf.Clamp(radius, 1f, RuleLimit("level", MaxLevelRadius));
 
             var playerPos = player.transform.position;
 

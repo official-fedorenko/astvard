@@ -188,9 +188,10 @@ namespace AstvardServerMod
                     : $"Откат: {step.Label}";
             // A step can carry torches, a fence or a whole blueprint; say which.
             if (torches > 0)
-                text += step.PiecePrefab != null && step.PiecePrefab.Contains("torch")
-                    ? $", факелов убрано: {torches}"
-                    : $", деталей убрано: {torches}";
+                text += (step.PiecePrefab != null && step.PiecePrefab.Contains("torch")
+                            ? $", факелов убрано: {torches}"
+                            : $", деталей убрано: {torches}")
+                        + (step.PiecesPaid ? ", материалы под ногами" : "");
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, text);
 
             Log.LogInfo($"[AstvardServerMod] Undo '{step.Label}': {restored} of "
@@ -206,13 +207,18 @@ namespace AstvardServerMod
         {
             if (step.Pieces == null || step.Pieces.Count == 0) return 0;
 
-            var removed = RemovePieces(step.Pieces);
-            if (step.PiecesPaid) GiveBackTorches(step.PiecePrefab, removed);
+            // Torches, a paid fence, a paid copy: each piece that went gives back its own cost.
+            var paid = step.PiecesPaid ? new Bill() : null;
+            var removed = RemovePieces(step.Pieces, paid);
+            RefundBill(paid);
             return removed;
         }
 
-        /// <summary>Takes down whichever of these pieces are loaded here; returns how many went.</summary>
-        private static int RemovePieces(IEnumerable<ZDOID> pieces)
+        /// <summary>
+        /// Takes down whichever of these pieces are loaded here; returns how many went. Each
+        /// one that went is added to <paramref name="removedInto"/>, when given, for a refund.
+        /// </summary>
+        private static int RemovePieces(IEnumerable<ZDOID> pieces, Bill removedInto = null)
         {
             if (pieces == null || ZNetScene.instance == null) return 0;
 
@@ -226,6 +232,7 @@ namespace AstvardServerMod
 
                 // Destroy erases the world record only for its owner; for anyone else's
                 // copy it deletes the local view and leaves the piece standing for all.
+                removedInto?.Add(Utils.GetPrefabName(go));
                 view.ClaimOwnership();
                 ZNetScene.instance.Destroy(go);
                 removed++;

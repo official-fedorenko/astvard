@@ -40,9 +40,23 @@ namespace AstvardServerMod
 
         private static string _playerPlacementName;
 
+        // Client side: this placement is a player's own copy or template, paid for from
+        // their bag when it goes up; and the build now starting is to be paid for.
+        private static bool _playerPaidPlacement;
+
+        private static bool _buildPays;
+
         private static string _buildAsk;
 
         private static float _buildAskedAt;
+
+        // What the click does once the server has answered: build, give the projection back
+        // to wait the pause out, or put it away for good.
+        private static System.Action _buildAskGo;
+
+        private static System.Action _buildAskResume;
+
+        private static System.Action _buildAskClosed;
 
         private static float _playerHintTickAt;
 
@@ -132,11 +146,26 @@ namespace AstvardServerMod
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
 
-            var template = ReadTemplate(SharedPath(name));
-            if (template == null || !template.ForPlayers)
+            // A floor or a fence has no template to look at, only its rule: closed says no,
+            // paid says yes without a count - a paid build prints nothing, so it has no pause
+            // to keep - and free goes on to the pause like a template.
+            if (name == "#floor" || name == "#fence")
             {
-                Answer(sender, name, -1);
-                return;
+                var mode = ServerRuleValue(name.Substring(1));
+                if (mode != ChoiceFree)
+                {
+                    Answer(sender, name, mode == ChoicePaid ? 0 : -1);
+                    return;
+                }
+            }
+            else
+            {
+                var template = ReadTemplate(SharedPath(name));
+                if (template == null || !template.ForPlayers)
+                {
+                    Answer(sender, name, -1);
+                    return;
+                }
             }
 
             var who = SenderId();
@@ -178,25 +207,30 @@ namespace AstvardServerMod
         {
             _playerBuildMinutes = Mathf.Max(0, minutes);
 
-            // The click on a placed ghost.
+            // The click on a projection.
             if (_buildAsk != null && _buildAsk == name)
             {
-                _buildAsk = null;
+                var go = _buildAskGo;
+                var resume = _buildAskResume;
+                var closed = _buildAskClosed;
+                ClearBuildAsk();
+
                 if (wait == 0)
                 {
-                    BuildOnServerWord();
+                    NotePlayerBuild();
+                    go?.Invoke();
                     return;
                 }
 
                 if (wait < 0)
                 {
-                    CancelPlacement();
+                    closed?.Invoke();
                     SayClosedToPlayers(name);
                     return;
                 }
 
                 // Back in hand: to wait the pause out, or to put away with Esc.
-                if (GhostRoot != null) IsPlacing = true;
+                resume?.Invoke();
                 SayWait(wait);
                 return;
             }
@@ -220,20 +254,46 @@ namespace AstvardServerMod
 
         private static void SayClosedToPlayers(string name)
         {
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"«{name}» админ больше не разрешает");
+            var what = name == "#floor" ? "Пол" : name == "#fence" ? "Забор" : $"«{name}»";
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"{what} админ больше не разрешает");
             AskSharedList();
         }
 
-        /// <summary>
-        /// The click on a player's build. The ghost holds still where it was clicked and goes
-        /// up once the server says the pause is over - or comes back to hand if it is not.
-        /// </summary>
-        private static void AskToBuild()
+        private static void NotePlayerBuild()
         {
-            _buildAsk = _playerPlacementName;
+            _nextPlayerBuildAt = _playerBuildMinutes > 0
+                ? Time.realtimeSinceStartup + _playerBuildMinutes * 60f
+                : 0f;
+        }
+
+        private static void ClearBuildAsk()
+        {
+            _buildAsk = null;
+            _buildAskGo = null;
+            _buildAskResume = null;
+            _buildAskClosed = null;
+        }
+
+        /// <summary>A placed ghost back in the player's hand.</summary>
+        private static void ResumePlacement()
+        {
+            if (GhostRoot != null) IsPlacing = true;
+        }
+
+        /// <summary>
+        /// The click on a free build of a player's. The projection holds still where it was
+        /// clicked and goes up once the server says the pause is over - or comes back to hand
+        /// if it is not. <paramref name="key"/> is a template's name, or #floor or #fence.
+        /// </summary>
+        private static void AskToBuild(string key, System.Action go, System.Action resume, System.Action closed)
+        {
+            _buildAsk = key;
+            _buildAskGo = go;
+            _buildAskResume = resume;
+            _buildAskClosed = closed;
             _buildAskedAt = Time.time;
             IsPlacing = false;
-            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcBuildAsk, _buildAsk);
+            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcBuildAsk, key);
         }
 
         private static void BuildOnServerWord()
@@ -243,9 +303,6 @@ namespace AstvardServerMod
 
             _playerPlacement = false;
             _ghostPinned = false;
-            _nextPlayerBuildAt = _playerBuildMinutes > 0
-                ? Time.realtimeSinceStartup + _playerBuildMinutes * 60f
-                : 0f;
             Instance?.StartCoroutine(BuildFromGhost(player));
         }
 
@@ -254,15 +311,17 @@ namespace AstvardServerMod
         {
             if (_buildAsk == null || Time.time - _buildAskedAt < BuildAskTimeout) return;
 
-            _buildAsk = null;
-            if (GhostRoot != null) IsPlacing = true;
+            var resume = _buildAskResume;
+            ClearBuildAsk();
+            resume?.Invoke();
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Сервер не ответил — нажми ещё раз");
         }
 
         /// <summary>Keeps the countdown on a player's «Постройки» running while the page is open.</summary>
         internal static void TickPlayerBuildHint()
         {
-            if (_nextPlayerBuildAt <= 0f || MenuState != StatePlayerBuild) return;
+            if (_nextPlayerBuildAt <= 0f) return;
+            if (MenuState != StatePlayerBuild && MenuState != StatePlayerTemplates) return;
             if (Panel == null || !Panel.activeInHierarchy) return;
             if (Time.realtimeSinceStartup < _playerHintTickAt) return;
 

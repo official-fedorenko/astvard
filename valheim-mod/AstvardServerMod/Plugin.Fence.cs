@@ -186,12 +186,15 @@ namespace AstvardServerMod
             label.text = $"Частокол кольцом вокруг тебя.{NEWLINE}Расстояние — от тебя до стены,{NEWLINE}"
                          + $"от 4 до 64 м. «Поставить» покажет{NEWLINE}проекцию: ЛКМ — построить,{NEWLINE}"
                          + $"Esc — отменить. P — закрепить её{NEWLINE}на месте, стрелки — сдвинуть."
-                         + (IsFenceLevel
+                         + (IsFenceLevel && RuleAllows("level")
                              ? $"{NEWLINE}Землю под ним выровняет{NEWLINE}по земле в середине кольца."
                              : sections
                                  ? $"{NEWLINE}На склоне помост и крыша лягут{NEWLINE}по нижнему колу стороны."
                                  : "")
-                         + $"{NEWLINE}Деревья и камни на линии снесёт —{NEWLINE}их уже не вернуть.";
+                         + (RuleAllows("clear")
+                             ? $"{NEWLINE}Деревья и камни на линии снесёт —{NEWLINE}их уже не вернуть."
+                             : "")
+                         + (RulePaid("fence") ? $"{NEWLINE}Из твоих материалов." : "");
         }
 
         // ---------------- projection ----------------
@@ -214,7 +217,12 @@ namespace AstvardServerMod
         /// </summary>
         private static void StartFencePreview()
         {
-            if (_fenceBuilding || Player.m_localPlayer == null || !IsAdminUnlocked) return;
+            if (_fenceBuilding || Player.m_localPlayer == null) return;
+            if (!RuleAllows("fence"))
+            {
+                Player.m_localPlayer.Message(MessageHud.MessageType.Center, "Заборы игрокам сейчас закрыты");
+                return;
+            }
 
             _fencePreviewing = true;
             _fencePinned = false;
@@ -361,11 +369,13 @@ namespace AstvardServerMod
                 if (_fenceBuilding || RefuseWhileBuilding()) return true;
 
                 var centre = _fencePinned ? _fencePinnedAt : Player.m_localPlayer.transform.position;
+                var wasPinned = _fencePinned;
                 _fencePreviewing = false;
                 _fencePinned = false;
                 ClearFenceGhost();
                 UpdateFenceLabels();
-                Instance?.StartCoroutine(BuildFence(centre));
+
+                Instance?.StartCoroutine(BuildFence(centre, wasPinned));
                 return true;
             }
 
@@ -427,6 +437,33 @@ namespace AstvardServerMod
             return kit.Stake != null ? kit : null;
         }
 
+        private static void ReopenFencePreview(Vector3 centre, bool pinned)
+        {
+            _fencePreviewing = true;
+            _fencePinned = pinned;
+            _fencePinnedAt = centre;
+            _fenceGhostKey = null;
+            UpdateFenceLabels();
+        }
+
+        /// <summary>
+        /// A ring's cost with every place standing: the stakes, and for a section the
+        /// walkway, both rows of roof and the posts, as LayOutSide lays them.
+        /// </summary>
+        private static Bill FenceBill(FencePlan plan, FenceKit kit, float[] panels, float[] posts)
+        {
+            var bill = new Bill();
+            bill.Add(kit.Stake, plan.Sides * plan.PerSide);
+            if (kit.Walkway) bill.Add(kit.Floor, plan.Sides * panels.Length);
+            if (kit.Roofed)
+            {
+                bill.Add(kit.Roof, plan.Sides * panels.Length * 2);
+                bill.Add(kit.Post, plan.Sides * posts.Length * PostRises.Length);
+            }
+
+            return bill;
+        }
+
         private static GameObject FencePiecePrefab(ZNetScene scene, string name)
         {
             var prefab = scene.GetPrefab(name);
@@ -455,28 +492,57 @@ namespace AstvardServerMod
         /// Levelled, the fence is part of the undo step the levelling records, so undo
         /// puts the ground back and takes the fence down together.
         /// </summary>
-        private static IEnumerator BuildFence(Vector3 centre)
+        private static IEnumerator BuildFence(Vector3 centre, bool wasPinned = false)
         {
             var player = Player.m_localPlayer;
             var scene = ZNetScene.instance;
             var zones = ZoneSystem.instance;
             if (player == null || scene == null || zones == null) yield break;
 
-            // The page is only drawn for an admin; this is the check where it counts,
-            // since the pieces are free and the clearing cannot be undone.
-            if (!IsAdminUnlocked) yield break;
+            // The page is drawn only where it is open; this is the check where it counts,
+            // since clearing cannot be undone.
+            if (!RuleAllows("fence")) yield break;
 
             var kit = FenceKitFor(scene);
             if (kit == null) yield break;
 
             var radius = Mathf.Clamp(ParseField(FenceRadiusInput, 20f), FenceMinRadius, FenceMaxRadius);
             var plan = Geometry.FenceRing(radius, FenceMaxPerSide, StakeWidth);
+            var panels = Geometry.SectionPanels(plan.PerSide);
+            var posts = Geometry.SectionPosts(plan.PerSide);
+
+            // A player's ring levels and clears only as far as «Рельеф» lets them.
+            var levelling = IsFenceLevel && RuleAllows("level");
+            var clearing = RuleAllows("clear");
+
+            // A player's ring stays out of other people's wards, levelled or not: its band
+            // is what the stakes, the walkway and the eaves stand in.
+            if (!IsAdminUnlocked && !levelling
+                && !WardsAllowStroke("fence", FenceLine(plan, centre, 1f),
+                                     kit.Sections ? SectionClearRadius : FenceClearRadius))
+            {
+                player.Message(MessageHud.MessageType.Center, "Кольцо задевает чужой оберег");
+                yield break;
+            }
+
+            // Paid for whole before anything is cleared or levelled, as the plan has it with
+            // every place standing; what the ring could not put up comes back at the end.
+            var bill = RulePaid("fence") ? FenceBill(plan, kit, panels, posts) : null;
+            if (bill != null)
+            {
+                var shortfall = BillShortfall(player, bill);
+                if (shortfall != null)
+                {
+                    player.Message(MessageHud.MessageType.Center, shortfall);
+                    yield break;
+                }
+            }
 
             var levelHalf = kit.Sections ? SectionLevelHalf : FenceLevelHalf;
             var levelReach = levelHalf + FenceLevelBlend;
             List<TerrainComp> comps = null;
             List<Vector3> levelLine = null;
-            if (IsFenceLevel)
+            if (levelling)
             {
                 levelLine = FenceLine(plan, centre, 1f);
                 if (!WardsAllowStroke("fence", levelLine, levelReach))
@@ -495,19 +561,51 @@ namespace AstvardServerMod
                 }
             }
 
+            // A free ring of a player's goes up on the server's word, which keeps the pause
+            // between builds - asked only now, with nothing else left to turn it down, so a
+            // ring refused for a ward or for ground not loaded costs no pause. Turned back,
+            // the projection comes back where it was.
+            if (!IsAdminUnlocked && !RulePaid("fence"))
+            {
+                var answer = 0;
+                AskToBuild("#fence", () => answer = 1, () =>
+                {
+                    answer = -1;
+                    ReopenFencePreview(centre, wasPinned);
+                }, () => answer = -1);
+                // A deadline of its own as well: a second ask taking this one's place would
+                // leave it waiting on an answer that is no longer coming to it.
+                var until = Time.time + BuildAskTimeout + 1f;
+                while (answer == 0 && Time.time < until) yield return null;
+                if (answer <= 0) yield break;
+            }
+
             _fenceBuilding = true;
             var record = BeginBuild("забор");
+
+            Bill owed = null;
+            if (bill != null && PayBill(player, bill))
+            {
+                owed = bill;
+                record.Paid = true;
+            }
+
             try
             {
-                var cleared = ClearAlongPath(FenceLine(plan, centre, 0.5f),
-                                             kit.Sections ? SectionClearRadius : FenceClearRadius);
+                var cleared = clearing
+                    ? ClearAlongPath(FenceLine(plan, centre, 0.5f), kit.Sections ? SectionClearRadius : FenceClearRadius)
+                    : 0;
 
                 TerrainUndoStep undo = null;
                 if (comps != null)
                 {
                     undo = RecordTerrainUndo("забор", comps, centre, radius + levelReach);
                     record.Ground = undo;
-                    if (undo != null) undo.Pieces = record.Pieces;
+                    if (undo != null)
+                    {
+                        undo.Pieces = record.Pieces;
+                        undo.PiecesPaid = record.Paid;
+                    }
 
                     var flat = new List<Vec2>(levelLine.Count);
                     foreach (var point in levelLine) flat.Add(new Vec2(point.x, point.z));
@@ -526,8 +624,6 @@ namespace AstvardServerMod
                 }
 
                 var stakeLift = PivotAboveBase(kit.Stake);
-                var panels = Geometry.SectionPanels(plan.PerSide);
-                var posts = Geometry.SectionPosts(plan.PerSide);
 
                 // Every place is judged before any piece goes up. Judged a side at a time
                 // as they were built, each side's first span took the side before it - its
@@ -556,7 +652,11 @@ namespace AstvardServerMod
                     placements.Clear();
                     LayOutSide(fs, plan, kit, stakeLift, panels, posts, placements);
                     foreach (var placement in placements)
+                    {
+                        var before = built.Count;
                         PlacePiece(placement.Prefab, placement.At, placement.Turn, creator, platform, built);
+                        if (built.Count > before) owed?.Add(placement.Prefab, -1);
+                    }
 
                     yield return null;
                 }
@@ -572,6 +672,7 @@ namespace AstvardServerMod
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     $"Забор {radius:0.#} м ({parts}): деталей {built.Count}"
                     + (undo != null ? ", выровнен" : "")
+                    + (record.Paid ? ", из твоих материалов" : "")
                     + (cleared > 0 ? $", снесено: {cleared}" : "")
                     + (skipped > 0 ? $", мест пропущено: {skipped}" : "")
                     + (roofless > 0 ? $", сторон без крыши: {roofless}" : ""));
@@ -581,6 +682,7 @@ namespace AstvardServerMod
             }
             finally
             {
+                RefundBill(owed);
                 _fenceBuilding = false;
                 if (record.Running) EndBuild(record);
                 RefreshMenu();

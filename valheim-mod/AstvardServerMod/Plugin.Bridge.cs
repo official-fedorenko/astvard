@@ -211,7 +211,7 @@ namespace AstvardServerMod
             var player = Player.m_localPlayer;
             if (player == null) return;
 
-            if (!TerrainAllowed("bridge"))
+            if (!RuleAllows("bridge"))
             {
                 player.Message(MessageHud.MessageType.Center, "Мосты игрокам сейчас закрыты");
                 return;
@@ -238,7 +238,7 @@ namespace AstvardServerMod
                   + $"P — закрепить берег, стрелки — сдвиг."
                 : $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
                   + $"Встань на этом берегу{NEWLINE}и нажми «Начать»."
-                  + TerrainLimitNote("bridge", MaxBridgeLength);
+                  + RuleLimitNote("bridge", MaxBridgeLength);
         }
 
         private static void UpdateBridgeCoverLabel()
@@ -291,7 +291,7 @@ namespace AstvardServerMod
                 return survey;
             }
 
-            var maxLength = TerrainLimit("bridge", MaxBridgeLength);
+            var maxLength = RuleLimit("bridge", MaxBridgeLength);
             if (survey.Length > maxLength)
             {
                 survey.Problem = $"Далеко: {survey.Length:F0} м, максимум {maxLength:F0}";

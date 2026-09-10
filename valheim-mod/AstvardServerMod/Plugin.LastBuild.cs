@@ -28,6 +28,9 @@ namespace AstvardServerMod
             /// <summary>Asked to stop while going up; the build sees it at its next piece.</summary>
             public bool Cancelled;
 
+            /// <summary>Paid for out of a player's bag: taking it down gives the materials back.</summary>
+            public bool Paid;
+
             /// <summary>The build before, kept only until this one turns out to have put something up.</summary>
             public BuildRecord Previous;
         }
@@ -166,8 +169,11 @@ namespace AstvardServerMod
                 return;
             }
 
-            var removed = RemovePieces(record.Pieces);
-            var note = record.Ground != null ? ", выровненная земля осталась" : "";
+            var refund = record.Paid ? new Bill() : null;
+            var removed = RemovePieces(record.Pieces, refund);
+            RefundBill(refund);
+            var note = (record.Paid ? ", материалы под ногами" : "")
+                       + (record.Ground != null ? ", выровненная земля осталась" : "");
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                 removed == total
                     ? $"Отменено: {record.Label}, деталей убрано {removed}{note}"

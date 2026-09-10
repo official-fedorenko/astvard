@@ -24,6 +24,9 @@ namespace AstvardServerMod
 
             /// <summary>Server copies only: an admin has opened it to players.</summary>
             public bool ForPlayers;
+
+            /// <summary>Server copies only: sent in by a player, whose platform id this is.</summary>
+            public string From;
         }
 
         private const string TemplateFolder = "astvard-templates";
@@ -145,7 +148,9 @@ namespace AstvardServerMod
             if (hint != null)
             {
                 if (Templates.Count == 0)
-                    hint.text = $"Шаблонов нет.{NEWLINE}Скопируй постройку и сохрани{NEWLINE}её из «Скопировать».";
+                    hint.text = IsAdminUnlocked
+                        ? $"Шаблонов нет.{NEWLINE}Скопируй постройку и сохрани{NEWLINE}её из «Скопировать»."
+                        : $"Шаблонов нет.{NEWLINE}Сохрани свою постройку —{NEWLINE}«Сохранить постройку».";
                 else if (MenuState == StateTemplateList)
                     hint.text = $"{_templateCategory}: {shownCount}"
                                 + (shownCount > MaxTemplateButtons
@@ -265,6 +270,7 @@ namespace AstvardServerMod
             else if (key == "category") template.Category = value;
             else if (key == "author") template.Author = value;
             else if (key == "players") template.ForPlayers = value == "yes";
+            else if (key == "from") template.From = value;
         }
 
         internal static List<string> TemplateCategories()

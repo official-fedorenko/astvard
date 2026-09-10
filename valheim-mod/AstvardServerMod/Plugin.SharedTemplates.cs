@@ -31,6 +31,12 @@ namespace AstvardServerMod
         private const string RpcTplGet = "AstvardTplGet";
         private const string RpcTplBody = "AstvardTplBody";
         private const string RpcTplPlayers = "AstvardTplPlayers";
+        private const string RpcTplSubmit = "AstvardTplSubmit";
+
+        // What one player may have waiting in «Общие», and how big a build they may send.
+        // Past either the admins would be reading through a player's whole folder.
+        private const int MaxSubmissionsPerPlayer = 5;
+        private const int MaxSubmissionPieces = 3000;
 
         // The mark a shared template carries while players may build it. A header line,
         // so the file stays the whole record and a restart keeps what was opened.
@@ -59,8 +65,9 @@ namespace AstvardServerMod
             rpc.Register<string>(RpcTplGet, OnTemplateGet);
             rpc.Register<string, string, string, string>(RpcTplBody, OnTemplateBody);
             rpc.Register<string, bool>(RpcTplPlayers, OnTemplatePlayers);
+            rpc.Register<string, string, string>(RpcTplSubmit, OnTemplateSubmit);
             RegisterBuildPauseRpcs(rpc);
-            RegisterTerrainRuleRpcs(rpc);
+            RegisterPlayerRuleRpcs(rpc);
         }
 
         // ---------------- server side ----------------
@@ -165,12 +172,104 @@ namespace AstvardServerMod
             BroadcastSharedList();
         }
 
+        /// <summary>
+        /// A player's own build sent to the admins: it lands in «Общие» under the player's
+        /// name, marked as theirs, and is open to nobody until an admin opens it. A second
+        /// send under the same name replaces the first; past a few waiting, or a build too
+        /// big to be a build, it is turned away with the reason.
+        /// </summary>
+        private static void OnTemplateSubmit(long sender, string name, string category, string body)
+        {
+            if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
+
+            if (ServerRuleValue("share") == 0 && !ServerAllows(sender))
+            {
+                Say(sender, "Делиться постройками сейчас нельзя");
+                return;
+            }
+
+            var lines = new List<string>();
+            foreach (var line in (body ?? "").Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Split(';').Length == 8) lines.Add(trimmed);
+            }
+
+            if (lines.Count == 0) return;
+            if (lines.Count > MaxSubmissionPieces)
+            {
+                Say(sender, $"Слишком большая: {lines.Count} деталей, можно до {MaxSubmissionPieces}");
+                return;
+            }
+
+            var who = SenderId();
+            var author = SenderName(sender);
+            var shown = $"{CleanShared(name, "Без имени")} ({author})";
+            var path = SharedPath(shown);
+
+            try
+            {
+                System.IO.Directory.CreateDirectory(SharedDir);
+
+                var waiting = 0;
+                var replacing = false;
+                foreach (var file in System.IO.Directory.GetFiles(SharedDir, "*.txt"))
+                {
+                    var sent = ReadTemplate(file);
+                    if (sent == null || sent.From != who) continue;
+
+                    waiting++;
+                    if (string.Equals(file, path, System.StringComparison.OrdinalIgnoreCase)) replacing = true;
+                }
+
+                if (System.IO.File.Exists(path) && !replacing)
+                {
+                    Say(sender, "Постройка с таким именем уже есть — переименуй свою");
+                    return;
+                }
+
+                if (!replacing && waiting >= MaxSubmissionsPerPlayer)
+                {
+                    Say(sender, $"У тебя уже {waiting} присланных — подожди, пока админ их разберёт");
+                    return;
+                }
+
+                var file2 = new List<string>
+                {
+                    "# astvard shared template",
+                    "#name " + shown,
+                    "#category " + CleanShared(category, DefaultCategory),
+                    "#author " + author,
+                    "#from " + who,
+                };
+                file2.AddRange(lines);
+                System.IO.File.WriteAllLines(path, file2);
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogError($"[AstvardServerMod] Could not store a sent-in template: {ex.Message}");
+                return;
+            }
+
+            Log.LogInfo($"[AstvardServerMod] Template '{shown}' sent in by {author} ({who}), {lines.Count} pieces.");
+            BroadcastSharedList();
+            Say(sender, $"Отправлено админам: {name}");
+        }
+
+        /// <summary>A name as the shared list carries it: its records split on newlines, its fields on tabs.</summary>
+        private static string CleanShared(string value, string fallback)
+        {
+            if (string.IsNullOrEmpty(value)) return fallback;
+            var cleaned = value.Replace(FieldSeparator, ' ').Replace('\n', ' ').Replace('\r', ' ').Trim();
+            return cleaned.Length == 0 ? fallback : cleaned;
+        }
+
         private static void OnTemplateQuery(long sender)
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
             ReplySharedList(sender);
             ReplyBuildRules(sender);
-            ReplyTerrainRules(sender);
+            ReplyPlayerRules(sender);
         }
 
         private static void BroadcastSharedList()
@@ -326,6 +425,21 @@ namespace AstvardServerMod
         {
             SharedTemplates.Clear();
             ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplQuery);
+        }
+
+        /// <summary>A player's «Поделиться»: their template, as it is in their folder, to the admins.</summary>
+        internal static void SubmitTemplate(BlueprintTemplate template)
+        {
+            if (template == null) return;
+            if (!RuleAllows("share"))
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Делиться постройками сейчас нельзя");
+                return;
+            }
+
+            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplSubmit, template.Name, template.Category,
+                string.Join("\n", template.Lines));
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Отправляю: {template.Name}");
         }
 
         /// <summary>Asks for the list without emptying the one shown in the meantime.</summary>

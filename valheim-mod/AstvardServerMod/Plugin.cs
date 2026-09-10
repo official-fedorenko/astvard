@@ -64,12 +64,12 @@ namespace AstvardServerMod
                 + "затрагиваются никогда — иначе они выполнились бы у нас вместо сервера.");
 
             _zones = Config.Bind("Зона", "Zones", "",
-                "Области, которые сервер держит загруженными: X,Z,радиус_в_метрах через ';'. "
-                + "Радиус округляется наружу до целых зон по 64 м.");
+                "Области, которые сервер держит загруженными: X,Z,радиус_в_метрах,владелец через ';', "
+                + "у зоны игрока ещё его id. Радиус округляется наружу до целых зон по 64 м.");
             ParseZones(_zones.Value, Zones);
 
             BindBuildPause(Config);
-            BindTerrainRules(Config);
+            BindPlayerRules(Config);
 
             _harmony = new Harmony("astvard.servermod");
             _harmony.PatchAll();

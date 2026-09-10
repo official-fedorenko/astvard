@@ -479,7 +479,15 @@ namespace AstvardServerMod
             var player = Player.m_localPlayer;
             if (player == null) return;
 
-            var radius = Mathf.Clamp(ParseField(RepairRadiusInput, 20f), 1f, 200f);
+            // The page may have been open when the admins closed it.
+            var admin = IsAdminUnlocked;
+            if (!RuleAllows("repair"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Ремонт игрокам сейчас закрыт");
+                return;
+            }
+
+            var radius = Mathf.Clamp(ParseField(RepairRadiusInput, 20f), 1f, admin ? 200f : PlayerRepairRadius);
             var origin = player.transform.position;
             var sqrRadius = radius * radius;
 
@@ -496,19 +504,26 @@ namespace AstvardServerMod
                 if (nview == null || !nview.IsValid()) continue;
                 if (wear.GetHealthPercentage() >= 1f) continue;
 
+                // A player mends what the hammer would let them touch.
+                if (!admin && !PrivateArea.CheckAccess(wear.transform.position, 0f, false, false)) continue;
+
                 if (!nview.IsOwner()) nview.ClaimOwnership();
 
                 if (wear.Repair()) repaired++;
                 else skipped++;
             }
 
-            var filled = RefuelAround(origin, radius);
+            // Paid, the fuel comes out of the player's bag, as far as it goes.
+            var payer = RulePaid("repair") && !player.NoCostCheat() ? player : null;
+            var lacking = new HashSet<string>();
+            var filled = RefuelAround(origin, radius, !admin, payer, lacking);
 
             string message;
-            if (repaired == 0 && filled == 0) message = "Всё целое и заправлено";
+            if (repaired == 0 && filled == 0) message = lacking.Count > 0 ? "Всё целое" : "Всё целое и заправлено";
             else if (filled == 0) message = $"Починено построек: {repaired}";
             else if (repaired == 0) message = $"Заправлено: {filled}";
             else message = $"Починено: {repaired}, заправлено: {filled}";
+            if (lacking.Count > 0) message += $"{NEWLINE}Не хватило: {string.Join(", ", lacking)}";
 
             player.Message(MessageHud.MessageType.Center, message);
 
@@ -521,8 +536,13 @@ namespace AstvardServerMod
         /// hearths, braziers), fuelled cooking stations and smelters. Only the
         /// fuel is filled — a smelter still needs its own ore, since deciding what
         /// it should be smelting is not ours to make.
+        ///
+        /// For a player it stops at other people's wards, as the hammer would; and when
+        /// <paramref name="payer"/> is given each station takes what it lacks from their bag,
+        /// as far as the bag goes, with what ran short named in <paramref name="lacking"/>.
         /// </summary>
-        private static int RefuelAround(Vector3 origin, float radius)
+        private static int RefuelAround(Vector3 origin, float radius, bool wards, Player payer,
+                                        HashSet<string> lacking)
         {
             var pieces = new List<Piece>();
             Piece.GetAllPiecesInRadius(origin, radius, pieces);
@@ -531,26 +551,54 @@ namespace AstvardServerMod
             foreach (var piece in pieces)
             {
                 if (piece == null) continue;
+                if (wards && !PrivateArea.CheckAccess(piece.transform.position, 0f, false, false)) continue;
 
                 var fireplace = piece.GetComponentInChildren<Fireplace>();
-                if (fireplace != null && !fireplace.m_infiniteFuel &&
-                    ClaimForRefuel(fireplace, fireplace.m_maxFuel) != null)
+                if (fireplace != null && !fireplace.m_infiniteFuel)
                 {
-                    // Fireplace replicates the change itself, no ZDO poking needed.
-                    fireplace.SetFuel(fireplace.m_maxFuel);
-                    filled++;
+                    var view = ClaimForRefuel(fireplace, fireplace.m_maxFuel);
+                    var fuel = view != null ? FuelTo(view, fireplace.m_maxFuel, fireplace.m_fuelItem, payer, lacking) : -1f;
+                    if (fuel >= 0f)
+                    {
+                        // Fireplace replicates the change itself, no ZDO poking needed.
+                        fireplace.SetFuel(fuel);
+                        filled++;
+                    }
                 }
 
                 var cooking = piece.GetComponentInChildren<CookingStation>();
                 if (cooking != null && cooking.m_useFuel &&
-                    SetFuelDirect(cooking, MCookingSetFuel, cooking.m_maxFuel)) filled++;
+                    SetFuelDirect(cooking, MCookingSetFuel, cooking.m_maxFuel, cooking.m_fuelItem, payer, lacking)) filled++;
 
                 var smelter = piece.GetComponentInChildren<Smelter>();
                 if (smelter != null && smelter.m_maxFuel > 0 &&
-                    SetFuelDirect(smelter, MSmelterSetFuel, smelter.m_maxFuel)) filled++;
+                    SetFuelDirect(smelter, MSmelterSetFuel, smelter.m_maxFuel, smelter.m_fuelItem, payer, lacking)) filled++;
             }
 
             return filled;
+        }
+
+        /// <summary>
+        /// The fuel a station is to be left with: full, free; or, paid, what it had plus as
+        /// much of what it lacks as the payer carries. -1 when nothing is to be put in.
+        /// </summary>
+        private static float FuelTo(ZNetView view, float max, ItemDrop fuelItem, Player payer, HashSet<string> lacking)
+        {
+            if (payer == null) return max;
+            if (fuelItem == null) return -1f;
+
+            var current = view.GetZDO().GetFloat(ZDOVars.s_fuel, 0f);
+            var need = Mathf.FloorToInt(max - current);
+            if (need <= 0) return -1f;
+
+            var inventory = payer.GetInventory();
+            var name = fuelItem.m_itemData.m_shared.m_name;
+            var give = Mathf.Min(need, inventory.CountItems(name));
+            if (give < need) lacking.Add(ItemTitle(fuelItem));
+            if (give <= 0) return -1f;
+
+            inventory.RemoveItem(name, give, -1);
+            return current + give;
         }
 
         /// <summary>
@@ -568,11 +616,33 @@ namespace AstvardServerMod
         }
 
         /// <summary>Fills a station whose own SetFuel is private and owner-only.</summary>
-        private static bool SetFuelDirect(Component station, System.Reflection.MethodInfo setFuel, float max)
+        private static bool SetFuelDirect(Component station, System.Reflection.MethodInfo setFuel, float max,
+                                          ItemDrop fuelItem, Player payer, HashSet<string> lacking)
         {
-            if (setFuel == null || ClaimForRefuel(station, max) == null) return false;
-            setFuel.Invoke(station, new object[] { max });
+            if (setFuel == null) return false;
+
+            var view = ClaimForRefuel(station, max);
+            var fuel = view != null ? FuelTo(view, max, fuelItem, payer, lacking) : -1f;
+            if (fuel < 0f) return false;
+
+            setFuel.Invoke(station, new object[] { fuel });
             return true;
+        }
+
+        private static string _adminRepairHint;
+
+        /// <summary>A player's «Ремонт» says how far it reaches and what it costs; an admin's stays as it was.</summary>
+        private static void UpdateRepairHint()
+        {
+            var label = RepairHint != null ? RepairHint.GetComponentInChildren<UnityEngine.UI.Text>(true) : null;
+            if (label == null) return;
+            if (_adminRepairHint == null) _adminRepairHint = label.text;
+
+            label.text = IsAdminUnlocked
+                ? _adminRepairHint
+                : $"Радиус (м), до {PlayerRepairRadius:0}.{NEWLINE}Чинит постройки вокруг, куда{NEWLINE}"
+                  + $"пускают обереги, и заправляет{NEWLINE}костры, факелы, печи, плавильни"
+                  + (RulePaid("repair") ? $" —{NEWLINE}топливом из твоей сумки." : ".");
         }
     }
 }

@@ -58,7 +58,12 @@ namespace AstvardServerMod
         private const int StateSettings = 40;   // настройки админа: пауза построек, что открыто игрокам
         private const int StatePlayerCooldown = 41; // пауза между постройками игроков
         private const int StateTerrainRules = 42; // что игроки могут в «Рельефе»
-        private const int StateTerrainRule = 43;  // один инструмент: можно ли и до скольких метров
+        private const int StateRuleEdit = 43;     // одно правило для игроков: можно ли, до скольких метров, даром ли
+        private const int StateBuildRules = 44;   // что игроки могут в своих «Постройках»
+        private const int StateFeatureRules = 45; // что игроки могут в «Функциях»
+        private const int StateAllowedList = 46;  // шаблоны, открытые игрокам
+        private const int StatePlayerTemplates = 47; // у игрока: шаблоны сервера, открытые ему
+        private const int StatePlayerZone = 48;   // у игрока: его зона автоматики
 
         internal static GameObject Panel;
 
@@ -203,6 +208,8 @@ namespace AstvardServerMod
                 MenuState = StateCollect;
                 RefreshMenu();
             });
+
+            CreatePlayerFeatureWidgets(gui);
 
             FillHint = MakeText(gui, "Назначь сундук — из него берётся\nруда, топливо, мясо и заготовки\nдля браги. Переключатель —\nзапасной режим: ближайший сундук.");
 
@@ -564,7 +571,7 @@ namespace AstvardServerMod
 
             UndoButton = MakeButton(gui, "", () =>
             {
-                if (TerrainAllowed("undo")) UndoTerrain();
+                if (RuleAllows("undo")) UndoTerrain();
                 RefreshMenu();
             });
 
@@ -609,7 +616,7 @@ namespace AstvardServerMod
                 var player = Player.m_localPlayer;
                 if (player == null) return;
 
-                if (!TerrainAllowed("road"))
+                if (!RuleAllows("road"))
                 {
                     player.Message(MessageHud.MessageType.Center, "Дорожки игрокам сейчас закрыты");
                     return;
@@ -870,6 +877,8 @@ namespace AstvardServerMod
                 if (!LoadTemplate(_editingTemplate.Lines, _editingTemplate.Name)) return;
 
                 StartPlacement($"шаблон «{_editingTemplate.Name}»");
+                // A player's own template is paid for when it goes up.
+                if (!IsAdminUnlocked) _playerPaidPlacement = true;
                 InventoryGui.instance?.Hide();
             });
 
@@ -962,9 +971,10 @@ namespace AstvardServerMod
                 else if (MenuState == StateBridge) MenuState = StateTerrain;
                 else if (MenuState == StateRoad) MenuState = StateTerrain;
                 else if (IsRoadPage(MenuState)) MenuState = StateRoad;
-                else if (MenuState == StateFence) MenuState = StateBuild;
+                else if (MenuState == StateFence) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
                 else if (MenuState == StateAreaFill) MenuState = StateBuild;
-                else if (MenuState == StateCopyForm) MenuState = StateBuild;
+                else if (MenuState == StateCopyForm) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
+                else if (MenuState == StateRepair && !IsAdminUnlocked) MenuState = StateFeatures;
                 else if (MenuState == StateTod || MenuState == StateRepair ||
                          MenuState == StateForceDelete ||
                          MenuState == StateWeather) MenuState = StateCheats;
@@ -972,15 +982,18 @@ namespace AstvardServerMod
                 else if (MenuState == StateSpawners) MenuState = StateBuild;
                 else if (MenuState == StateFood) MenuState = StateCheats;
                 else if (MenuState == StateSpawnerList) MenuState = StateSpawners;
-                else if (MenuState == StateTemplates) MenuState = StateBuild;
+                else if (MenuState == StateTemplates) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
                 else if (MenuState == StateTemplateEdit) MenuState = StateTemplateList;
                 else if (MenuState == StateSharedList) MenuState = StateTemplates;
                 else if (MenuState == StateSharedItem) MenuState = _sharedItemBack;
-                else if (MenuState == StatePlayerCooldown) MenuState = StateSettings;
-                else if (MenuState == StateTerrainRule) MenuState = StateTerrainRules;
-                else if (MenuState == StateTerrainRules) MenuState = StateSettings;
+                else if (MenuState == StatePlayerCooldown || MenuState == StateAllowedList) MenuState = StateBuildRules;
+                else if (MenuState == StateRuleEdit) MenuState = RulePage(PlayerRules[_editingRule].Group);
+                else if (MenuState == StateTerrainRules || MenuState == StateBuildRules
+                         || MenuState == StateFeatureRules) MenuState = StateSettings;
                 else if (MenuState == StateSettings) MenuState = StateAdmin;
+                else if (MenuState == StatePlayerTemplates) MenuState = StatePlayerBuild;
+                else if (MenuState == StatePlayerZone) MenuState = StateFeatures;
                 else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateFeatures;
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
@@ -1250,9 +1263,13 @@ namespace AstvardServerMod
             SetActive(TodInput, admin && MenuState == StateTod);
             SetActive(TodApplyButton, admin && MenuState == StateTod);
 
-            SetActive(RepairHint, admin && MenuState == StateRepair);
-            SetActive(RepairRadiusInput, admin && MenuState == StateRepair);
-            SetActive(RepairApplyButton, admin && MenuState == StateRepair);
+            // «Ремонт» is a player's too, from «Функции», while the admins keep it open.
+            var repairPage = MenuState == StateRepair && RuleAllows("repair");
+            if (repairPage) UpdateRepairHint();
+            SetActive(RepairHint, repairPage);
+            SetActive(RepairRadiusInput, repairPage);
+            SetActive(RepairApplyButton, repairPage);
+            RefreshPlayerFeatureVisibility(admin);
             SetActive(ForceDeleteHint, admin && MenuState == StateForceDelete);
             SetActive(ForceDeleteRadiusInput, admin && MenuState == StateForceDelete);
             SetActive(ForceDeleteApplyButton, admin && MenuState == StateForceDelete);
@@ -1291,14 +1308,17 @@ namespace AstvardServerMod
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
             SetActive(SpawnerButton, admin && MenuState == StateBuild);
             SetActive(FenceButton, admin && MenuState == StateBuild);
-            SetActive(FenceHint, admin && MenuState == StateFence);
-            SetActive(FenceRadiusInput, admin && MenuState == StateFence);
-            SetActive(FenceWalkwayButton, admin && MenuState == StateFence);
-            SetActive(FenceRoofButton, admin && MenuState == StateFence);
-            SetActive(FenceLevelButton, admin && MenuState == StateFence);
-            SetActive(FenceBuildButton, admin && MenuState == StateFence);
-            SetActive(FenceCancelButton, admin && MenuState == StateFence && IsFencePreviewing);
-            SetActive(FencePinButton, admin && MenuState == StateFence && IsFencePreviewing);
+            // The fence page is a player's too, while the admins keep fences open to them.
+            var fencePage = MenuState == StateFence && RuleAllows("fence");
+            if (fencePage) UpdateFenceLabels();
+            SetActive(FenceHint, fencePage);
+            SetActive(FenceRadiusInput, fencePage);
+            SetActive(FenceWalkwayButton, fencePage);
+            SetActive(FenceRoofButton, fencePage);
+            SetActive(FenceLevelButton, fencePage && RuleAllows("level"));
+            SetActive(FenceBuildButton, fencePage);
+            SetActive(FenceCancelButton, fencePage && IsFencePreviewing);
+            SetActive(FencePinButton, fencePage && IsFencePreviewing);
             SetActive(AreaFillButton, admin && MenuState == StateBuild);
             SetActive(AreaFillHint, admin && MenuState == StateAreaFill);
             SetActive(AreaFloorButton, admin && MenuState == StateAreaFill);
@@ -1307,32 +1327,28 @@ namespace AstvardServerMod
             // at all while a build is still going up: the panel always reopens at the root,
             // and stopping a base halfway should not take a walk through the menu first.
             DisarmBuildUndo();
-            var buildPage = admin ? IsBuildPage(MenuState) : MenuState == StatePlayerBuild;
+            var buildPage = admin ? IsBuildPage(MenuState) : IsPlayerBuildPage(MenuState);
             SetActive(BuildUndoButton, CanUndoBuild && (BuildGoingUp || buildPage));
 
-            // A player's own «Постройки»: whatever an admin has opened to players, and
-            // nothing at all until something is.
-            RebuildPlayerBuildViews();
-            SetActive(PlayerBuildButton, !admin && MenuState == StateRoot && PlayerTemplates.Count > 0);
-            SetActive(PlayerBuildHint, !admin && MenuState == StatePlayerBuild);
-            for (var i = 0; i < MaxTemplateButtons; i++)
-                SetActive(PlayerTemplateButtons[i], !admin && MenuState == StatePlayerBuild
-                                                    && i < PlayerTemplates.Count);
-            SetActive(TemplatePlayersButton, admin && MenuState == StateTemplateEdit);
-            SetActive(SharedPlayersButton, admin && MenuState == StateSharedItem);
+            RefreshPlayerBuildVisibility(admin);
             RefreshSettingsVisibility(admin);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
             RebuildTemplateViews();
 
-            SetActive(TemplateHint, admin && (MenuState == StateTemplates
-                                              || MenuState == StateTemplateList));
-            SetActive(TemplateEditHint, admin && MenuState == StateTemplateEdit);
-            SetActive(TemplatePlaceButton, admin && MenuState == StateTemplateEdit);
-            SetActive(TemplateRenameButton, admin && MenuState == StateTemplateEdit);
-            SetActive(TemplateDeleteButton, admin && MenuState == StateTemplateEdit);
+            // A player's own templates, while copying is open to them: the same pages, less
+            // what only an admin does - putting one on the server, or opening it to players.
+            var copying = admin || RuleAllows("copy");
+            SetActive(TemplateHint, copying && (MenuState == StateTemplates
+                                                || MenuState == StateTemplateList));
+            SetActive(TemplateEditHint, copying && MenuState == StateTemplateEdit);
+            SetActive(TemplatePlaceButton, copying && MenuState == StateTemplateEdit);
+            SetActive(TemplateRenameButton, copying && MenuState == StateTemplateEdit);
+            SetActive(TemplateDeleteButton, copying && MenuState == StateTemplateEdit);
             SetActive(TemplateShareButton, admin && MenuState == StateTemplateEdit);
+            SetActive(TemplateSubmitButton, !admin && copying && RuleAllows("share")
+                                            && MenuState == StateTemplateEdit);
             SetActive(SharedButton, admin && MenuState == StateTemplates);
             SetActive(SharedHint, admin && (MenuState == StateSharedList
                                             || MenuState == StateSharedItem));
@@ -1343,28 +1359,30 @@ namespace AstvardServerMod
                 SetActive(SharedButtons[i], admin && MenuState == StateSharedList
                                             && i < SharedTemplates.Count);
 
-            var naming = MenuState == StateTemplateEdit || MenuState == StateCopyForm;
-            SetActive(TemplateNameLabel, admin && naming);
-            SetActive(TemplateNameInput, admin && naming);
-            SetActive(TemplateCategoryLabel, admin && naming);
-            SetActive(TemplateCategoryInput, admin && naming);
+            // A player's copy form names only what is saved, not what is placed.
+            var naming = MenuState == StateTemplateEdit || (MenuState == StateCopyForm && (admin || _copyToFile));
+            SetActive(TemplateNameLabel, copying && naming);
+            SetActive(TemplateNameInput, copying && naming);
+            SetActive(TemplateCategoryLabel, copying && naming);
+            SetActive(TemplateCategoryInput, copying && naming);
 
             for (var i = 0; i < MaxTemplateButtons; i++)
             {
-                SetActive(CategoryButtons[i], admin && MenuState == StateTemplates
+                SetActive(CategoryButtons[i], copying && MenuState == StateTemplates
                                               && i < _shownCategories);
-                SetActive(TemplateButtons[i], admin && MenuState == StateTemplateList
+                SetActive(TemplateButtons[i], copying && MenuState == StateTemplateList
                                               && i < _shownTemplates);
             }
 
-            SetActive(CopyHint, admin && MenuState == StateCopyForm);
-            SetActive(CopyRadiusInput, admin && MenuState == StateCopyForm);
-            SetActive(CopyApplyButton, admin && MenuState == StateCopyForm);
+            if (MenuState == StateCopyForm) UpdateCopyHint();
+            SetActive(CopyHint, copying && MenuState == StateCopyForm);
+            SetActive(CopyRadiusInput, copying && MenuState == StateCopyForm);
+            SetActive(CopyApplyButton, copying && MenuState == StateCopyForm);
 
-            SetActive(LevelCircleButton, MenuState == StateTerrain && TerrainAllowed("level"));
-            SetActive(RoadButton, MenuState == StateTerrain && (TerrainAllowed("road") || TerrainAllowed("area")));
-            SetActive(BridgeButton, MenuState == StateTerrain && TerrainAllowed("bridge"));
-            SetActive(UndoButton, MenuState == StateTerrain && CanUndoTerrain && TerrainAllowed("undo"));
+            SetActive(LevelCircleButton, MenuState == StateTerrain && RuleAllows("level"));
+            SetActive(RoadButton, MenuState == StateTerrain && (RuleAllows("road") || RuleAllows("area")));
+            SetActive(BridgeButton, MenuState == StateTerrain && RuleAllows("bridge"));
+            SetActive(UndoButton, MenuState == StateTerrain && CanUndoTerrain && RuleAllows("undo"));
             UpdateUndoButtonLabel();
             var road = MenuState == StateRoad;
             if (IsRoadPage(MenuState)) UpdateRoadHint();
@@ -1373,11 +1391,11 @@ namespace AstvardServerMod
             SetActive(RoadKindButton, road);
             SetActive(RoadWidthButton, road);
             SetActive(RoadBendButton, road);
-            SetActive(RoadSmoothButton, road && TerrainAllowed("smooth"));
-            SetActive(RoadClearButton, road && TerrainAllowed("clear"));
-            SetActive(RoadTorchButton, road && TerrainAllowed("torches"));
-            SetActive(RoadAreaButton, road && TerrainAllowed("area"));
-            SetActive(RoadStartButton, road && TerrainAllowed("road"));
+            SetActive(RoadSmoothButton, road && RuleAllows("smooth"));
+            SetActive(RoadClearButton, road && RuleAllows("clear"));
+            SetActive(RoadTorchButton, road && RuleAllows("torches"));
+            SetActive(RoadAreaButton, road && RuleAllows("area"));
+            SetActive(RoadStartButton, road && RuleAllows("road"));
             SetActive(RoadEndButton, road && RoadAwaitingEnd);
             SetActive(RoadCancelButton, road && RoadInProgress);
 
@@ -1392,7 +1410,7 @@ namespace AstvardServerMod
                 SetActive(choice, MenuState == StateRoadTorches);
             SetActive(RoadAreaInput, MenuState == StateRoadArea);
             SetActive(RoadAreaMakeButton, MenuState == StateRoadArea);
-            SetActive(LevelSquareButton, MenuState == StateTerrain && TerrainAllowed("level"));
+            SetActive(LevelSquareButton, MenuState == StateTerrain && RuleAllows("level"));
 
             if (MenuState == StateBridge) UpdateBridgeHint();
             SetActive(BridgeHint, MenuState == StateBridge);
@@ -1406,7 +1424,7 @@ namespace AstvardServerMod
 
             if (MenuState == StateTerrainForm)
                 SetLabel(TerrainHint, "Радиус (м) и высота над водой.\n0 или пусто — уровень игрока.\nКрая сшиваются автоматически."
-                                      + TerrainLimitNote("level", MaxLevelRadius));
+                                      + RuleLimitNote("level", MaxLevelRadius));
             SetActive(TerrainHint, MenuState == StateTerrainForm);
             SetActive(RadiusInput, MenuState == StateTerrainForm);
             SetActive(HeightInput, MenuState == StateTerrainForm);
@@ -1462,7 +1480,7 @@ namespace AstvardServerMod
             return state == StateFeatures || state == StateFill || state == StateCollect
                    || state == StateTerrain || state == StateTerrainForm
                    || state == StateRoad || state == StateBridge || IsRoadPage(state)
-                   || state == StatePlayerBuild;
+                   || IsPlayerBuildPage(state) || state == StateRepair || state == StatePlayerZone;
         }
 
         private static readonly string NEWLINE = "\n";

@@ -11,11 +11,27 @@ namespace AstvardServerMod
 
         internal static GameObject PlayerBuildHint;
 
+        internal static GameObject PlayerSnapButton;
+
+        internal static GameObject PlayerFloorButton;
+
+        internal static GameObject PlayerFenceButton;
+
+        internal static GameObject PlayerCopyButton;
+
+        internal static GameObject PlayerSaveButton;
+
+        internal static GameObject PlayerMyTemplatesButton;
+
+        internal static GameObject PlayerServerTemplatesButton;
+
         internal static readonly GameObject[] PlayerTemplateButtons = new GameObject[MaxTemplateButtons];
 
         internal static GameObject TemplatePlayersButton;
 
         internal static GameObject SharedPlayersButton;
+
+        internal static GameObject TemplateSubmitButton;
 
         /// <summary>
         /// The shared templates an admin has opened to players - what a player's own
@@ -41,6 +57,49 @@ namespace AstvardServerMod
 
             PlayerBuildHint = MakeText(gui, "");
 
+            // A player's page holds what the admins opened, each behind its own rule; the
+            // templates the server hands out are a page of their own under it.
+            PlayerSnapButton = MakeButton(gui, "", () =>
+            {
+                IsSnapEnabled = !IsSnapEnabled;
+                UpdateSnapButtonLabel();
+                RefreshMenu();
+            });
+
+            PlayerFloorButton = MakeButton(gui, "Заполнить пол", StartFloorSeed);
+
+            PlayerFenceButton = MakeButton(gui, "Обнести забором", () =>
+            {
+                MenuState = StateFence;
+                RefreshMenu();
+            });
+
+            PlayerCopyButton = MakeButton(gui, "Копировать", () =>
+            {
+                _copyToFile = false;
+                OpenCopyForm();
+            });
+
+            PlayerSaveButton = MakeButton(gui, "Сохранить постройку", () =>
+            {
+                _copyToFile = true;
+                OpenCopyForm();
+            });
+
+            PlayerMyTemplatesButton = MakeButton(gui, "Мои шаблоны", () =>
+            {
+                MenuState = StateTemplates;
+                ReloadTemplates();
+                RefreshMenu();
+            });
+
+            PlayerServerTemplatesButton = MakeButton(gui, "", () =>
+            {
+                MenuState = StatePlayerTemplates;
+                AskSharedList();
+                RefreshMenu();
+            });
+
             for (var slot = 0; slot < MaxTemplateButtons; slot++)
             {
                 var index = slot;
@@ -53,6 +112,9 @@ namespace AstvardServerMod
 
         private void CreateTemplatePlayersWidget(GUIManager gui)
         {
+            // A player's side of the same page: their build sent to the admins.
+            TemplateSubmitButton = MakeButton(gui, "Поделиться", () => SubmitTemplate(_editingTemplate));
+
             TemplatePlayersButton = MakeButton(gui, "Разрешить игрокам", () =>
             {
                 if (_editingTemplate == null) return;
@@ -141,20 +203,28 @@ namespace AstvardServerMod
                 ? PlayerBuildHint.GetComponentInChildren<UnityEngine.UI.Text>(true)
                 : null;
             var wait = PlayerBuildWait;
+            // What the pause holds back is what costs nothing: server templates, and a
+            // floor or a fence the admins made free.
+            var pause = (_playerBuildMinutes > 0
+                            ? $"{NEWLINE}Бесплатные — не чаще{NEWLINE}раза в {_playerBuildMinutes} мин."
+                            : "")
+                        + (wait > 0 ? $"{NEWLINE}Следующая — через {FormatWait(wait)}." : "");
             if (hint != null)
-                hint.text = PlayerTemplates.Count == 0
-                    ? "Админ пока ничего не разрешил."
-                    : $"Разрешено админом. Нажми —{NEWLINE}появится проекция:{NEWLINE}"
-                      + $"ЛКМ — поставить, Esc — отмена,{NEWLINE}"
-                      + $"Q/E — поворот, Shift+Q/E — высота,{NEWLINE}"
-                      + "P — закрепить, стрелки — сдвиг."
-                      + (PlayerTemplates.Count > MaxTemplateButtons
-                          ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
-                          : "")
-                      + (_playerBuildMinutes > 0
-                          ? $"{NEWLINE}Строить можно раз в {_playerBuildMinutes} мин."
-                          : "")
-                      + (wait > 0 ? $"{NEWLINE}Следующая — через {FormatWait(wait)}." : "");
+                hint.text = MenuState == StatePlayerTemplates
+                    ? (PlayerTemplates.Count == 0
+                        ? "Админ пока ничего не разрешил."
+                        : $"Разрешено админом. Нажми —{NEWLINE}появится проекция:{NEWLINE}"
+                          + $"ЛКМ — поставить, Esc — отмена,{NEWLINE}"
+                          + $"Q/E — поворот, Shift+Q/E — высота,{NEWLINE}"
+                          + "P — закрепить, стрелки — сдвиг."
+                          + (PlayerTemplates.Count > MaxTemplateButtons
+                              ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
+                              : "")
+                          + pause)
+                    : "Постройки, открытые админом." + pause;
+
+            SetLabel(PlayerSnapButton, IsSnapEnabled ? "Прилипание: вкл" : "Прилипание: выкл");
+            SetLabel(PlayerServerTemplatesButton, $"Шаблоны сервера: {PlayerTemplates.Count}");
 
             SetLabel(TemplatePlayersButton, _editingTemplate != null && IsForPlayers(_editingTemplate.Name)
                 ? "Запретить игрокам"
@@ -162,6 +232,48 @@ namespace AstvardServerMod
             SetLabel(SharedPlayersButton, _selectedShared != null && _selectedShared.ForPlayers
                 ? "Запретить игрокам"
                 : "Разрешить игрокам");
+        }
+
+        /// <summary>Whether a player's panel has anything to build at all.</summary>
+        private static bool PlayerBuildsOpen
+        {
+            get
+            {
+                return PlayerTemplates.Count > 0 || RuleAllows("floor") || RuleAllows("fence")
+                       || RuleAllows("copy");
+            }
+        }
+
+        /// <summary>The pages a player builds from: their own, and the admins' tools opened to them.</summary>
+        private static bool IsPlayerBuildPage(int state)
+        {
+            return state == StatePlayerBuild || state == StatePlayerTemplates || state == StateFence
+                   || state == StateCopyForm || state == StateTemplates || state == StateTemplateList
+                   || state == StateTemplateEdit;
+        }
+
+        private static void RefreshPlayerBuildVisibility(bool admin)
+        {
+            RebuildPlayerBuildViews();
+
+            SetActive(PlayerBuildButton, !admin && MenuState == StateRoot && PlayerBuildsOpen);
+            SetActive(PlayerBuildHint, !admin && (MenuState == StatePlayerBuild || MenuState == StatePlayerTemplates));
+
+            var page = !admin && MenuState == StatePlayerBuild;
+            SetActive(PlayerSnapButton, page && RuleAllows("snap"));
+            SetActive(PlayerFloorButton, page && RuleAllows("floor"));
+            SetActive(PlayerFenceButton, page && RuleAllows("fence"));
+            SetActive(PlayerCopyButton, page && RuleAllows("copy"));
+            SetActive(PlayerSaveButton, page && RuleAllows("copy"));
+            SetActive(PlayerMyTemplatesButton, page && RuleAllows("copy"));
+            SetActive(PlayerServerTemplatesButton, page && PlayerTemplates.Count > 0);
+
+            for (var i = 0; i < MaxTemplateButtons; i++)
+                SetActive(PlayerTemplateButtons[i], !admin && MenuState == StatePlayerTemplates
+                                                    && i < PlayerTemplates.Count);
+
+            SetActive(TemplatePlayersButton, admin && MenuState == StateTemplateEdit);
+            SetActive(SharedPlayersButton, admin && MenuState == StateSharedItem);
         }
 
         /// <summary>
@@ -204,7 +316,7 @@ namespace AstvardServerMod
             SharedTemplates.Clear();
             PlayerTemplates.Clear();
             _nextPlayerBuildAt = 0f;
-            _terrainRulesKnown = false;
+            _playerRulesKnown = false;
             AskSharedList();
         }
 

@@ -109,7 +109,12 @@ namespace AstvardServerMod
         {
             var scene = ZNetScene.instance;
             var player = Player.m_localPlayer;
-            if (!IsAdminUnlocked || scene == null || player == null || _fillLaying || BuildInProgress) return;
+            if (scene == null || player == null || _fillLaying || BuildInProgress) return;
+            if (!RuleAllows("floor"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Пол игрокам сейчас закрыт");
+                return;
+            }
 
             if (scene.GetPrefab(FloorPlate) == null || scene.GetPrefab(FloorTile) == null)
             {
@@ -176,13 +181,58 @@ namespace AstvardServerMod
             if (_fillRegion == null || !_fillRegion.Closed || FillPlanned.Count == 0) return;
 
             var placements = new List<PiecePlacement>(FillPlanned);
+            var player = Player.m_localPlayer;
 
+            if (!IsAdminUnlocked && player != null)
+            {
+                // Every plate's place asked of the wards, as the hammer asks it.
+                var places = new List<Vector3>(placements.Count);
+                foreach (var placement in placements) places.Add(placement.At);
+                if (!WardsAllowPieces("floor", places))
+                {
+                    player.Message(MessageHud.MessageType.Center, "Пол задевает чужой оберег");
+                    return;
+                }
+
+                if (!RuleAllows("floor"))
+                {
+                    player.Message(MessageHud.MessageType.Center, "Пол игрокам сейчас закрыт");
+                    return;
+                }
+
+                if (RulePaid("floor"))
+                {
+                    var shortfall = BillShortfall(player, PlacementBill(placements));
+                    if (shortfall != null)
+                    {
+                        player.Message(MessageHud.MessageType.Center, shortfall);
+                        return;
+                    }
+
+                    LayFloorNow(placements, true);
+                    return;
+                }
+
+                // Free: laid on the server's word, which keeps the pause between builds.
+                AskToBuild("#floor", () => LayFloorNow(placements, false), ResumePlacement, () =>
+                {
+                    EndFloorSeed();
+                    CancelPlacement();
+                });
+                return;
+            }
+
+            LayFloorNow(placements, false);
+        }
+
+        private static void LayFloorNow(List<PiecePlacement> placements, bool paid)
+        {
             IsPlacing = false;
             _ghostPinned = false;
             ClearGhosts();
             EndFloorSeed();
 
-            Instance?.StartCoroutine(LayFloor(placements));
+            Instance?.StartCoroutine(LayFloor(placements, paid));
         }
 
         /// <summary>Puts the plate down without laying anything - Esc, or the placement giving up.</summary>
@@ -371,13 +421,26 @@ namespace AstvardServerMod
             }
         }
 
-        private static IEnumerator LayFloor(List<PiecePlacement> placements)
+        private static IEnumerator LayFloor(List<PiecePlacement> placements, bool paid)
         {
             var player = Player.m_localPlayer;
             if (player == null) yield break;
 
             _fillLaying = true;
             var record = BeginBuild("пол");
+
+            // Paid for whole, and what does not go down handed back at the end.
+            Bill owed = null;
+            if (paid)
+            {
+                var bill = PlacementBill(placements);
+                if (PayBill(player, bill))
+                {
+                    owed = bill;
+                    record.Paid = true;
+                }
+            }
+
             try
             {
                 var creator = player.GetPlayerID();
@@ -388,7 +451,9 @@ namespace AstvardServerMod
                 {
                     if (ZNetScene.instance == null || record.Cancelled) break;
                     var placement = placements[i];
+                    var before = built.Count;
                     PlacePiece(placement.Prefab, placement.At, placement.Turn, creator, platform, built);
+                    if (built.Count > before) owed?.Add(placement.Prefab, -1);
                     if ((i + 1) % FillPerFrame == 0) yield return null;
                 }
 
@@ -405,6 +470,7 @@ namespace AstvardServerMod
             }
             finally
             {
+                RefundBill(owed);
                 _fillLaying = false;
                 if (record.Running) EndBuild(record);
                 RefreshMenu();

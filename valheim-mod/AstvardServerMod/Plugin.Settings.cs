@@ -8,11 +8,17 @@ namespace AstvardServerMod
     {
         internal static GameObject SettingsButton;
 
+        internal static GameObject BuildRulesButton;
+
+        internal static GameObject TerrainRulesButton;
+
+        internal static GameObject FeatureRulesButton;
+
+        internal static GameObject RulesHint;
+
         internal static GameObject PlayerCooldownButton;
 
-        internal static GameObject AllowedHint;
-
-        internal static readonly GameObject[] AllowedButtons = new GameObject[MaxTemplateButtons];
+        internal static GameObject AllowedListButton;
 
         internal static GameObject CooldownHint;
 
@@ -20,23 +26,42 @@ namespace AstvardServerMod
 
         internal static GameObject CooldownApplyButton;
 
+        internal static GameObject AllowedHint;
+
+        internal static readonly GameObject[] AllowedButtons = new GameObject[MaxTemplateButtons];
+
+        internal static GameObject RuleEditHint;
+
+        internal static GameObject RuleEditToggle;
+
+        internal static GameObject RuleEditInput;
+
+        internal static GameObject RuleEditApply;
+
+        internal static readonly GameObject[] RuleChoiceButtons = new GameObject[3];
+
+        private static readonly string[] RuleChoiceLabels = { "Нельзя", "Даром", "Платно" };
+
         // Where «Назад» on a server template's page leads: the list it was opened from,
-        // which is the server's list or the one in «Настройки».
+        // the server's own or the one of what players may build.
         private static int _sharedItemBack = StateSharedList;
 
+        private static int _editingRule;
+
         /// <summary>
-        /// «Настройки» of the admin menu: one button per setting, the choice behind it, and
-        /// the builds opened to players, each leading to its page where it can be closed.
+        /// «Настройки» of the admin menu: a page for each part of the game players may be
+        /// let into, one button per setting on it with the choice behind it, as every
+        /// setting in this panel is. Made in the order the pages show them.
         /// </summary>
         private void CreateSettingsWidgets(GUIManager gui)
         {
-            SettingsButton = MakeButton(gui, "Настройки", () =>
-            {
-                MenuState = StateSettings;
-                // The list and the pause as the server has them now, not as last heard.
-                AskSharedList();
-                RefreshMenu();
-            });
+            SettingsButton = MakeButton(gui, "Настройки", () => OpenRulePage(StateSettings));
+
+            BuildRulesButton = MakeButton(gui, "Постройки для игроков", () => OpenRulePage(StateBuildRules));
+            TerrainRulesButton = MakeButton(gui, "Рельеф для игроков", () => OpenRulePage(StateTerrainRules));
+            FeatureRulesButton = MakeButton(gui, "Функции для игроков", () => OpenRulePage(StateFeatureRules));
+
+            RulesHint = MakeText(gui, "");
 
             PlayerCooldownButton = MakeButton(gui, "", () =>
             {
@@ -45,25 +70,29 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            CreateTerrainRulesButton(gui);
-
-            AllowedHint = MakeText(gui, "");
-
-            for (var slot = 0; slot < MaxTemplateButtons; slot++)
+            for (var i = 0; i < PlayerRules.Length; i++)
             {
-                var index = slot;
-                AllowedButtons[slot] = MakeButton(gui, "", () =>
+                var index = i;
+                PlayerRuleButtons[i] = MakeButton(gui, "", () =>
                 {
-                    if (index >= PlayerTemplates.Count) return;
+                    var rule = PlayerRules[index];
+                    if (rule.Kind == RuleKind.Toggle)
+                    {
+                        // Nothing to set but yes or no: the button is the switch.
+                        SetPlayerRule(rule.Key, rule.PlayersValue > 0 ? 0 : 1);
+                        return;
+                    }
 
-                    _selectedShared = PlayerTemplates[index];
-                    _sharedItemBack = StateSettings;
-                    MenuState = StateSharedItem;
+                    _editingRule = index;
+                    if (rule.Kind == RuleKind.Limit) SetFieldText(RuleEditInput, rule.PlayerLimit.ToString());
+                    MenuState = StateRuleEdit;
                     RefreshMenu();
                 });
             }
 
-            CooldownHint = MakeText(gui, "Как часто игрок может ставить\nразрешённые постройки,\nв минутах. 0 — без паузы.\nОтмена постройки паузу\nне сбрасывает.");
+            AllowedListButton = MakeButton(gui, "", () => OpenRulePage(StateAllowedList));
+
+            CooldownHint = MakeText(gui, "Как часто игрок может ставить\nбесплатные постройки,\nв минутах. 0 — без паузы.\nОтмена постройки паузу\nне сбрасывает.");
 
             CooldownInput = gui.CreateInputField(
                 Panel.transform,
@@ -76,11 +105,79 @@ namespace AstvardServerMod
                 var minutes = Mathf.Clamp(Mathf.RoundToInt(ParseField(CooldownInput, _playerBuildMinutes)),
                                           0, MaxPlayerBuildMinutes);
                 SetPlayerBuildPause(minutes);
-                MenuState = StateSettings;
+                MenuState = StateBuildRules;
                 RefreshMenu();
             });
 
-            CreateTerrainRuleWidgets(gui);
+            AllowedHint = MakeText(gui, "");
+
+            for (var slot = 0; slot < MaxTemplateButtons; slot++)
+            {
+                var index = slot;
+                AllowedButtons[slot] = MakeButton(gui, "", () =>
+                {
+                    if (index >= PlayerTemplates.Count) return;
+
+                    _selectedShared = PlayerTemplates[index];
+                    _sharedItemBack = StateAllowedList;
+                    MenuState = StateSharedItem;
+                    RefreshMenu();
+                });
+            }
+
+            RuleEditHint = MakeText(gui, "");
+
+            RuleEditToggle = MakeButton(gui, "", () =>
+            {
+                var rule = PlayerRules[_editingRule];
+                SetPlayerRule(rule.Key, rule.PlayersValue > 0 ? 0 : 1);
+            });
+
+            RuleEditInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.IntegerNumber, "метры", 16, 160f, 32f);
+            AddFixedSize(RuleEditInput, 160f, 32f);
+
+            RuleEditApply = MakeButton(gui, "Применить", () =>
+            {
+                var rule = PlayerRules[_editingRule];
+                var limit = ClampLimit(rule, Mathf.RoundToInt(ParseField(RuleEditInput, rule.PlayerLimit)));
+                SetPlayerRule(rule.Key + ".max", limit);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    $"{rule.Title} игрокам: {rule.LimitWord} до {limit} м");
+                OpenRulePage(RulePage(rule.Group));
+            });
+
+            for (var i = 0; i < RuleChoiceButtons.Length; i++)
+            {
+                var choice = i;
+                RuleChoiceButtons[i] = MakeButton(gui, RuleChoiceLabels[i], () =>
+                {
+                    var rule = PlayerRules[_editingRule];
+                    SetPlayerRule(rule.Key, choice);
+                    // Straight back to the page, where the button now says what was chosen.
+                    OpenRulePage(RulePage(rule.Group));
+                });
+            }
+        }
+
+        private static void OpenRulePage(int state)
+        {
+            MenuState = state;
+            // The rules and the lists as the server has them now, not as last heard.
+            AskSharedList();
+            RefreshMenu();
+        }
+
+        private static int RulePage(RuleGroup group)
+        {
+            switch (group)
+            {
+                case RuleGroup.Terrain: return StateTerrainRules;
+                case RuleGroup.Build: return StateBuildRules;
+                default: return StateFeatureRules;
+            }
         }
 
         private static void RebuildSettingsViews()
@@ -88,11 +185,34 @@ namespace AstvardServerMod
             SetLabel(PlayerCooldownButton, _playerBuildMinutes > 0
                 ? $"Пауза построек: {_playerBuildMinutes} мин"
                 : "Пауза построек: нет");
+            SetLabel(AllowedListButton, $"Шаблоны игрокам: {PlayerTemplates.Count}");
 
-            var hint = AllowedHint != null ? AllowedHint.GetComponentInChildren<Text>(true) : null;
-            if (hint != null)
-                hint.text = PlayerTemplates.Count == 0
-                    ? $"Игрокам пока ничего{NEWLINE}не разрешено."
+            for (var i = 0; i < PlayerRules.Length; i++)
+                SetLabel(PlayerRuleButtons[i], RuleLabel(PlayerRules[i]));
+
+            var rulesHint = RulesHint != null ? RulesHint.GetComponentInChildren<Text>(true) : null;
+            if (rulesHint != null)
+            {
+                switch (MenuState)
+                {
+                    case StateTerrainRules:
+                        rulesHint.text = $"Что игроки могут в «Рельефе».{NEWLINE}Админа это не касается.{NEWLINE}"
+                                         + $"Чужие обереги игрокам{NEWLINE}мешают всегда.";
+                        break;
+                    case StateBuildRules:
+                        rulesHint.text = $"Что игроки могут в своих{NEWLINE}«Постройках». Админа это{NEWLINE}"
+                                         + "не касается.";
+                        break;
+                    default:
+                        rulesHint.text = $"Что игроки могут в «Функциях».{NEWLINE}Админа это не касается.";
+                        break;
+                }
+            }
+
+            var allowedHint = AllowedHint != null ? AllowedHint.GetComponentInChildren<Text>(true) : null;
+            if (allowedHint != null)
+                allowedHint.text = PlayerTemplates.Count == 0
+                    ? $"Игрокам пока ничего{NEWLINE}не разрешено. Разрешить —{NEWLINE}на странице шаблона."
                     : $"Разрешено игрокам: {PlayerTemplates.Count}"
                       + (PlayerTemplates.Count > MaxTemplateButtons
                           ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
@@ -102,6 +222,17 @@ namespace AstvardServerMod
                 SetLabel(AllowedButtons[i], i < PlayerTemplates.Count
                     ? $"{PlayerTemplates[i].Name} ({PlayerTemplates[i].Pieces})"
                     : "");
+
+            var rule = PlayerRules[Mathf.Clamp(_editingRule, 0, PlayerRules.Length - 1)];
+            SetLabel(RuleEditToggle, rule.PlayersValue > 0 ? "Игрокам: разрешено" : "Игрокам: запрещено");
+
+            var editHint = RuleEditHint != null ? RuleEditHint.GetComponentInChildren<Text>(true) : null;
+            if (editHint != null)
+                editHint.text = rule.Kind == RuleKind.Limit
+                    ? $"«{rule.Title}» для игроков.{NEWLINE}Наибольший {rule.LimitWord}, м:{NEWLINE}"
+                      + $"от {rule.LimitMin} до {rule.LimitMax}."
+                    : $"«{rule.Title}» для игроков.{NEWLINE}Сейчас: {ChoiceWord(rule.PlayersValue)}."
+                      + (string.IsNullOrEmpty(rule.Note) ? "" : NEWLINE + rule.Note);
         }
 
         private static void RefreshSettingsVisibility(bool admin)
@@ -109,16 +240,42 @@ namespace AstvardServerMod
             RebuildSettingsViews();
 
             SetActive(SettingsButton, admin && MenuState == StateAdmin);
-            SetActive(PlayerCooldownButton, admin && MenuState == StateSettings);
-            SetActive(AllowedHint, admin && MenuState == StateSettings);
-            for (var i = 0; i < MaxTemplateButtons; i++)
-                SetActive(AllowedButtons[i], admin && MenuState == StateSettings && i < PlayerTemplates.Count);
+
+            var settings = admin && MenuState == StateSettings;
+            SetActive(BuildRulesButton, settings);
+            SetActive(TerrainRulesButton, settings);
+            SetActive(FeatureRulesButton, settings);
+
+            var group = MenuState == StateTerrainRules ? RuleGroup.Terrain
+                : MenuState == StateBuildRules ? RuleGroup.Build
+                : RuleGroup.Features;
+            var groupPage = admin && (MenuState == StateTerrainRules || MenuState == StateBuildRules
+                                      || MenuState == StateFeatureRules);
+            SetActive(RulesHint, groupPage);
+            for (var i = 0; i < PlayerRules.Length; i++)
+                SetActive(PlayerRuleButtons[i], groupPage && PlayerRules[i].Group == group);
+
+            var buildPage = admin && MenuState == StateBuildRules;
+            SetActive(PlayerCooldownButton, buildPage);
+            SetActive(AllowedListButton, buildPage);
 
             SetActive(CooldownHint, admin && MenuState == StatePlayerCooldown);
             SetActive(CooldownInput, admin && MenuState == StatePlayerCooldown);
             SetActive(CooldownApplyButton, admin && MenuState == StatePlayerCooldown);
 
-            RefreshTerrainRuleViews(admin);
+            var allowed = admin && MenuState == StateAllowedList;
+            SetActive(AllowedHint, allowed);
+            for (var i = 0; i < MaxTemplateButtons; i++)
+                SetActive(AllowedButtons[i], allowed && i < PlayerTemplates.Count);
+
+            var editing = admin && MenuState == StateRuleEdit;
+            var kind = PlayerRules[Mathf.Clamp(_editingRule, 0, PlayerRules.Length - 1)].Kind;
+            SetActive(RuleEditHint, editing);
+            SetActive(RuleEditToggle, editing && kind == RuleKind.Limit);
+            SetActive(RuleEditInput, editing && kind == RuleKind.Limit);
+            SetActive(RuleEditApply, editing && kind == RuleKind.Limit);
+            foreach (var button in RuleChoiceButtons)
+                SetActive(button, editing && kind == RuleKind.Choice);
         }
     }
 }

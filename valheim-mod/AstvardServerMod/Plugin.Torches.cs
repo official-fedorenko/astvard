@@ -259,38 +259,6 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Puts what torches cost back into the world at the player's feet, where walking
-        /// picks it up - the same way the hammer leaves what a piece gives back, and a full
-        /// bag loses nothing. In whole stacks, as the game drops them: one drop carrying
-        /// more than a stack would come back as an overfull slot.
-        /// </summary>
-        private static void GiveBackTorches(string prefabName, int count)
-        {
-            var player = Player.m_localPlayer;
-            var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(prefabName) : null;
-            var piece = prefab != null ? prefab.GetComponent<Piece>() : null;
-            if (player == null || piece == null || count <= 0) return;
-
-            var at = player.transform.position + Vector3.up;
-            foreach (var requirement in piece.m_resources)
-            {
-                if (requirement.m_resItem == null || requirement.m_amount <= 0) continue;
-
-                var stack = Mathf.Max(1, requirement.m_resItem.m_itemData.m_shared.m_maxStackSize);
-                var left = requirement.m_amount * count;
-                while (left > 0)
-                {
-                    var amount = Mathf.Min(left, stack);
-                    left -= amount;
-
-                    var item = requirement.m_resItem.m_itemData.Clone();
-                    item.m_dropPrefab = requirement.m_resItem.gameObject;
-                    ItemDrop.DropItem(item, amount, at, Quaternion.identity);
-                }
-            }
-        }
-
-        /// <summary>
         /// How far above its lowest solid point a piece keeps its pivot.
         ///
         /// The game stands a piece on the ground by that lowest point, not by its pivot:
