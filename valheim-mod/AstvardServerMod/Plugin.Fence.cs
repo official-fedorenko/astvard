@@ -28,8 +28,6 @@ namespace AstvardServerMod
 
         internal static GameObject FencePinButton;
 
-        internal static GameObject FenceRemoveButton;
-
         private const string FencePrefab = "stake_wall";
 
         private const string FloorPrefab = "wood_floor";
@@ -105,9 +103,6 @@ namespace AstvardServerMod
 
         private static Vector3 _fencePinnedAt;
 
-
-        private static List<ZDOID> _lastFence;
-
         private static int? _pieceLayer;
 
         /// <summary>Built pieces only - the ring must not stand inside somebody's house.</summary>
@@ -168,18 +163,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            FenceRemoveButton = MakeButton(gui, "Убрать последний забор", () =>
-            {
-                RemoveLastFence();
-                RefreshMenu();
-            });
-
             UpdateFenceLabels();
-        }
-
-        internal static bool HasLastFence
-        {
-            get { return _lastFence != null && _lastFence.Count > 0; }
         }
 
         /// <summary>A projection of the fence is following the player, waiting for a click.</summary>
@@ -374,7 +358,7 @@ namespace AstvardServerMod
                 // The same window a placed blueprint uses: this click must not also be a
                 // swing, and the game's own input can still run later in the same frame.
                 _inputHeldUntil = Time.time + 0.3f;
-                if (_fenceBuilding) return true;
+                if (_fenceBuilding || RefuseWhileBuilding()) return true;
 
                 var centre = _fencePinned ? _fencePinnedAt : Player.m_localPlayer.transform.position;
                 _fencePreviewing = false;
@@ -512,6 +496,7 @@ namespace AstvardServerMod
             }
 
             _fenceBuilding = true;
+            var record = BeginBuild("забор");
             try
             {
                 var cleared = ClearAlongPath(FenceLine(plan, centre, 0.5f),
@@ -521,6 +506,8 @@ namespace AstvardServerMod
                 if (comps != null)
                 {
                     undo = RecordTerrainUndo("забор", comps, centre, radius + levelReach);
+                    record.Ground = undo;
+                    if (undo != null) undo.Pieces = record.Pieces;
 
                     var flat = new List<Vec2>(levelLine.Count);
                     foreach (var point in levelLine) flat.Add(new Vec2(point.x, point.z));
@@ -554,14 +541,14 @@ namespace AstvardServerMod
 
                 var creator = player.GetPlayerID();
                 var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
-                var built = new List<ZDOID>();
+                var built = record.Pieces;
                 var placements = new List<PiecePlacement>();
                 var skipped = 0;
                 var roofless = 0;
 
                 foreach (var fs in sides)
                 {
-                    if (ZNetScene.instance == null || Player.m_localPlayer == null) break;
+                    if (ZNetScene.instance == null || Player.m_localPlayer == null || record.Cancelled) break;
 
                     skipped += fs.Skipped;
                     if (kit.Roofed && !fs.Roofed) roofless++;
@@ -574,8 +561,12 @@ namespace AstvardServerMod
                     yield return null;
                 }
 
-                _lastFence = built;
-                if (undo != null) undo.Pieces = built;
+                if (record.Cancelled)
+                {
+                    record.Running = false;
+                    TakeDownBuild(record);
+                    yield break;
+                }
 
                 var parts = "частокол" + (kit.Walkway ? ", помост" : "") + (kit.Roofed ? ", крыша" : "");
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
@@ -591,6 +582,7 @@ namespace AstvardServerMod
             finally
             {
                 _fenceBuilding = false;
+                if (record.Running) EndBuild(record);
                 RefreshMenu();
             }
         }
@@ -854,26 +846,6 @@ namespace AstvardServerMod
 
             if (line.Count > 0) line.Add(line[0]);
             return line;
-        }
-
-        /// <summary>
-        /// Takes the last ring back down - every piece of it, not what was cleared for it
-        /// and not the ground under it; undo is what gives the ground back. As with undo,
-        /// only what is still loaded here can go.
-        /// </summary>
-        private static void RemoveLastFence()
-        {
-            if (!HasLastFence) return;
-
-            var total = _lastFence.Count;
-            var removed = RemovePieces(_lastFence);
-            _lastFence = null;
-
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                removed == total
-                    ? $"Забор убран: деталей {removed}"
-                    : $"Убрано деталей {removed} из {total}, остальные выгружены");
-            Log.LogInfo($"[AstvardServerMod] Fence removed: {removed} of {total} pieces.");
         }
     }
 }

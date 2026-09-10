@@ -14,8 +14,6 @@ namespace AstvardServerMod
 
         internal static GameObject AreaFloorButton;
 
-        internal static GameObject AreaFillRemoveButton;
-
         private const string FloorPlate = "wood_floor";
 
         private const string FloorTile = "wood_floor_1x1";
@@ -55,8 +53,6 @@ namespace AstvardServerMod
 
         private static bool _fillLaying;
 
-        private static List<ZDOID> _lastFill;
-
         private static FloorRegion _fillRegion;
 
         private static Vector3 _fillLookedAt;
@@ -95,17 +91,6 @@ namespace AstvardServerMod
                 + $"линия пройдёт через дыру.{NEWLINE}Буфер копирования будет занят.");
 
             AreaFloorButton = MakeButton(gui, "Пол", StartFloorSeed);
-
-            AreaFillRemoveButton = MakeButton(gui, "Убрать последнее заполнение", () =>
-            {
-                RemoveLastFill();
-                RefreshMenu();
-            });
-        }
-
-        internal static bool HasLastFill
-        {
-            get { return _lastFill != null && _lastFill.Count > 0; }
         }
 
         /// <summary>A floor plate is being put to a wall, and the floor it would make is shown.</summary>
@@ -392,21 +377,28 @@ namespace AstvardServerMod
             if (player == null) yield break;
 
             _fillLaying = true;
+            var record = BeginBuild("пол");
             try
             {
                 var creator = player.GetPlayerID();
                 var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
-                var built = new List<ZDOID>(placements.Count);
+                var built = record.Pieces;
 
                 for (var i = 0; i < placements.Count; i++)
                 {
-                    if (ZNetScene.instance == null) break;
+                    if (ZNetScene.instance == null || record.Cancelled) break;
                     var placement = placements[i];
                     PlacePiece(placement.Prefab, placement.At, placement.Turn, creator, platform, built);
                     if ((i + 1) % FillPerFrame == 0) yield return null;
                 }
 
-                _lastFill = built;
+                if (record.Cancelled)
+                {
+                    record.Running = false;
+                    TakeDownBuild(record);
+                    yield break;
+                }
+
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Пол уложен: плит {built.Count}");
                 Log.LogInfo($"[AstvardServerMod] Floor laid: {built.Count} plates at "
                             + $"{(placements.Count > 0 ? placements[0].At : Vector3.zero)}.");
@@ -414,6 +406,7 @@ namespace AstvardServerMod
             finally
             {
                 _fillLaying = false;
+                if (record.Running) EndBuild(record);
                 RefreshMenu();
             }
         }
@@ -467,22 +460,6 @@ namespace AstvardServerMod
         private static void HideFillLeak()
         {
             if (_fillLeak != null) _fillLeak.SetActive(false);
-        }
-
-        /// <summary>Takes the last floor back up. As with undo, only what is still loaded here can go.</summary>
-        private static void RemoveLastFill()
-        {
-            if (!HasLastFill) return;
-
-            var total = _lastFill.Count;
-            var removed = RemovePieces(_lastFill);
-            _lastFill = null;
-
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                removed == total
-                    ? $"Убрано плит: {removed}"
-                    : $"Убрано плит {removed} из {total}, остальные выгружены");
-            Log.LogInfo($"[AstvardServerMod] Fill removed: {removed} of {total} pieces.");
         }
     }
 }

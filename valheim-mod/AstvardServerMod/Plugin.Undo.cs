@@ -129,6 +129,17 @@ namespace AstvardServerMod
             }
 
             var step = UndoStack[UndoStack.Count - 1];
+
+            // The pieces on this ground are still going up, and taking them down from
+            // here would race the builder. Its own button stops it and gives the ground
+            // back with it.
+            if (_lastBuild != null && _lastBuild.Running && _lastBuild.Ground == step)
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "Тут ещё идёт постройка — останови её кнопкой «Отменить постройку»");
+                return;
+            }
+
             UndoStack.RemoveAt(UndoStack.Count - 1);
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
@@ -159,6 +170,9 @@ namespace AstvardServerMod
             RebuildHeightmaps(step.Centre, step.Reach);
             var torches = TakeDownPieces(step);
 
+            // The build on that ground went with it; the button must not offer it again.
+            if (_lastBuild != null && _lastBuild.Ground == step) _lastBuild = null;
+
             // Say when only part of it came back. A step covers every zone the tool
             // touched, and a zone that has unloaded since is skipped - which used to be
             // reported as a clean undo, leaving the far half of a long road painted and
@@ -172,7 +186,11 @@ namespace AstvardServerMod
                     ? $"Откат: {step.Label} — {restored} из {step.Zones.Count} зон, "
                       + "остальные выгружены"
                     : $"Откат: {step.Label}";
-            if (torches > 0) text += $", факелов убрано: {torches}";
+            // A step can carry torches, a fence or a whole blueprint; say which.
+            if (torches > 0)
+                text += step.PiecePrefab != null && step.PiecePrefab.Contains("torch")
+                    ? $", факелов убрано: {torches}"
+                    : $", деталей убрано: {torches}";
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, text);
 
             Log.LogInfo($"[AstvardServerMod] Undo '{step.Label}': {restored} of "

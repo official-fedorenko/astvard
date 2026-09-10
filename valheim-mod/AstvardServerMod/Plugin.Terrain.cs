@@ -1280,11 +1280,12 @@ namespace AstvardServerMod
         /// Flattens a pad under a blueprint before it is placed, so a build meant for
         /// level ground does not end up half-buried on a slope. The footprint is taken
         /// from the rotated clipboard, so a build set down at an angle still gets a pad
-        /// that covers it.
+        /// that covers it. Returns the undo step it recorded, for the build to join, or
+        /// null when nothing was levelled.
         /// </summary>
-        private static void LevelUnderBuild(Vector3 origin, Quaternion rotation)
+        private static TerrainUndoStep LevelUnderBuild(Vector3 origin, Quaternion rotation)
         {
-            if (Clipboard.Count == 0) return;
+            if (Clipboard.Count == 0) return null;
 
             float minX = float.MaxValue, maxX = float.MinValue;
             float minZ = float.MaxValue, maxZ = float.MinValue;
@@ -1320,7 +1321,7 @@ namespace AstvardServerMod
                 // Like ground not yet loaded: the build still goes down, on the ground as it is.
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     "Землю под постройкой не выровнять — рядом чужой оберег");
-                return;
+                return null;
             }
 
             var comps = CollectTerrainComps(target, radius + blend, out _);
@@ -1330,19 +1331,19 @@ namespace AstvardServerMod
                 // to level into - only now the player hears why the ground stayed.
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     "Землю под постройкой не выровнять — она ещё не прогружена");
-                return;
+                return null;
             }
 
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp under the build.");
-                return;
+                return null;
             }
 
             // BlendLevel reads the terrain tool's own square/circle flag. The pad is
             // always round whatever the player last levelled by hand, so the flag is
             // borrowed and put back.
-            RecordTerrainUndo("площадка под постройку", comps, target, radius + blend);
+            var undo = RecordTerrainUndo("площадка под постройку", comps, target, radius + blend);
 
             var wasSquare = _terrainSquare;
             _terrainSquare = false;
@@ -1357,6 +1358,7 @@ namespace AstvardServerMod
 
             Log.LogInfo($"[AstvardServerMod] Levelled under build r={radius:F1} " +
                         $"blend={blend:F1} zones={comps.Count} at {target}");
+            return undo;
         }
 
         private static void ApplyTerrainLevel()

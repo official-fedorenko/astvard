@@ -206,7 +206,7 @@ namespace AstvardServerMod
                 LocalRot = Quaternion.identity
             });
 
-            StartPlacement();
+            StartPlacement($"спавнер «{kind.Label}»");
             InventoryGui.instance?.Hide();
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,

@@ -167,13 +167,14 @@ namespace AstvardServerMod
 
         private static float _ghostRadius = 1f;
 
-        // How many pieces go up per tick, and how long a tick lasts.
-        private const int PiecesPerBatch = 5;
+        // Up to this many pieces a build goes up in one frame; past it, a batch at a
+        // time, so a base of a thousand does not freeze the game for seconds.
+        private const int InstantBuildLimit = 300;
+
+        // How many pieces go up per tick past that, and how long a tick lasts.
+        private const int PiecesPerBatch = 10;
 
         private const float BatchDelay = 0.4f;
-
-        // Time the full ghost outline stays up before the first piece lands.
-        private const float GhostPreviewDelay = 1.5f;
 
         private static void UpdateSnapButtonLabel()
         {
@@ -297,7 +298,7 @@ namespace AstvardServerMod
 
             Log.LogInfo($"[AstvardServerMod] Copied {Clipboard.Count} pieces (r={radius}), placing.");
 
-            StartPlacement();
+            StartPlacement("копия");
             InventoryGui.instance?.Hide();
         }
 
@@ -331,8 +332,12 @@ namespace AstvardServerMod
             RefreshMenu();
         }
 
-        private static void StartPlacement()
+        // What the build now being placed is called, for «Отменить постройку».
+        private static string _placementLabel = "постройка";
+
+        private static void StartPlacement(string label = "постройка")
         {
+            _placementLabel = label;
             // Any placement starts as a plain one; the floor fill turns itself on after.
             if (_fillSeeding) EndFloorSeed();
             SpawnGhosts();
@@ -494,6 +499,12 @@ namespace AstvardServerMod
 
             if (Input.GetMouseButtonDown(0) && !_building)
             {
+                if (RefuseWhileBuilding())
+                {
+                    _inputHeldUntil = Time.time + 0.3f;
+                    return;
+                }
+
                 // The plate is not the build: the click lays the floor it has found, or,
                 // with the space open, nothing - and the plate stays in hand.
                 if (_fillSeeding)
@@ -726,60 +737,96 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Shows the whole thing as a ghost, then materialises it a few pieces at a
-        /// time from the ground up, clearing each ghost as its real piece lands.
+        /// Puts the build down where its ghost stands, clearing each ghost as its real
+        /// piece lands. Up to InstantBuildLimit pieces it all goes up in one frame; a
+        /// bigger one goes up a batch at a time from the ground up, so the frame does not
+        /// stall for seconds - and «Отменить постройку» can still stop it partway.
         /// </summary>
         private static IEnumerator BuildFromGhost(Player player)
         {
             _building = true;
-
-            // The ghost is already sitting exactly where the build should land.
-            var origin = GhostRoot != null ? GhostRoot.transform.position : player.transform.position;
-            var rotation = GhostRoot != null ? GhostRoot.transform.rotation : player.transform.rotation;
-            var creator = player.GetPlayerID();
-            // Read once rather than per piece: this is a property chain through the
-            // distribution platform. It does NOT avoid the linear scan of the world's
-            // player history that SetCreator itself runs for every piece - that cost
-            // is inside the call and stays.
-            var creatorPlatform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
-
-            // Before the pieces, not after: a floor dropped onto a slope and then
-            // levelled underneath would already have decided what it was resting on.
-            if (IsLevelGroundEnabled && ClipboardHasBuildPieces())
-                LevelUnderBuild(origin, rotation);
-
-            for (var i = 0; i < Clipboard.Count; i++)
+            var record = BeginBuild(_placementLabel);
+            try
             {
-                var entry = Clipboard[i];
-                var prefab = ZNetScene.instance != null
-                    ? ZNetScene.instance.GetPrefab(entry.Prefab)
-                    : null;
+                // The ghost is already sitting exactly where the build should land.
+                var origin = GhostRoot != null ? GhostRoot.transform.position : player.transform.position;
+                var rotation = GhostRoot != null ? GhostRoot.transform.rotation : player.transform.rotation;
+                var creator = player.GetPlayerID();
+                // Read once rather than per piece: this is a property chain through the
+                // distribution platform. It does NOT avoid the linear scan of the world's
+                // player history that SetCreator itself runs for every piece - that cost
+                // is inside the call and stays.
+                var creatorPlatform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
 
-                if (prefab != null)
+                // Before the pieces, not after: a floor dropped onto a slope and then
+                // levelled underneath would already have decided what it was resting on.
+                if (IsLevelGroundEnabled && ClipboardHasBuildPieces())
                 {
-                    var go = Instantiate(prefab,
-                        origin + rotation * entry.LocalPos,
-                        rotation * entry.LocalRot);
-
-                    var piece = go.GetComponent<Piece>();
-                    if (piece != null) piece.SetCreator(creator, creatorPlatform);
+                    // Its pieces join the step, so undoing that pad takes the build with it.
+                    record.Ground = LevelUnderBuild(origin, rotation);
+                    if (record.Ground != null) record.Ground.Pieces = record.Pieces;
                 }
-                else
+
+                // All at once is also the safest for what holds what up: a piece made by
+                // Instantiate is left out of the support check for its first 30 seconds
+                // (WearNTear.ShouldUpdate), so everything is standing before anything is
+                // judged. Batched, the ground-up order keeps each piece's supports ahead
+                // of it.
+                var batch = Clipboard.Count <= InstantBuildLimit ? Clipboard.Count : PiecesPerBatch;
+
+                for (var i = 0; i < Clipboard.Count; i++)
                 {
-                    Log.LogWarning($"[AstvardServerMod] Unknown prefab '{entry.Prefab}', skipped.");
+                    // «Отменить постройку» pressed while it goes up: stop here, and take
+                    // down what went up so far - in this coroutine, so nothing races over it.
+                    if (record.Cancelled) break;
+
+                    var entry = Clipboard[i];
+                    var prefab = ZNetScene.instance != null
+                        ? ZNetScene.instance.GetPrefab(entry.Prefab)
+                        : null;
+
+                    if (prefab != null)
+                    {
+                        var go = Instantiate(prefab,
+                            origin + rotation * entry.LocalPos,
+                            rotation * entry.LocalRot);
+
+                        var piece = go.GetComponent<Piece>();
+                        if (piece != null) piece.SetCreator(creator, creatorPlatform);
+
+                        var view = go.GetComponent<ZNetView>();
+                        if (view != null && view.IsValid()) record.Pieces.Add(view.GetZDO().m_uid);
+                    }
+                    else
+                    {
+                        Log.LogWarning($"[AstvardServerMod] Unknown prefab '{entry.Prefab}', skipped.");
+                    }
+
+                    if (i < Ghosts.Count && Ghosts[i] != null) Destroy(Ghosts[i]);
+
+                    if ((i + 1) % batch == 0 && i + 1 < Clipboard.Count)
+                        yield return new WaitForSeconds(BatchDelay);
                 }
 
-                if (i < Ghosts.Count && Ghosts[i] != null) Destroy(Ghosts[i]);
+                if (record.Cancelled)
+                {
+                    record.Running = false;
+                    TakeDownBuild(record);
+                    yield break;
+                }
 
-                // Pause after every batch, and after the last partial one too, so
-                // small blueprints don't finish within a single frame.
-                if ((i + 1) % PiecesPerBatch == 0 || i == Clipboard.Count - 1)
-                    yield return new WaitForSeconds(BatchDelay);
+                Log.LogInfo($"[AstvardServerMod] Built {record.Pieces.Count} pieces "
+                            + (batch == Clipboard.Count ? "at once." : $"in batches of {PiecesPerBatch}."));
             }
-
-            ClearGhosts();
-            _building = false;
-            Log.LogInfo($"[AstvardServerMod] Built {Clipboard.Count} pieces.");
+            finally
+            {
+                // In finally, so a build that throws partway cannot leave _building set:
+                // every later template, copy and spawner would refuse for the session.
+                ClearGhosts();
+                _building = false;
+                if (record.Running) EndBuild(record);
+                RefreshMenu();
+            }
         }
 
         /// <summary>

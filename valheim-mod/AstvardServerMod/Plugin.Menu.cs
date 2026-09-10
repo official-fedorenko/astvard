@@ -851,7 +851,7 @@ namespace AstvardServerMod
                 if (BuildInProgress) return;
                 if (!LoadTemplate(_editingTemplate.Lines, _editingTemplate.Name)) return;
 
-                StartPlacement();
+                StartPlacement($"шаблон «{_editingTemplate.Name}»");
                 InventoryGui.instance?.Hide();
             });
 
@@ -929,6 +929,9 @@ namespace AstvardServerMod
             AddFixedSize(CopyRadiusInput, 160f, 32f);
 
             CopyApplyButton = MakeButton(gui, "Выполнить", () => { if (_copyToFile) RunCopyToFile(); else RunCopy(); });
+
+            // Last but «Назад», so it sits in the same place on every page it shows on.
+            CreateBuildUndoWidget(gui);
 
             BackButton = MakeButton(gui, "Назад", () =>
             {
@@ -1266,11 +1269,15 @@ namespace AstvardServerMod
             SetActive(FenceBuildButton, admin && MenuState == StateFence);
             SetActive(FenceCancelButton, admin && MenuState == StateFence && IsFencePreviewing);
             SetActive(FencePinButton, admin && MenuState == StateFence && IsFencePreviewing);
-            SetActive(FenceRemoveButton, admin && MenuState == StateFence && HasLastFence);
             SetActive(AreaFillButton, admin && MenuState == StateBuild);
             SetActive(AreaFillHint, admin && MenuState == StateAreaFill);
             SetActive(AreaFloorButton, admin && MenuState == StateAreaFill);
-            SetActive(AreaFillRemoveButton, admin && MenuState == StateAreaFill && HasLastFill);
+
+            // On every page of «Постройки», and on any page at all while a build is still
+            // going up: the panel always reopens at the root, and stopping a base halfway
+            // should not take a walk through the menu first.
+            DisarmBuildUndo();
+            SetActive(BuildUndoButton, admin && CanUndoBuild && (BuildGoingUp || IsBuildPage(MenuState)));
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
