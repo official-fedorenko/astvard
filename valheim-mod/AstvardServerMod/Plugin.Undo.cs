@@ -186,10 +186,20 @@ namespace AstvardServerMod
         /// </summary>
         private static int TakeDownPieces(TerrainUndoStep step)
         {
-            if (step.Pieces == null || step.Pieces.Count == 0 || ZNetScene.instance == null) return 0;
+            if (step.Pieces == null || step.Pieces.Count == 0) return 0;
+
+            var removed = RemovePieces(step.Pieces);
+            if (step.PiecesPaid) GiveBackTorches(step.PiecePrefab, removed);
+            return removed;
+        }
+
+        /// <summary>Takes down whichever of these pieces are loaded here; returns how many went.</summary>
+        private static int RemovePieces(IEnumerable<ZDOID> pieces)
+        {
+            if (pieces == null || ZNetScene.instance == null) return 0;
 
             var removed = 0;
-            foreach (var id in step.Pieces)
+            foreach (var id in pieces)
             {
                 // Gone already - taken down by hand, or burnt away - is simply not found.
                 var go = ZNetScene.instance.FindInstance(id);
@@ -197,13 +207,12 @@ namespace AstvardServerMod
                 if (view == null || !view.IsValid()) continue;
 
                 // Destroy erases the world record only for its owner; for anyone else's
-                // copy it deletes the local view and leaves the torch standing for all.
+                // copy it deletes the local view and leaves the piece standing for all.
                 view.ClaimOwnership();
                 ZNetScene.instance.Destroy(go);
                 removed++;
             }
 
-            if (step.PiecesPaid) GiveBackTorches(step.PiecePrefab, removed);
             return removed;
         }
     }

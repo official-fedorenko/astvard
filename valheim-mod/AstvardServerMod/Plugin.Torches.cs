@@ -26,6 +26,13 @@ namespace AstvardServerMod
             "выкл", "деревянные", "железные", "зелёные", "синие",
         };
 
+        private static readonly string[] TorchChoiceLabels =
+        {
+            "Без факелов", "Деревянные", "Железные", "Зелёные", "Синие",
+        };
+
+        internal static readonly GameObject[] RoadTorchChoiceButtons = new GameObject[TorchPrefabs.Length];
+
         private static int _roadTorch;
 
         internal static bool IsRoadTorches
@@ -44,7 +51,7 @@ namespace AstvardServerMod
         // further out or in, so the row stays a row.
         private static readonly float[] TorchNudges = { 0f, 1f, -1f, 2f, -2f };
 
-        private static readonly Dictionary<string, float> TorchLift = new Dictionary<string, float>();
+        private static readonly Dictionary<string, float> PieceLift = new Dictionary<string, float>();
 
         private static int? _torchBlockers;
 
@@ -56,11 +63,10 @@ namespace AstvardServerMod
             if (label != null) label.text = "Факелы: " + TorchLabels[_roadTorch];
         }
 
-        private static void NextRoadTorch()
+        private static void ChooseRoadTorch(int choice)
         {
-            _roadTorch = (_roadTorch + 1) % TorchPrefabs.Length;
+            _roadTorch = Mathf.Clamp(choice, 0, TorchPrefabs.Length - 1);
             UpdateRoadTorchButtonLabel();
-            UpdateRoadHint();
             Log.LogInfo($"[AstvardServerMod] Road torches: {TorchPrefabs[_roadTorch] ?? "off"}");
         }
 
@@ -284,11 +290,11 @@ namespace AstvardServerMod
         /// ray hit. A standing torch keeps its pivot well up the pole - about 0.65 m for
         /// the wooden one, going by the player's own blueprints - so a torch put down by
         /// its pivot would stand buried to the knee. Measured on a copy that never joins
-        /// the world, once for each kind of torch.
+        /// the world, once for each kind of piece - the fence's stakes use it too.
         /// </summary>
         private static float PivotAboveBase(GameObject prefab)
         {
-            if (TorchLift.TryGetValue(prefab.name, out var known)) return known;
+            if (PieceLift.TryGetValue(prefab.name, out var known)) return known;
 
             var lift = 0f;
             var probeAt = new Vector3(0f, 5000f, 0f);
@@ -319,7 +325,7 @@ namespace AstvardServerMod
                 lift = 0f;
             }
 
-            TorchLift[prefab.name] = lift;
+            PieceLift[prefab.name] = lift;
             Log.LogInfo($"[AstvardServerMod] {prefab.name}: pivot {lift:F3} m above its base.");
             return lift;
         }

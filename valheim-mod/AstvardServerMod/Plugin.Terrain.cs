@@ -36,6 +36,14 @@ namespace AstvardServerMod
 
         internal static GameObject RoadAreaButton;
 
+        internal static GameObject RoadAreaMakeButton;
+
+        internal static GameObject RoadKindButton;
+
+        internal static GameObject RoadWidthButton;
+
+        internal static GameObject RoadBendButton;
+
         internal static GameObject RoadStoneButton;
 
         internal static GameObject RoadDirtButton;
@@ -165,14 +173,46 @@ namespace AstvardServerMod
 
         private static Vector3 _roadStart;
 
+        /// <summary>The road page, or one of the pages behind its buttons.</summary>
+        private static bool IsRoadPage(int state)
+        {
+            return state == StateRoad || state == StateRoadKind || state == StateRoadWidth
+                   || state == StateRoadBend || state == StateRoadTorches || state == StateRoadArea;
+        }
+
+        private static void OpenRoadPage(int state)
+        {
+            MenuState = state;
+            RefreshMenu();
+        }
+
+        /// <summary>
+        /// The buttons on the road page say what they are set to, so the page reads as
+        /// the road about to be laid.
+        /// </summary>
+        private static void UpdateRoadLabels()
+        {
+            SetLabel(RoadKindButton, _roadPaved ? "Кладка: каменная" : "Кладка: земляная");
+            SetLabel(RoadWidthButton, $"Ширина: {RoadWidth():0.#} м");
+
+            var curve = RoadCurve();
+            SetLabel(RoadBendButton, curve <= 0f
+                ? "Изгиб: нет"
+                : $"Изгиб: {(_roadBendLeft ? "влево" : "вправо")}, {curve:0.#}");
+
+            UpdateRoadTorchButtonLabel();
+        }
+
+        /// <summary>
+        /// One hint for all the road's pages, saying what the page in front of the
+        /// player is for.
+        /// </summary>
         private static void UpdateRoadHint()
         {
             var label = RoadHint != null ? RoadHint.GetComponentInChildren<Text>(true) : null;
             if (label == null) return;
 
-            var kind = _roadPaved ? "каменная" : "земляная";
-            var bend = _roadBendLeft ? "влево" : "вправо";
-            var smooth = IsRoadSmoothing ? $"{NEWLINE}Землю под дорожкой сгладит." : "";
+            var smooth = IsRoadSmoothing ? $"{NEWLINE}Землю сгладит." : "";
             var clear = RoadClearingActive
                 ? $"{NEWLINE}Деревья и камни на пути снесёт —{NEWLINE}откат их не вернёт."
                 : "";
@@ -181,11 +221,34 @@ namespace AstvardServerMod
                 : IsAdminUnlocked
                     ? $"{NEWLINE}По краям встанут факелы."
                     : $"{NEWLINE}По краям встанут факелы —{NEWLINE}из твоих материалов.";
-            label.text = _roadStarted
-                ? $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
-                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить.{smooth}{clear}{torches}"
-                : $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Встань в начало дорожки{NEWLINE}"
-                  + $"и нажми «Начать».{smooth}{clear}{torches}";
+            var notes = smooth + clear + torches;
+
+            switch (MenuState)
+            {
+                case StateRoadKind:
+                    label.text = "Чем выложить дорожку и площадку.";
+                    break;
+                case StateRoadWidth:
+                    label.text = "Ширина дорожки, от 1 до 8 м.";
+                    break;
+                case StateRoadBend:
+                    label.text = $"Насколько изогнуть: 0 — прямо,{NEWLINE}1 — чуть-чуть, 10 — полукругом.{NEWLINE}"
+                                 + "Потом выбери сторону.";
+                    break;
+                case StateRoadTorches:
+                    label.text = $"Шаг между факелами, от 4 до 50 м.{NEWLINE}Потом выбери, какие ставить.";
+                    break;
+                case StateRoadArea:
+                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до 32 м. Кладка и всё{NEWLINE}"
+                                 + $"остальное — как у дорожки.{notes}";
+                    break;
+                default:
+                    label.text = _roadStarted
+                        ? $"Начало отмечено — иди в конец{NEWLINE}и нажми ЛКМ или «Закончить».{NEWLINE}"
+                          + $"Esc — отменить.{notes}"
+                        : $"Встань в начало дорожки{NEWLINE}и нажми «Начать».{notes}";
+                    break;
+            }
         }
 
         private static readonly List<Vector3> RoadPath = new List<Vector3>();
@@ -210,16 +273,24 @@ namespace AstvardServerMod
         }
 
         /// <summary>
+        /// How much the road bends, 0 to 10. The field is a magnitude and the buttons
+        /// carry the side. A typed minus used to be the only way to say "the other way",
+        /// and the field's own label had that backwards — positive bows left, which
+        /// RoadTests pins.
+        /// </summary>
+        private static float RoadCurve()
+        {
+            return Mathf.Clamp(Mathf.Abs(ParseField(RoadCurveInput, 0f)), 0f, 10f);
+        }
+
+        /// <summary>
         /// How far the road bows out at its middle, in metres. Scaling it by the length
         /// means the typed number describes the shape rather than an absolute distance:
         /// 1 is a gentle bend and 10 puts the bulge at half the chord, a semicircle.
         /// </summary>
         private static float RoadSagitta(float length)
         {
-            // The field is a magnitude and the buttons carry the side. A typed minus
-            // used to be the only way to say "the other way", and the field's own
-            // label had that backwards — positive bows left, which RoadTests pins.
-            var curve = Mathf.Clamp(Mathf.Abs(ParseField(RoadCurveInput, 0f)), 0f, 10f);
+            var curve = RoadCurve();
             return Geometry.Sagitta(_roadBendLeft ? curve : -curve, length);
         }
 

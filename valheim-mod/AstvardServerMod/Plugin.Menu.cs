@@ -47,6 +47,12 @@ namespace AstvardServerMod
         private const int StateSpawners = 29;   // спавнеры, сгруппированные по биому
         private const int StateSpawnerList = 30; // спавнеры одного биома
         private const int StateFood = 31;       // готовые наборы еды по биомам
+        private const int StateRoadKind = 32;   // кладка дорожки: каменная / земляная
+        private const int StateRoadWidth = 33;  // ширина дорожки
+        private const int StateRoadBend = 34;   // изгиб: насколько и в какую сторону
+        private const int StateRoadTorches = 35; // факелы: какие и через сколько
+        private const int StateRoadArea = 36;   // площадка вокруг игрока
+        private const int StateFence = 37;      // частокол кольцом вокруг игрока
 
         internal static GameObject Panel;
 
@@ -554,54 +560,19 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            RoadButton = MakeButton(gui, "Дорожка", () =>
-            {
-                MenuState = StateRoad;
-                UpdateRoadHint();
-                RefreshMenu();
-            });
+            RoadButton = MakeButton(gui, "Дорожка", () => OpenRoadPage(StateRoad));
 
+            // One button for each setting, the choice itself behind it on a page of its
+            // own - the way «Рельеф» opens onto «Выровнять круг» - so the road page keeps
+            // only what is pressed every time. The page's widgets are made in the order
+            // they stand on it; the pages behind them follow.
             RoadHint = MakeText(gui, "");
-            UpdateRoadHint();
 
-            RoadWidthInput = gui.CreateInputField(
-                Panel.transform,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "ширина, напр. 3", 16, 160f, 32f);
-            AddFixedSize(RoadWidthInput, 160f, 32f);
+            RoadKindButton = MakeButton(gui, "", () => OpenRoadPage(StateRoadKind));
 
-            RoadCurveInput = gui.CreateInputField(
-                Panel.transform,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "изгиб 0-10, напр. 3", 16, 160f, 32f);
-            AddFixedSize(RoadCurveInput, 160f, 32f);
+            RoadWidthButton = MakeButton(gui, "", () => OpenRoadPage(StateRoadWidth));
 
-            RoadAreaInput = gui.CreateInputField(
-                Panel.transform,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "радиус площадки, напр. 8", 16, 160f, 32f);
-            AddFixedSize(RoadAreaInput, 160f, 32f);
-
-            RoadStoneButton = MakeButton(gui, "Каменная", () =>
-            {
-                _roadPaved = true;
-                UpdateRoadHint();
-            });
-
-            RoadDirtButton = MakeButton(gui, "Земляная", () =>
-            {
-                _roadPaved = false;
-                UpdateRoadHint();
-            });
-
-            RoadClearButton = MakeButton(gui, "", () =>
-            {
-                IsRoadClearing = !IsRoadClearing;
-                UpdateRoadClearButtonLabel();
-                UpdateRoadHint();
-                Log.LogInfo($"[AstvardServerMod] Road clearing: {IsRoadClearing}");
-            });
-            UpdateRoadClearButtonLabel();
+            RoadBendButton = MakeButton(gui, "", () => OpenRoadPage(StateRoadBend));
 
             RoadSmoothButton = MakeButton(gui, "", () =>
             {
@@ -612,30 +583,18 @@ namespace AstvardServerMod
             });
             UpdateRoadSmoothButtonLabel();
 
-            RoadTorchButton = MakeButton(gui, "", () =>
+            RoadClearButton = MakeButton(gui, "", () =>
             {
-                NextRoadTorch();
-                RefreshMenu();
-            });
-            UpdateRoadTorchButtonLabel();
-
-            RoadTorchInput = gui.CreateInputField(
-                Panel.transform,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "шаг факелов, напр. 10", 16, 160f, 32f);
-            AddFixedSize(RoadTorchInput, 160f, 32f);
-
-            RoadLeftButton = MakeButton(gui, "Изгиб влево", () =>
-            {
-                _roadBendLeft = true;
+                IsRoadClearing = !IsRoadClearing;
+                UpdateRoadClearButtonLabel();
                 UpdateRoadHint();
+                Log.LogInfo($"[AstvardServerMod] Road clearing: {IsRoadClearing}");
             });
+            UpdateRoadClearButtonLabel();
 
-            RoadRightButton = MakeButton(gui, "Изгиб вправо", () =>
-            {
-                _roadBendLeft = false;
-                UpdateRoadHint();
-            });
+            RoadTorchButton = MakeButton(gui, "", () => OpenRoadPage(StateRoadTorches));
+
+            RoadAreaButton = MakeButton(gui, "Площадка вокруг меня", () => OpenRoadPage(StateRoadArea));
 
             RoadStartButton = MakeButton(gui, "Начать", () =>
             {
@@ -652,13 +611,73 @@ namespace AstvardServerMod
 
             RoadEndButton = MakeButton(gui, "Закончить", BuildRoad);
 
-            RoadAreaButton = MakeButton(gui, "Вокруг меня", BuildArea);
-
             RoadCancelButton = MakeButton(gui, "Отменить", () =>
             {
                 CancelRoad();
                 RefreshMenu();
             });
+
+            // A choice made on one of these pages takes the player straight back to the
+            // road, where the button now says what was chosen.
+            RoadStoneButton = MakeButton(gui, "Каменная", () =>
+            {
+                _roadPaved = true;
+                OpenRoadPage(StateRoad);
+            });
+
+            RoadDirtButton = MakeButton(gui, "Земляная", () =>
+            {
+                _roadPaved = false;
+                OpenRoadPage(StateRoad);
+            });
+
+            RoadWidthInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "ширина, напр. 3", 16, 160f, 32f);
+            AddFixedSize(RoadWidthInput, 160f, 32f);
+
+            RoadCurveInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "изгиб 0-10, напр. 3", 16, 160f, 32f);
+            AddFixedSize(RoadCurveInput, 160f, 32f);
+
+            RoadLeftButton = MakeButton(gui, "Влево", () =>
+            {
+                _roadBendLeft = true;
+                OpenRoadPage(StateRoad);
+            });
+
+            RoadRightButton = MakeButton(gui, "Вправо", () =>
+            {
+                _roadBendLeft = false;
+                OpenRoadPage(StateRoad);
+            });
+
+            RoadTorchInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "шаг факелов, напр. 10", 16, 160f, 32f);
+            AddFixedSize(RoadTorchInput, 160f, 32f);
+
+            for (var i = 0; i < RoadTorchChoiceButtons.Length; i++)
+            {
+                var choice = i;
+                RoadTorchChoiceButtons[i] = MakeButton(gui, TorchChoiceLabels[i], () =>
+                {
+                    ChooseRoadTorch(choice);
+                    OpenRoadPage(StateRoad);
+                });
+            }
+
+            RoadAreaInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "радиус площадки, напр. 8", 16, 160f, 32f);
+            AddFixedSize(RoadAreaInput, 160f, 32f);
+
+            RoadAreaMakeButton = MakeButton(gui, "Сделать", BuildArea);
 
             BridgeButton = MakeButton(gui, "Мост", () =>
             {
@@ -759,6 +778,8 @@ namespace AstvardServerMod
                 MenuState = StateSpawners;
                 RefreshMenu();
             });
+
+            CreateFenceWidgets(gui);
 
             TemplateHint = MakeText(gui, "");
 
@@ -910,6 +931,8 @@ namespace AstvardServerMod
                 if (MenuState == StateTerrainForm) MenuState = StateTerrain;
                 else if (MenuState == StateBridge) MenuState = StateTerrain;
                 else if (MenuState == StateRoad) MenuState = StateTerrain;
+                else if (IsRoadPage(MenuState)) MenuState = StateRoad;
+                else if (MenuState == StateFence) MenuState = StateBuild;
                 else if (MenuState == StateCopyForm) MenuState = StateBuild;
                 else if (MenuState == StateTod || MenuState == StateRepair ||
                          MenuState == StateForceDelete ||
@@ -1229,6 +1252,11 @@ namespace AstvardServerMod
             SetActive(PasteButton, admin && MenuState == StateBuild);
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
             SetActive(SpawnerButton, admin && MenuState == StateBuild);
+            SetActive(FenceButton, admin && MenuState == StateBuild);
+            SetActive(FenceHint, admin && MenuState == StateFence);
+            SetActive(FenceRadiusInput, admin && MenuState == StateFence);
+            SetActive(FenceBuildButton, admin && MenuState == StateFence);
+            SetActive(FenceRemoveButton, admin && MenuState == StateFence && HasLastFence);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
@@ -1274,22 +1302,32 @@ namespace AstvardServerMod
             SetActive(BridgeButton, MenuState == StateTerrain);
             SetActive(UndoButton, MenuState == StateTerrain && CanUndoTerrain);
             UpdateUndoButtonLabel();
-            SetActive(RoadHint, MenuState == StateRoad);
-            SetActive(RoadWidthInput, MenuState == StateRoad);
-            SetActive(RoadCurveInput, MenuState == StateRoad);
-            SetActive(RoadAreaInput, MenuState == StateRoad);
-            SetActive(RoadAreaButton, MenuState == StateRoad);
-            SetActive(RoadCancelButton, MenuState == StateRoad && RoadInProgress);
-            SetActive(RoadStoneButton, MenuState == StateRoad);
-            SetActive(RoadDirtButton, MenuState == StateRoad);
-            SetActive(RoadClearButton, admin && MenuState == StateRoad);
-            SetActive(RoadSmoothButton, MenuState == StateRoad);
-            SetActive(RoadTorchButton, MenuState == StateRoad);
-            SetActive(RoadTorchInput, MenuState == StateRoad && IsRoadTorches);
-            SetActive(RoadLeftButton, MenuState == StateRoad);
-            SetActive(RoadRightButton, MenuState == StateRoad);
-            SetActive(RoadStartButton, MenuState == StateRoad);
-            SetActive(RoadEndButton, MenuState == StateRoad);
+            var road = MenuState == StateRoad;
+            if (IsRoadPage(MenuState)) UpdateRoadHint();
+            if (road) UpdateRoadLabels();
+            SetActive(RoadHint, IsRoadPage(MenuState));
+            SetActive(RoadKindButton, road);
+            SetActive(RoadWidthButton, road);
+            SetActive(RoadBendButton, road);
+            SetActive(RoadSmoothButton, road);
+            SetActive(RoadClearButton, admin && road);
+            SetActive(RoadTorchButton, road);
+            SetActive(RoadAreaButton, road);
+            SetActive(RoadStartButton, road);
+            SetActive(RoadEndButton, road && RoadAwaitingEnd);
+            SetActive(RoadCancelButton, road && RoadInProgress);
+
+            SetActive(RoadStoneButton, MenuState == StateRoadKind);
+            SetActive(RoadDirtButton, MenuState == StateRoadKind);
+            SetActive(RoadWidthInput, MenuState == StateRoadWidth);
+            SetActive(RoadCurveInput, MenuState == StateRoadBend);
+            SetActive(RoadLeftButton, MenuState == StateRoadBend);
+            SetActive(RoadRightButton, MenuState == StateRoadBend);
+            SetActive(RoadTorchInput, MenuState == StateRoadTorches);
+            foreach (var choice in RoadTorchChoiceButtons)
+                SetActive(choice, MenuState == StateRoadTorches);
+            SetActive(RoadAreaInput, MenuState == StateRoadArea);
+            SetActive(RoadAreaMakeButton, MenuState == StateRoadArea);
             SetActive(LevelSquareButton, MenuState == StateTerrain);
 
             SetActive(BridgeHint, MenuState == StateBridge);
@@ -1355,7 +1393,7 @@ namespace AstvardServerMod
         {
             return state == StateFeatures || state == StateFill || state == StateCollect
                    || state == StateTerrain || state == StateTerrainForm
-                   || state == StateRoad || state == StateBridge;
+                   || state == StateRoad || state == StateBridge || IsRoadPage(state);
         }
 
         private static readonly string NEWLINE = "\n";

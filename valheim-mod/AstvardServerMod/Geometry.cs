@@ -31,6 +31,41 @@ namespace AstvardServerMod
         }
     }
 
+    /// <summary>One stake of a ring fence: where its middle stands, and which way it faces.</summary>
+    internal struct Stake
+    {
+        public Vec2 At;
+
+        /// <summary>
+        /// Degrees from +Z round towards +X to the outward face - the yaw Unity turns a
+        /// piece by, so a stake of the player's own «30м.» fence on its northern side
+        /// has 0 here and stands unrotated.
+        /// </summary>
+        public float Yaw;
+
+        public Stake(Vec2 at, float yaw)
+        {
+            At = at;
+            Yaw = yaw;
+        }
+    }
+
+    /// <summary>A ring of palisade round a centre, laid out as a regular polygon.</summary>
+    internal sealed class FencePlan
+    {
+        public int Sides;
+
+        public int PerSide;
+
+        /// <summary>Metres between the middles of neighbouring stakes on one side.</summary>
+        public float Spacing;
+
+        public readonly List<Stake> Stakes = new List<Stake>();
+
+        /// <summary>Where the sides meet, in order round the ring.</summary>
+        public readonly List<Vec2> Corners = new List<Vec2>();
+    }
+
     /// <summary>
     /// The arithmetic behind the terrain, zone and blueprint tools, kept free of Unity
     /// and of the game's own types so it can be exercised without either.
@@ -226,6 +261,65 @@ namespace AstvardServerMod
             }
 
             return posts;
+        }
+
+        // ---------------- ring fence ----------------
+
+        /// <summary>
+        /// A palisade closing a ring round the origin, <paramref name="radius"/> metres
+        /// out to the line of its stakes: a regular polygon of straight sides, none of
+        /// them more than <paramref name="maxPerSide"/> stakes long.
+        ///
+        /// Sixteen sides at the least. That is how the player built «30м.» and «40м.»
+        /// by hand - one side for each of the hammer's sixteen turns - and it keeps even a
+        /// small ring round rather than square. Past about thirty metres sixteen sides
+        /// would each need more stakes than allowed, so there are more of them.
+        ///
+        /// The radius is kept exactly, whatever it is. A side is then rarely a whole
+        /// number of stakes long, so it gets the next whole number and they stand a
+        /// little closer than their own width; the palisade comes out a touch denser, and
+        /// never with a gap. The last stake of each side reaches the corner, so the ring
+        /// is closed there too.
+        /// </summary>
+        public static FencePlan FenceRing(float radius, int maxPerSide, float stakeWidth)
+        {
+            var plan = new FencePlan();
+            if (radius <= 0f || maxPerSide < 1 || stakeWidth <= 0f) return plan;
+
+            var halfLongest = maxPerSide * stakeWidth * 0.5;
+            var sides = Math.Max(16, (int)Math.Ceiling(Math.PI / Math.Atan(halfLongest / radius) - 1e-6));
+            var half = Math.PI / sides;
+            var length = (float)(2.0 * radius * Math.Tan(half));
+            var perSide = Math.Max(1, (int)Math.Ceiling(length / stakeWidth - 1e-4));
+            var spacing = length / perSide;
+
+            plan.Sides = sides;
+            plan.PerSide = perSide;
+            plan.Spacing = spacing;
+
+            var corner = radius / Math.Cos(half);
+            for (var i = 0; i < sides; i++)
+            {
+                var angle = 2.0 * Math.PI * i / sides;
+                var outX = (float)Math.Sin(angle);
+                var outZ = (float)Math.Cos(angle);
+                var yaw = (float)(360.0 * i / sides);
+
+                // Along the side, a quarter turn clockwise from the outward direction:
+                // on the northern side that is +X, the way the stakes of «30м.» run.
+                for (var j = 0; j < perSide; j++)
+                {
+                    var along = (j + 0.5f) * spacing - length * 0.5f;
+                    plan.Stakes.Add(new Stake(
+                        new Vec2(outX * radius + outZ * along, outZ * radius - outX * along), yaw));
+                }
+
+                var between = angle + half;
+                plan.Corners.Add(new Vec2((float)(Math.Sin(between) * corner),
+                                          (float)(Math.Cos(between) * corner)));
+            }
+
+            return plan;
         }
 
         // ---------------- grids ----------------
