@@ -333,6 +333,8 @@ namespace AstvardServerMod
 
         private static void StartPlacement()
         {
+            // Any placement starts as a plain one; the floor fill turns itself on after.
+            if (_fillSeeding) EndFloorSeed();
             SpawnGhosts();
             _placeYaw = 0f;
             _placeHeight = 0f;
@@ -346,6 +348,7 @@ namespace AstvardServerMod
         {
             IsPlacing = false;
             _ghostPinned = false;
+            if (_fillSeeding) EndFloorSeed();
             ClearGhosts();
             Log.LogInfo("[AstvardServerMod] Placement cancelled.");
         }
@@ -479,6 +482,9 @@ namespace AstvardServerMod
 
             UpdateGhostTransform(player);
 
+            // A floor plate being put to a wall shows the whole floor it would start.
+            if (_fillSeeding) UpdateAreaFillPreview();
+
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 NoteEscapeUsed();
@@ -488,6 +494,15 @@ namespace AstvardServerMod
 
             if (Input.GetMouseButtonDown(0) && !_building)
             {
+                // The plate is not the build: the click lays the floor it has found, or,
+                // with the space open, nothing - and the plate stays in hand.
+                if (_fillSeeding)
+                {
+                    _inputHeldUntil = Time.time + 0.3f;
+                    TryLayFloor();
+                    return;
+                }
+
                 IsPlacing = false;
                 _ghostPinned = false;
                 _inputHeldUntil = Time.time + 0.3f;
@@ -535,7 +550,8 @@ namespace AstvardServerMod
             else
             {
                 var forward = GhostForward(player);
-                position = player.transform.position + forward * PlacementDistance;
+                position = player.transform.position
+                           + forward * (_fillSeeding ? FillSeedDistance : PlacementDistance);
                 heading = Quaternion.LookRotation(forward).eulerAngles.y;
             }
 
@@ -551,7 +567,8 @@ namespace AstvardServerMod
 
             GhostRoot.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
 
-            if (!IsSnapEnabled) return;
+            // A floor plate always snaps: meeting a wall is the whole point of it.
+            if (!IsSnapEnabled && !_fillSeeding) return;
 
             // What is built nearby barely changes between frames, so it is
             // gathered on a timer while the pair search runs every frame.

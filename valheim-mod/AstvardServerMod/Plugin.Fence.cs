@@ -212,15 +212,9 @@ namespace AstvardServerMod
 
         // ---------------- projection ----------------
 
-        // Ghosts by prefab name, kept for the life of a projection and handed out again
-        // on every fresh look: a walk round the ring moves them rather than making new
-        // ones, which at a thousand pieces is the difference between smooth and not.
-        private static readonly Dictionary<string, List<GameObject>> FenceGhostPool =
-            new Dictionary<string, List<GameObject>>();
+        private static readonly GhostPool FenceGhosts = new GhostPool(FenceGhostTint);
 
-        private static readonly Dictionary<Material, Material> FenceGhostTints = new Dictionary<Material, Material>();
-
-        private static readonly List<FencePlacement> FenceShown = new List<FencePlacement>();
+        private static readonly List<PiecePlacement> FenceShown = new List<PiecePlacement>();
 
         private static readonly HashSet<string> FenceWarned = new HashSet<string>();
 
@@ -295,7 +289,7 @@ namespace AstvardServerMod
         {
             if (!_fencePreviewing)
             {
-                if (FenceShown.Count > 0 || FenceGhostPool.Count > 0) ClearFenceGhost();
+                if (FenceShown.Count > 0 || !FenceGhosts.Empty) ClearFenceGhost();
                 return;
             }
 
@@ -332,7 +326,7 @@ namespace AstvardServerMod
             float? flat = IsFenceLevel ? FenceLevelHeight(centre) : (float?)null;
             var stakeLift = PivotAboveBase(kit.Stake);
 
-            var placements = new List<FencePlacement>();
+            var placements = new List<PiecePlacement>();
             for (var side = 0; side < plan.Sides; side++)
             {
                 var fs = JudgeFenceSide(plan, side, centre, radius, panels, posts, kit.Walkway, kit.Roofed, flat);
@@ -394,101 +388,16 @@ namespace AstvardServerMod
             return false;
         }
 
-        private static void ShowFenceGhost(List<FencePlacement> placements)
+        private static void ShowFenceGhost(List<PiecePlacement> placements)
         {
-            var used = new Dictionary<string, int>();
-            foreach (var placement in placements)
-            {
-                var name = placement.Prefab.name;
-                if (!FenceGhostPool.TryGetValue(name, out var pool))
-                {
-                    pool = new List<GameObject>();
-                    FenceGhostPool[name] = pool;
-                }
-
-                used.TryGetValue(name, out var next);
-
-                // A ghost can go with its scene; a fresh one takes its place.
-                if (next < pool.Count && pool[next] == null) pool[next] = MakeFenceGhost(placement.Prefab);
-                if (next == pool.Count) pool.Add(MakeFenceGhost(placement.Prefab));
-
-                var ghost = pool[next];
-                used[name] = next + 1;
-                if (ghost == null) continue;
-
-                ghost.transform.SetPositionAndRotation(placement.At, placement.Turn);
-                if (!ghost.activeSelf) ghost.SetActive(true);
-            }
-
-            foreach (var entry in FenceGhostPool)
-            {
-                used.TryGetValue(entry.Key, out var shown);
-                for (var i = shown; i < entry.Value.Count; i++)
-                    if (entry.Value[i] != null && entry.Value[i].activeSelf) entry.Value[i].SetActive(false);
-            }
-
+            FenceGhosts.Show(placements);
             FenceShown.Clear();
             FenceShown.AddRange(placements);
         }
 
-        /// <summary>
-        /// One piece of the projection: the real prefab, made without joining the world,
-        /// with nothing in it left to collide or to run, and see-through. The tinted
-        /// materials are shared - one copy for each material the fence's four prefabs use
-        /// - rather than a copy for every ghost.
-        /// </summary>
-        private static GameObject MakeFenceGhost(GameObject prefab)
-        {
-            ZNetView.m_forceDisableInit = true;
-            try
-            {
-                var ghost = Instantiate(prefab);
-
-                foreach (var collider in ghost.GetComponentsInChildren<Collider>())
-                    collider.enabled = false;
-                foreach (var behaviour in ghost.GetComponentsInChildren<MonoBehaviour>())
-                    behaviour.enabled = false;
-
-                foreach (var renderer in ghost.GetComponentsInChildren<Renderer>())
-                {
-                    var materials = renderer.sharedMaterials;
-                    for (var i = 0; i < materials.Length; i++)
-                    {
-                        var original = materials[i];
-                        if (original == null) continue;
-
-                        if (!FenceGhostTints.TryGetValue(original, out var tinted))
-                        {
-                            tinted = new Material(original);
-                            if (tinted.HasProperty("_Color")) tinted.color = FenceGhostTint;
-                            FenceGhostTints[original] = tinted;
-                        }
-
-                        materials[i] = tinted;
-                    }
-
-                    renderer.sharedMaterials = materials;
-                }
-
-                return ghost;
-            }
-            finally
-            {
-                ZNetView.m_forceDisableInit = false;
-            }
-        }
-
         private static void ClearFenceGhost()
         {
-            foreach (var pool in FenceGhostPool.Values)
-                foreach (var ghost in pool)
-                    if (ghost != null) Destroy(ghost);
-            FenceGhostPool.Clear();
-
-            foreach (var tinted in FenceGhostTints.Values)
-                if (tinted != null) Destroy(tinted);
-            FenceGhostTints.Clear();
-
+            FenceGhosts.Clear();
             FenceShown.Clear();
             _fenceGhostKey = null;
         }
@@ -519,22 +428,6 @@ namespace AstvardServerMod
             public bool Sections
             {
                 get { return Walkway || Roofed; }
-            }
-        }
-
-        private struct FencePlacement
-        {
-            public GameObject Prefab;
-
-            public Vector3 At;
-
-            public Quaternion Turn;
-
-            public FencePlacement(GameObject prefab, Vector3 at, Quaternion turn)
-            {
-                Prefab = prefab;
-                At = at;
-                Turn = turn;
             }
         }
 
@@ -662,7 +555,7 @@ namespace AstvardServerMod
                 var creator = player.GetPlayerID();
                 var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
                 var built = new List<ZDOID>();
-                var placements = new List<FencePlacement>();
+                var placements = new List<PiecePlacement>();
                 var skipped = 0;
                 var roofless = 0;
 
@@ -676,7 +569,7 @@ namespace AstvardServerMod
                     placements.Clear();
                     LayOutSide(fs, plan, kit, stakeLift, panels, posts, placements);
                     foreach (var placement in placements)
-                        PlaceFencePiece(placement.Prefab, placement.At, placement.Turn, creator, platform, built);
+                        PlacePiece(placement.Prefab, placement.At, placement.Turn, creator, platform, built);
 
                     yield return null;
                 }
@@ -712,7 +605,7 @@ namespace AstvardServerMod
         /// is what levelling is for.
         /// </summary>
         private static void LayOutSide(FenceSide fs, FencePlan plan, FenceKit kit, float stakeLift,
-                                       float[] panels, float[] posts, List<FencePlacement> into)
+                                       float[] panels, float[] posts, List<PiecePlacement> into)
         {
             if (fs.Lowest == float.MaxValue) return;
 
@@ -721,7 +614,7 @@ namespace AstvardServerMod
             {
                 if (!fs.Standing[j]) continue;
                 var baseY = kit.Sections ? fs.Lowest : fs.Feet[j].y;
-                into.Add(new FencePlacement(kit.Stake,
+                into.Add(new PiecePlacement(kit.Stake,
                     new Vector3(fs.Feet[j].x, baseY + stakeLift, fs.Feet[j].z), turn));
             }
 
@@ -731,13 +624,13 @@ namespace AstvardServerMod
                 var at = fs.Middle + fs.Along * panels[j] + pivot;
 
                 if (fs.Floor[j])
-                    into.Add(new FencePlacement(kit.Floor,
+                    into.Add(new PiecePlacement(kit.Floor,
                         at + Vector3.up * WalkwayRise - fs.Outward * WalkwayInset, turn));
 
                 if (fs.Roofed && fs.Roof[j])
                 {
-                    into.Add(new FencePlacement(kit.Roof, at + Vector3.up * RoofLowRise + fs.Outward * RoofReach, turn));
-                    into.Add(new FencePlacement(kit.Roof, at + Vector3.up * RoofHighRise - fs.Outward * RoofReach, turn));
+                    into.Add(new PiecePlacement(kit.Roof, at + Vector3.up * RoofLowRise + fs.Outward * RoofReach, turn));
+                    into.Add(new PiecePlacement(kit.Roof, at + Vector3.up * RoofHighRise - fs.Outward * RoofReach, turn));
                 }
             }
 
@@ -745,18 +638,7 @@ namespace AstvardServerMod
 
             foreach (var post in posts)
                 foreach (var rise in PostRises)
-                    into.Add(new FencePlacement(kit.Post, fs.Middle + fs.Along * post + pivot + Vector3.up * rise, turn));
-        }
-
-        private static void PlaceFencePiece(GameObject prefab, Vector3 at, Quaternion turn, long creator,
-                                            PlatformUserID platform, List<ZDOID> built)
-        {
-            var go = Instantiate(prefab, at, turn);
-            var piece = go.GetComponent<Piece>();
-            if (piece != null) piece.SetCreator(creator, platform);
-
-            var view = go.GetComponent<ZNetView>();
-            if (view != null && view.IsValid()) built.Add(view.GetZDO().m_uid);
+                    into.Add(new PiecePlacement(kit.Post, fs.Middle + fs.Along * post + pivot + Vector3.up * rise, turn));
         }
 
         /// <summary>

@@ -51,7 +51,15 @@ namespace AstvardServerMod
         // further out or in, so the row stays a row.
         private static readonly float[] TorchNudges = { 0f, 1f, -1f, 2f, -2f };
 
-        private static readonly Dictionary<string, float> PieceLift = new Dictionary<string, float>();
+        /// <summary>How far a piece reaches below its pivot and above it, by its solid colliders.</summary>
+        private struct PieceSpan
+        {
+            public float Below;
+
+            public float Above;
+        }
+
+        private static readonly Dictionary<string, PieceSpan> PieceSpans = new Dictionary<string, PieceSpan>();
 
         private static int? _torchBlockers;
 
@@ -289,14 +297,29 @@ namespace AstvardServerMod
         /// the placement ghost is moved until its nearest collider touches the spot the
         /// ray hit. A standing torch keeps its pivot well up the pole - about 0.65 m for
         /// the wooden one, going by the player's own blueprints - so a torch put down by
-        /// its pivot would stand buried to the knee. Measured on a copy that never joins
-        /// the world, once for each kind of piece - the fence's stakes use it too.
+        /// its pivot would stand buried to the knee.
         /// </summary>
         private static float PivotAboveBase(GameObject prefab)
         {
-            if (PieceLift.TryGetValue(prefab.name, out var known)) return known;
+            return MeasurePiece(prefab).Below;
+        }
 
-            var lift = 0f;
+        /// <summary>How far below its highest solid point a piece keeps its pivot - a floor's top.</summary>
+        private static float PivotBelowTop(GameObject prefab)
+        {
+            return MeasurePiece(prefab).Above;
+        }
+
+        /// <summary>
+        /// Measured on a copy that never joins the world, once for each kind of piece, and
+        /// written to the log - the torches, the fence's stakes and the floor plates all
+        /// stand by it.
+        /// </summary>
+        private static PieceSpan MeasurePiece(GameObject prefab)
+        {
+            if (PieceSpans.TryGetValue(prefab.name, out var known)) return known;
+
+            var span = new PieceSpan();
             var probeAt = new Vector3(0f, 5000f, 0f);
             GameObject probe = null;
 
@@ -307,10 +330,19 @@ namespace AstvardServerMod
             {
                 probe = Instantiate(prefab, probeAt, Quaternion.identity);
                 var lowest = float.MaxValue;
+                var highest = float.MinValue;
                 foreach (var col in probe.GetComponentsInChildren<Collider>())
-                    if (col != null && col.enabled && !col.isTrigger)
-                        lowest = Mathf.Min(lowest, col.bounds.min.y);
-                if (lowest < float.MaxValue) lift = probeAt.y - lowest;
+                {
+                    if (col == null || !col.enabled || col.isTrigger) continue;
+                    lowest = Mathf.Min(lowest, col.bounds.min.y);
+                    highest = Mathf.Max(highest, col.bounds.max.y);
+                }
+
+                if (lowest < float.MaxValue)
+                {
+                    span.Below = probeAt.y - lowest;
+                    span.Above = highest - probeAt.y;
+                }
             }
             finally
             {
@@ -318,16 +350,18 @@ namespace AstvardServerMod
                 if (probe != null) Destroy(probe);
             }
 
-            // A reading outside any torch's height is a failed measurement, not a torch.
-            if (lift < 0f || lift > 4f)
+            // A reading outside any piece's height is a failed measurement, not a piece.
+            if (span.Below < -8f || span.Below > 8f || span.Above < -8f || span.Above > 8f)
             {
-                Log.LogWarning($"[AstvardServerMod] {prefab.name}: measured pivot {lift:F2} m, using 0.");
-                lift = 0f;
+                Log.LogWarning($"[AstvardServerMod] {prefab.name}: measured {span.Below:F2} below and "
+                               + $"{span.Above:F2} above the pivot, using 0.");
+                span = new PieceSpan();
             }
 
-            PieceLift[prefab.name] = lift;
-            Log.LogInfo($"[AstvardServerMod] {prefab.name}: pivot {lift:F3} m above its base.");
-            return lift;
+            PieceSpans[prefab.name] = span;
+            Log.LogInfo($"[AstvardServerMod] {prefab.name}: pivot {span.Below:F3} m above its base, "
+                        + $"{span.Above:F3} m below its top.");
+            return span;
         }
     }
 }

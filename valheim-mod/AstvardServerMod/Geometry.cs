@@ -66,6 +66,50 @@ namespace AstvardServerMod
         public readonly List<Vec2> Corners = new List<Vec2>();
     }
 
+    /// <summary>What a flood over a floor grid finds in one cell.</summary>
+    internal enum FloorCell
+    {
+        Free,
+
+        /// <summary>Something standing there that closes the space: a wall, a beam, a fence.</summary>
+        Wall,
+
+        /// <summary>A floor already lies there. The flood goes on across it; nothing is laid on it.</summary>
+        Floored,
+    }
+
+    /// <summary>A space found by FloodFloor, or the way out of one that was not closed.</summary>
+    internal sealed class FloorRegion
+    {
+        public bool Closed;
+
+        /// <summary>Stopped because the space outgrew the limit, rather than reaching the edge.</summary>
+        public bool TooBig;
+
+        public readonly HashSet<long> Free = new HashSet<long>();
+
+        public readonly HashSet<long> Floored = new HashSet<long>();
+
+        /// <summary>
+        /// When the flood got out: the shortest way from the start to where it did, which is
+        /// what runs through the gap.
+        /// </summary>
+        public readonly List<GridCell> WayOut = new List<GridCell>();
+    }
+
+    internal struct GridCell
+    {
+        public int I;
+
+        public int J;
+
+        public GridCell(int i, int j)
+        {
+            I = i;
+            J = j;
+        }
+    }
+
     /// <summary>
     /// The arithmetic behind the terrain, zone and blueprint tools, kept free of Unity
     /// and of the game's own types so it can be exercised without either.
@@ -346,6 +390,180 @@ namespace AstvardServerMod
         {
             var inset = perSide - 2;
             return inset > 0 ? new[] { -(float)inset, (float)inset } : new[] { 0f };
+        }
+
+        // ---------------- filling a closed space ----------------
+
+        public static long CellKey(int i, int j)
+        {
+            return ((long)i << 32) | (uint)j;
+        }
+
+        public static GridCell CellOf(long key)
+        {
+            return new GridCell((int)(key >> 32), (int)(uint)key);
+        }
+
+        /// <summary>
+        /// Floods a grid from the start cells the way a paint bucket fills: across free
+        /// cells and cells already floored, four ways from each, never into a cell that
+        /// is wall and never across a passage <paramref name="closed"/> says is shut.
+        /// Reaching <paramref name="reach"/> cells out from the origin means the space is
+        /// not closed; more than <paramref name="maxCells"/> inside means it is not, or is
+        /// too big to fill. Either way the region comes back open, with the way out - the
+        /// shortest path from the start to where the flood stopped - which runs through
+        /// the gap.
+        ///
+        /// Walls are mostly passages, not cells. A floor snapped to a wall runs under it
+        /// to its middle, so a wall stands on the line between two cells and both of them
+        /// are floor; asked as cells, they would both have been wall and the floor would
+        /// have stopped half a metre short of every wall. A passage is asked before the
+        /// cell behind it, and a shut one does not mark that cell as seen: it may still be
+        /// reached from another side.
+        ///
+        /// A start cell that is wall is no start; with none left the region is empty.
+        /// </summary>
+        public static FloorRegion FloodFloor(IList<GridCell> start, Func<int, int, FloorCell> classify,
+                                             Func<GridCell, GridCell, bool> closed, int reach, int maxCells)
+        {
+            var region = new FloorRegion();
+            var queue = new Queue<GridCell>();
+            var from = new Dictionary<long, long>();
+
+            foreach (var cell in start)
+            {
+                var key = CellKey(cell.I, cell.J);
+                if (from.ContainsKey(key)) continue;
+
+                var kind = classify(cell.I, cell.J);
+                if (kind == FloorCell.Wall) continue;
+
+                from[key] = key;
+                if (kind == FloorCell.Floored) region.Floored.Add(key);
+                else region.Free.Add(key);
+                queue.Enqueue(cell);
+            }
+
+            if (queue.Count == 0) return region;
+
+            var seen = new HashSet<long>(from.Keys);
+            var steps = new[] { new GridCell(1, 0), new GridCell(-1, 0), new GridCell(0, 1), new GridCell(0, -1) };
+
+            while (queue.Count > 0)
+            {
+                var cell = queue.Dequeue();
+                var key = CellKey(cell.I, cell.J);
+
+                foreach (var step in steps)
+                {
+                    var next = new GridCell(cell.I + step.I, cell.J + step.J);
+                    var nextKey = CellKey(next.I, next.J);
+                    if (seen.Contains(nextKey)) continue;
+                    if (closed != null && closed(cell, next)) continue;
+
+                    if (Math.Abs(next.I) > reach || Math.Abs(next.J) > reach)
+                    {
+                        TraceWayOut(region, from, key);
+                        return region;
+                    }
+
+                    seen.Add(nextKey);
+
+                    var kind = classify(next.I, next.J);
+                    if (kind == FloorCell.Wall) continue;
+
+                    from[nextKey] = key;
+                    if (kind == FloorCell.Floored) region.Floored.Add(nextKey);
+                    else region.Free.Add(nextKey);
+
+                    if (region.Free.Count + region.Floored.Count > maxCells)
+                    {
+                        region.TooBig = true;
+                        TraceWayOut(region, from, nextKey);
+                        return region;
+                    }
+
+                    queue.Enqueue(next);
+                }
+            }
+
+            region.Closed = true;
+            return region;
+        }
+
+        private static void TraceWayOut(FloorRegion region, Dictionary<long, long> from, long last)
+        {
+            var key = last;
+            while (true)
+            {
+                region.WayOut.Add(CellOf(key));
+                var back = from[key];
+                if (back == key) break;
+                key = back;
+            }
+
+            region.WayOut.Reverse();
+        }
+
+        /// <summary>
+        /// Covers the free cells of a region with plates: two by two metres wherever one
+        /// fits whole, then one by one wherever that does, none over a cell already
+        /// covered. Cells are half a metre, on the grid of the plate the flood started
+        /// from, so a plate at (a, b) covers cells 4a-2 .. 4a+1 across and 4b-2 .. 4b+1
+        /// along - the start plate is (0, 0) - and a small one at (c, d) cells 2c .. 2c+1
+        /// and 2d .. 2d+1, the same lines. A room built on the start plate's grid comes
+        /// out covered exactly; an odd corner keeps its half-metre slivers rather than a
+        /// plate that would poke through the wall.
+        /// </summary>
+        public static void FloorTiles(HashSet<long> free, List<GridCell> big, List<GridCell> small)
+        {
+            big.Clear();
+            small.Clear();
+            if (free.Count == 0) return;
+
+            int minI = int.MaxValue, maxI = int.MinValue, minJ = int.MaxValue, maxJ = int.MinValue;
+            foreach (var key in free)
+            {
+                var cell = CellOf(key);
+                if (cell.I < minI) minI = cell.I;
+                if (cell.I > maxI) maxI = cell.I;
+                if (cell.J < minJ) minJ = cell.J;
+                if (cell.J > maxJ) maxJ = cell.J;
+            }
+
+            var covered = new HashSet<long>();
+
+            var a0 = (int)Math.Floor((minI + 2) / 4.0);
+            var a1 = (int)Math.Floor((maxI + 2) / 4.0);
+            var b0 = (int)Math.Floor((minJ + 2) / 4.0);
+            var b1 = (int)Math.Floor((maxJ + 2) / 4.0);
+            for (var a = a0; a <= a1; a++)
+                for (var b = b0; b <= b1; b++)
+                    if (Lay(free, covered, 4 * a - 2, 4 * b - 2, 4)) big.Add(new GridCell(a, b));
+
+            var c0 = (int)Math.Floor(minI / 2.0);
+            var c1 = (int)Math.Floor(maxI / 2.0);
+            var d0 = (int)Math.Floor(minJ / 2.0);
+            var d1 = (int)Math.Floor(maxJ / 2.0);
+            for (var c = c0; c <= c1; c++)
+                for (var d = d0; d <= d1; d++)
+                    if (Lay(free, covered, 2 * c, 2 * d, 2)) small.Add(new GridCell(c, d));
+        }
+
+        private static bool Lay(HashSet<long> free, HashSet<long> covered, int i0, int j0, int size)
+        {
+            for (var i = i0; i < i0 + size; i++)
+                for (var j = j0; j < j0 + size; j++)
+                {
+                    var key = CellKey(i, j);
+                    if (!free.Contains(key) || covered.Contains(key)) return false;
+                }
+
+            for (var i = i0; i < i0 + size; i++)
+                for (var j = j0; j < j0 + size; j++)
+                    covered.Add(CellKey(i, j));
+
+            return true;
         }
 
         // ---------------- grids ----------------

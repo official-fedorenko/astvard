@@ -53,6 +53,7 @@ namespace AstvardServerMod
         private const int StateRoadTorches = 35; // факелы: какие и через сколько
         private const int StateRoadArea = 36;   // площадка вокруг игрока
         private const int StateFence = 37;      // частокол кольцом вокруг игрока
+        private const int StateAreaFill = 38;   // заполнить замкнутый контур: пол, потом остальное
 
         internal static GameObject Panel;
 
@@ -782,6 +783,8 @@ namespace AstvardServerMod
 
             CreateFenceWidgets(gui);
 
+            CreateAreaFillWidgets(gui);
+
             TemplateHint = MakeText(gui, "");
 
             // One button per category and per template, filled in from whatever the
@@ -934,6 +937,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateRoad) MenuState = StateTerrain;
                 else if (IsRoadPage(MenuState)) MenuState = StateRoad;
                 else if (MenuState == StateFence) MenuState = StateBuild;
+                else if (MenuState == StateAreaFill) MenuState = StateBuild;
                 else if (MenuState == StateCopyForm) MenuState = StateBuild;
                 else if (MenuState == StateTod || MenuState == StateRepair ||
                          MenuState == StateForceDelete ||
@@ -1263,6 +1267,10 @@ namespace AstvardServerMod
             SetActive(FenceCancelButton, admin && MenuState == StateFence && IsFencePreviewing);
             SetActive(FencePinButton, admin && MenuState == StateFence && IsFencePreviewing);
             SetActive(FenceRemoveButton, admin && MenuState == StateFence && HasLastFence);
+            SetActive(AreaFillButton, admin && MenuState == StateBuild);
+            SetActive(AreaFillHint, admin && MenuState == StateAreaFill);
+            SetActive(AreaFloorButton, admin && MenuState == StateAreaFill);
+            SetActive(AreaFillRemoveButton, admin && MenuState == StateAreaFill && HasLastFill);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
