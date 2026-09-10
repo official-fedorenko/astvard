@@ -67,6 +67,24 @@ namespace AstvardServerMod
                     : "Выравнивать землю: выкл";
         }
 
+        internal static GameObject RoadClearButton;
+
+        /// <summary>
+        /// Whether a road, or a pad laid around the player, also takes out the trees and
+        /// rocks standing in it. Off by default: unlike the paint, what it removes cannot
+        /// be undone.
+        /// </summary>
+        internal static bool IsRoadClearing;
+
+        private static void UpdateRoadClearButtonLabel()
+        {
+            var label = RoadClearButton != null
+                ? RoadClearButton.GetComponentInChildren<Text>(true)
+                : null;
+            if (label != null)
+                label.text = IsRoadClearing ? "Сносить: вкл" : "Сносить: выкл";
+        }
+
         // Long enough for a real stretch of road, short enough that one press does not
         // rewrite the terrain of a dozen zones at once.
         private const float MaxRoadLength = 200f;
@@ -120,11 +138,14 @@ namespace AstvardServerMod
 
             var kind = _roadPaved ? "каменная" : "земляная";
             var bend = _roadBendLeft ? "влево" : "вправо";
+            var clear = IsRoadClearing
+                ? $"{NEWLINE}Деревья и камни на пути снесёт —{NEWLINE}откат их не вернёт."
+                : "";
             label.text = _roadStarted
                 ? $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
-                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить."
+                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить.{clear}"
                 : $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Встань в начало дорожки{NEWLINE}"
-                  + $"и нажми «Начать».";
+                  + $"и нажми «Начать».{clear}";
         }
 
         private static readonly List<Vector3> RoadPath = new List<Vector3>();
@@ -185,6 +206,184 @@ namespace AstvardServerMod
                 var t = flat.Count == 1 ? 0f : (float)i / (flat.Count - 1);
                 into.Add(new Vector3(flat[i].X, Mathf.Lerp(from.y, to.y, t), flat[i].Z));
             }
+        }
+
+        // ---------------- clearing ----------------
+
+        private static readonly string[] StoneOnly = { "Stone" };
+
+        private static readonly string[] WoodAndStone = { "Stone", "Wood" };
+
+        // How far outside the run's own rectangle a thing may stand and still be worth
+        // the exact test. Only the position is known before the colliders are read, and
+        // a big boulder's centre can sit several metres from the edge it pushes into
+        // the road.
+        private const float ClearSlack = 8f;
+
+        /// <summary>
+        /// Takes out what stands in the paint: trees, stumps, fallen logs, bare rocks and
+        /// bushes that give nothing but wood.
+        ///
+        /// What counts as in the way is decided by what a thing is, never by what it is
+        /// called. A tree is anything with a TreeBase, a log a TreeLog, a stump a
+        /// Destructible the game itself types as a tree. A rock counts only when all it
+        /// would ever drop is stone - one rule that keeps copper, tin, silver and obsidian
+        /// deposits, muddy scrap piles and the Mistlands' giant bones where they are, with
+        /// no list of names to go stale. Left alone as well: anything somebody built,
+        /// anything inside a location's radius - villages, ruins, dolmens, cave mouths -
+        /// and everything ForceDelete already protects. Pickables stay; a berry bush or a
+        /// stone lying on the ground is not an obstacle.
+        ///
+        /// The test is flat, like the paint. The path carries no terrain height, only a
+        /// straight line between the heights of its two ends, so a vertical window would
+        /// miss every tree on the crest of a hill the road goes over.
+        ///
+        /// Removal claims ownership first and goes through ZNetScene.Destroy. The claim is
+        /// what makes it stick: Destroy erases the world record only for an object this
+        /// client owns, and for anything else just deletes the local copy - gone here,
+        /// still there for everyone else, and back for this player on the next load.
+        /// Destroy is also silent, which is the point: Destructible.Destroy would drop the
+        /// wood and stone and play its effects, and a hundred metres of forest road would
+        /// come out paved with loot.
+        /// </summary>
+        private static int ClearAlongPath(List<Vector3> path, float radius)
+        {
+            if (path == null || path.Count == 0 || ZNetScene.instance == null) return 0;
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (var p in path)
+            {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.z < minZ) minZ = p.z;
+                if (p.z > maxZ) maxZ = p.z;
+            }
+
+            var reach = radius + ClearSlack;
+            var area = Rect.MinMaxRect(minX - reach, minZ - reach, maxX + reach, maxZ + reach);
+            var doomed = new HashSet<ZNetView>();
+
+            foreach (var tree in Object.FindObjectsByType<TreeBase>(FindObjectsSortMode.None))
+                Consider(tree, path, radius, area, doomed);
+
+            foreach (var log in Object.FindObjectsByType<TreeLog>(FindObjectsSortMode.None))
+                Consider(log, path, radius, area, doomed);
+
+            foreach (var rock in Object.FindObjectsByType<MineRock>(FindObjectsSortMode.None))
+                if (DropsOnly(rock.m_dropItems, StoneOnly))
+                    Consider(rock, path, radius, area, doomed);
+
+            foreach (var rock in Object.FindObjectsByType<MineRock5>(FindObjectsSortMode.None))
+                if (DropsOnly(rock.m_dropItems, StoneOnly))
+                    Consider(rock, path, radius, area, doomed);
+
+            foreach (var thing in Object.FindObjectsByType<Destructible>(FindObjectsSortMode.None))
+            {
+                if (thing == null) continue;
+
+                if (thing.m_destructibleType == DestructibleType.Tree)
+                {
+                    Consider(thing, path, radius, area, doomed);
+                    continue;
+                }
+
+                var drops = thing.GetComponent<DropOnDestroyed>();
+                if (drops != null && DropsOnly(drops.m_dropWhenDestroyed, WoodAndStone))
+                    Consider(thing, path, radius, area, doomed);
+            }
+
+            var removed = 0;
+            foreach (var view in doomed)
+            {
+                // Something removed earlier in this loop can take a neighbour with it.
+                if (view == null || !view.IsValid()) continue;
+
+                view.ClaimOwnership();
+                ZNetScene.instance.Destroy(view.gameObject);
+                removed++;
+            }
+
+            return removed;
+        }
+
+        private static void Consider(Component thing, List<Vector3> path, float radius,
+                                     Rect area, HashSet<ZNetView> doomed)
+        {
+            if (thing == null) return;
+
+            // The networked root is the thing that exists in the world. A part with no
+            // view is scenery the zone rebuilds on every load, and removing it would last
+            // until the next one.
+            var view = thing.GetComponentInParent<ZNetView>();
+            if (view == null || !view.IsValid() || doomed.Contains(view)) return;
+
+            // Only when the tree or rock IS the networked object. The same component on
+            // a child would lead up to whatever that child belongs to, and the whole of
+            // it would go. Vanilla trees, logs, stumps and rocks all carry theirs on the
+            // root, so this costs nothing and rules out a class of accident.
+            var go = view.gameObject;
+            if (go != thing.gameObject) return;
+            if (go.GetComponent<Pickable>() != null) return;
+            var at = go.transform.position;
+            if (!area.Contains(new Vector2(at.x, at.z))) return;
+
+            // A sapling somebody planted is a Piece until it grows up.
+            if (go.GetComponentInParent<Piece>() != null) return;
+            if (IsProtectedFromDelete(go)) return;
+            if (Location.IsInsideLocation(at, 0f)) return;
+
+            if (FootprintDistance(go, path) > radius) return;
+
+            doomed.Add(view);
+        }
+
+        /// <summary>
+        /// How close a thing comes to the path, measured from its footprint rather than
+        /// its centre: a boulder that pushes three metres into the road is in the way
+        /// even with its middle beside it. The footprint is the flat box round its solid
+        /// colliders; with none, just where it stands.
+        /// </summary>
+        private static float FootprintDistance(GameObject go, List<Vector3> path)
+        {
+            var have = false;
+            var box = new Bounds(go.transform.position, Vector3.zero);
+            foreach (var col in go.GetComponentsInChildren<Collider>())
+            {
+                if (col == null || !col.enabled || col.isTrigger) continue;
+                if (have) box.Encapsulate(col.bounds);
+                else
+                {
+                    box = col.bounds;
+                    have = true;
+                }
+            }
+
+            var best = float.MaxValue;
+            foreach (var p in path)
+            {
+                var dx = Mathf.Max(Mathf.Max(box.min.x - p.x, p.x - box.max.x), 0f);
+                var dz = Mathf.Max(Mathf.Max(box.min.z - p.z, p.z - box.max.z), 0f);
+                var d = dx * dx + dz * dz;
+                if (d < best) best = d;
+            }
+
+            return Mathf.Sqrt(best);
+        }
+
+        /// <summary>
+        /// Whether everything a table can drop is on the list. An empty or missing table
+        /// answers no: not knowing what a thing is, is a reason to leave it standing.
+        /// </summary>
+        private static bool DropsOnly(DropTable table, string[] allowed)
+        {
+            if (table == null || table.m_drops == null || table.m_drops.Count == 0) return false;
+
+            foreach (var drop in table.m_drops)
+                if (drop.m_item == null || System.Array.IndexOf(allowed, drop.m_item.name) < 0)
+                    return false;
+
+            return true;
         }
 
         // ---------------- painting ----------------
@@ -550,6 +749,12 @@ namespace AstvardServerMod
                 yield break;
             }
 
+            // Only once it is certain the paint will go down, so a road that fails to
+            // reach its ground does not leave a cleared strip behind it. All at once
+            // rather than stretch by stretch: the paint takes twenty frames, far too
+            // quick for a cancel to land between them.
+            var cleared = IsRoadClearing ? ClearAlongPath(path, radius) : 0;
+
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             var owned = 0;
             foreach (var comp in comps)
@@ -598,15 +803,17 @@ namespace AstvardServerMod
             _roadCancelled = false;
             if (_roadPreview != null) _roadPreview.SetActive(false);
 
+            var clearedNote = cleared > 0 ? $", снесено: {cleared}" : "";
             if (!stopped)
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     kind == "area"
-                        ? $"Площадка радиусом {length:F0} м"
-                        : $"Дорожка {length:F0} м, ширина {width:F1} м");
+                        ? $"Площадка радиусом {length:F0} м{clearedNote}"
+                        : $"Дорожка {length:F0} м, ширина {width:F1} м{clearedNote}");
 
             Log.LogInfo($"[AstvardServerMod] {kind} {(_roadPaved ? "paved" : "dirt")} " +
                         $"{length:F1} m width {width:F1} brush={radius:F2} grid={scale:F2} " +
-                        $"nodes={path.Count} zones={comps.Count} owned={owned} verts={painted}");
+                        $"nodes={path.Count} zones={comps.Count} owned={owned} verts={painted} " +
+                        $"cleared={cleared}");
         }
 
         /// <summary>
