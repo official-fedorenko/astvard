@@ -557,6 +557,7 @@ namespace AstvardServerMod
             RoadButton = MakeButton(gui, "Дорожка", () =>
             {
                 MenuState = StateRoad;
+                UpdateRoadHint();
                 RefreshMenu();
             });
 
@@ -1259,7 +1260,7 @@ namespace AstvardServerMod
             SetActive(RoadCancelButton, MenuState == StateRoad && RoadInProgress);
             SetActive(RoadStoneButton, MenuState == StateRoad);
             SetActive(RoadDirtButton, MenuState == StateRoad);
-            SetActive(RoadClearButton, MenuState == StateRoad);
+            SetActive(RoadClearButton, admin && MenuState == StateRoad);
             SetActive(RoadLeftButton, MenuState == StateRoad);
             SetActive(RoadRightButton, MenuState == StateRoad);
             SetActive(RoadStartButton, MenuState == StateRoad);

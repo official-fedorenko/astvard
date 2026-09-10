@@ -386,7 +386,7 @@ namespace AstvardServerMod
 
         /// <summary>
         /// Mirrors the game's own "forcedelete" console command, including its list of
-        /// protected objects, so the button does exactly what the command does.
+        /// protected objects - with one deliberate difference, below.
         /// </summary>
         private static void RunForceDelete()
         {
@@ -409,17 +409,26 @@ namespace AstvardServerMod
                 if ((obj.transform.position - origin).sqrMagnitude > sqrRadius) continue;
                 if (IsProtectedFromDelete(obj)) continue;
 
+                // Only something that exists in the world can be removed from it. That
+                // was true before as well - a Destructible takes its view from its own
+                // object, and without one DestroyNow does nothing - but it still counted.
+                var view = obj.GetComponent<ZNetView>();
+                if (view == null || !view.IsValid() || ZNetScene.instance == null) continue;
+
+                // The difference from vanilla. Both removals below act only for the
+                // owner: DestroyNow does nothing at all for somebody else's object, and
+                // ZNetScene.Destroy erases the world record only for our own - for
+                // anything else it deletes the local copy, which stays for every other
+                // player and comes back for this one on the next load. The command gets
+                // away with that because it is meant for a single player. A panel on a
+                // shared server does not, so it takes ownership first.
+                view.ClaimOwnership();
+
                 var destructible = obj.GetComponent<Destructible>();
-                if (destructible != null)
-                {
-                    destructible.DestroyNow();
-                    removed++;
-                }
-                else if (obj.GetComponent<ZNetView>() != null && ZNetScene.instance != null)
-                {
-                    ZNetScene.instance.Destroy(obj);
-                    removed++;
-                }
+                if (destructible != null) destructible.DestroyNow();
+                else ZNetScene.instance.Destroy(obj);
+
+                removed++;
             }
 
             player.Message(MessageHud.MessageType.Center,

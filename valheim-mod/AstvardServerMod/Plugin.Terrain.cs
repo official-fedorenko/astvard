@@ -76,6 +76,21 @@ namespace AstvardServerMod
         /// </summary>
         internal static bool IsRoadClearing;
 
+        /// <summary>
+        /// Clearing is an admin power, though the road itself is everybody's. Paint only
+        /// changes how the ground looks; clearing removes what other people may have meant
+        /// to keep, and there is no undo for it.
+        ///
+        /// The toggle is drawn for an admin only, and the grant is checked again here at
+        /// the point of use: the setting outlives the grant - ForgetAdmin clears the admin
+        /// bit on disconnect, not every tool's settings - so a player who switched it on
+        /// and then lost admin would otherwise keep clearing.
+        /// </summary>
+        private static bool RoadClearingActive
+        {
+            get { return IsRoadClearing && IsAdminUnlocked; }
+        }
+
         private static void UpdateRoadClearButtonLabel()
         {
             var label = RoadClearButton != null
@@ -138,7 +153,7 @@ namespace AstvardServerMod
 
             var kind = _roadPaved ? "каменная" : "земляная";
             var bend = _roadBendLeft ? "влево" : "вправо";
-            var clear = IsRoadClearing
+            var clear = RoadClearingActive
                 ? $"{NEWLINE}Деревья и камни на пути снесёт —{NEWLINE}откат их не вернёт."
                 : "";
             label.text = _roadStarted
@@ -753,7 +768,7 @@ namespace AstvardServerMod
             // reach its ground does not leave a cleared strip behind it. All at once
             // rather than stretch by stretch: the paint takes twenty frames, far too
             // quick for a cancel to land between them.
-            var cleared = IsRoadClearing ? ClearAlongPath(path, radius) : 0;
+            var cleared = RoadClearingActive ? ClearAlongPath(path, radius) : 0;
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             var owned = 0;
