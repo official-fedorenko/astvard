@@ -26,6 +26,8 @@ namespace AstvardServerMod
 
         internal static GameObject FenceCancelButton;
 
+        internal static GameObject FencePinButton;
+
         internal static GameObject FenceRemoveButton;
 
         private const string FencePrefab = "stake_wall";
@@ -97,6 +99,22 @@ namespace AstvardServerMod
 
         private static bool _fencePreviewing;
 
+        // Pinned, the projection stays where it was left instead of following the player,
+        // who can walk round it and nudge it with the arrows before building.
+        private static bool _fencePinned;
+
+        private static Vector3 _fencePinnedAt;
+
+        // P for «Закрепить»: the key that sits under «З». Nothing of the game's reads it;
+        // Z and B, the obvious ones, fly and build for free in debug mode, which is
+        // exactly the mode an admin placing a fence is likely to be in.
+        private const KeyCode FencePinKey = KeyCode.P;
+
+        // An arrow press moves a pinned projection a metre; with Shift, a quarter.
+        private const float FenceNudge = 1f;
+
+        private const float FenceFineNudge = 0.25f;
+
         private static List<ZDOID> _lastFence;
 
         private static int? _pieceLayer;
@@ -153,6 +171,12 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            FencePinButton = MakeButton(gui, "", () =>
+            {
+                ToggleFencePin();
+                RefreshMenu();
+            });
+
             FenceRemoveButton = MakeButton(gui, "Убрать последний забор", () =>
             {
                 RemoveLastFence();
@@ -175,6 +199,7 @@ namespace AstvardServerMod
 
         private static void UpdateFenceLabels()
         {
+            SetLabel(FencePinButton, _fencePinned ? "Открепить проекцию" : "Закрепить проекцию");
             SetLabel(FenceWalkwayButton, IsFenceWalkway ? "Помост: вкл" : "Помост: выкл");
             SetLabel(FenceRoofButton, IsFenceRoof ? "Крыша: вкл" : "Крыша: выкл");
             SetLabel(FenceLevelButton, IsFenceLevel ? "Выравнивать: вкл" : "Выравнивать: выкл");
@@ -185,7 +210,7 @@ namespace AstvardServerMod
             var sections = IsFenceWalkway || IsFenceRoof;
             label.text = $"Частокол кольцом вокруг тебя.{NEWLINE}Расстояние — от тебя до стены,{NEWLINE}"
                          + $"от 4 до 64 м. «Поставить» покажет{NEWLINE}проекцию: ЛКМ — построить,{NEWLINE}"
-                         + "Esc — отменить."
+                         + $"Esc — отменить. P — закрепить её{NEWLINE}на месте, стрелки — сдвинуть."
                          + (IsFenceLevel
                              ? $"{NEWLINE}Землю под ним выровняет{NEWLINE}по высоте, где ты стоишь."
                              : sections
@@ -223,13 +248,59 @@ namespace AstvardServerMod
             if (_fenceBuilding || Player.m_localPlayer == null || !IsAdminUnlocked) return;
 
             _fencePreviewing = true;
+            _fencePinned = false;
             _fenceGhostKey = null;
+            UpdateFenceLabels();
 
             // The press that opened the projection is still going down; without a deaf
             // moment it would carry on into the world and build straight away.
             NoteToolStart();
             InventoryGui.instance?.Hide();
-            Player.m_localPlayer.Message(MessageHud.MessageType.Center, "ЛКМ — построить, Esc — отменить");
+            Player.m_localPlayer.Message(MessageHud.MessageType.Center,
+                "ЛКМ — построить, Esc — отменить, P — закрепить");
+        }
+
+        /// <summary>
+        /// Leaves the projection where it stands, to be walked round and nudged, or hands
+        /// it back to the player. Pinned where the player is standing, so it does not
+        /// jump; unpinned, it goes back round the player at once.
+        /// </summary>
+        private static void ToggleFencePin()
+        {
+            var player = Player.m_localPlayer;
+            if (!_fencePreviewing || player == null) return;
+
+            _fencePinned = !_fencePinned;
+            if (_fencePinned) _fencePinnedAt = _fenceLookedFrom != Vector3.zero ? _fenceLookedFrom : player.transform.position;
+            _fenceGhostKey = null;
+            UpdateFenceLabels();
+
+            player.Message(MessageHud.MessageType.Center, _fencePinned
+                ? "Закреплено: стрелки — сдвиг, P — открепить"
+                : "Проекция снова за тобой");
+        }
+
+        /// <summary>
+        /// Moves a pinned projection along the ground as the player sees it: up is away
+        /// from the camera, right is to its right. The height stays where it was pinned,
+        /// which is also the height levelling works to.
+        /// </summary>
+        private static void NudgeFence(float forward, float right)
+        {
+            var view = GameCamera.instance != null ? GameCamera.instance.transform : Player.m_localPlayer?.transform;
+            if (view == null) return;
+
+            var ahead = view.forward;
+            ahead.y = 0f;
+            if (ahead.sqrMagnitude < 1e-4f) return;
+            ahead.Normalize();
+            var aside = new Vector3(ahead.z, 0f, -ahead.x);
+
+            var step = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)
+                ? FenceFineNudge
+                : FenceNudge;
+            _fencePinnedAt += (ahead * forward + aside * right) * step;
+            _fenceGhostKey = null;
         }
 
         private static void CancelFencePreview()
@@ -237,7 +308,9 @@ namespace AstvardServerMod
             if (!_fencePreviewing) return;
 
             _fencePreviewing = false;
+            _fencePinned = false;
             ClearFenceGhost();
+            UpdateFenceLabels();
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Отменено");
         }
 
@@ -271,7 +344,7 @@ namespace AstvardServerMod
 
             var radius = Mathf.Clamp(ParseField(FenceRadiusInput, 20f), FenceMinRadius, FenceMaxRadius);
             var key = $"{radius:F2} {IsFenceWalkway} {IsFenceRoof} {IsFenceLevel}";
-            var centre = player.transform.position;
+            var centre = _fencePinned ? _fencePinnedAt : player.transform.position;
 
             // A big ring with a roof is a thousand pieces to move and as many questions
             // to ask the physics; it can follow a walking player a little less eagerly.
@@ -321,6 +394,23 @@ namespace AstvardServerMod
                 return true;
             }
 
+            if (Input.GetKeyDown(FencePinKey))
+            {
+                ToggleFencePin();
+                return true;
+            }
+
+            if (_fencePinned)
+            {
+                var forward = (Input.GetKeyDown(KeyCode.UpArrow) ? 1f : 0f) - (Input.GetKeyDown(KeyCode.DownArrow) ? 1f : 0f);
+                var right = (Input.GetKeyDown(KeyCode.RightArrow) ? 1f : 0f) - (Input.GetKeyDown(KeyCode.LeftArrow) ? 1f : 0f);
+                if (forward != 0f || right != 0f)
+                {
+                    NudgeFence(forward, right);
+                    return true;
+                }
+            }
+
             if (Input.GetMouseButtonDown(0) && Time.time - _toolMarkedAt > MarkDeafSeconds)
             {
                 // The same window a placed blueprint uses: this click must not also be a
@@ -328,9 +418,12 @@ namespace AstvardServerMod
                 _inputHeldUntil = Time.time + 0.3f;
                 if (_fenceBuilding) return true;
 
+                var centre = _fencePinned ? _fencePinnedAt : Player.m_localPlayer.transform.position;
                 _fencePreviewing = false;
+                _fencePinned = false;
                 ClearFenceGhost();
-                Instance?.StartCoroutine(BuildFence());
+                UpdateFenceLabels();
+                Instance?.StartCoroutine(BuildFence(centre));
                 return true;
             }
 
@@ -521,7 +614,7 @@ namespace AstvardServerMod
         /// Levelled, the fence is part of the undo step the levelling records, so undo
         /// puts the ground back and takes the fence down together.
         /// </summary>
-        private static IEnumerator BuildFence()
+        private static IEnumerator BuildFence(Vector3 centre)
         {
             var player = Player.m_localPlayer;
             var scene = ZNetScene.instance;
@@ -536,7 +629,6 @@ namespace AstvardServerMod
             if (kit == null) yield break;
 
             var radius = Mathf.Clamp(ParseField(FenceRadiusInput, 20f), FenceMinRadius, FenceMaxRadius);
-            var centre = player.transform.position;
             var plan = Geometry.FenceRing(radius, FenceMaxPerSide, StakeWidth);
 
             var levelHalf = kit.Sections ? SectionLevelHalf : FenceLevelHalf;
