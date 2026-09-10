@@ -338,7 +338,11 @@ namespace AstvardServerMod
         private static void StartPlacement(string label = "постройка")
         {
             _placementLabel = label;
-            // Any placement starts as a plain one; the floor fill turns itself on after.
+            // Any placement starts as a plain one: the floor fill and a player's pick from
+            // the server each turn themselves on after, and a click still waiting on the
+            // server's word belongs to the placement before.
+            _playerPlacement = false;
+            _buildAsk = null;
             if (_fillSeeding) EndFloorSeed();
             SpawnGhosts();
             _placeYaw = 0f;
@@ -400,6 +404,8 @@ namespace AstvardServerMod
             UpdateRoadPreview();
             UpdateBridgePreview();
             UpdateFencePreview();
+            CheckBuildAskTimeout();
+            TickPlayerBuildHint();
 
             // The fence's projection answers the same two keys a blueprint's does.
             if (HandleFencePreviewInput()) return;
@@ -520,6 +526,15 @@ namespace AstvardServerMod
                 {
                     _inputHeldUntil = Time.time + 0.3f;
                     player.Message(MessageHud.MessageType.Center, "Постройка задевает чужой оберег — отнеси её в сторону");
+                    return;
+                }
+
+                // A player's build goes up on the server's word: it keeps the pause
+                // between builds, and a client's own clock would be too easy to wind.
+                if (_playerPlacement)
+                {
+                    _inputHeldUntil = Time.time + 0.3f;
+                    AskToBuild();
                     return;
                 }
 

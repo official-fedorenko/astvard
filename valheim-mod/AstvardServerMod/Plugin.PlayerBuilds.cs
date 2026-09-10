@@ -140,6 +140,7 @@ namespace AstvardServerMod
             var hint = PlayerBuildHint != null
                 ? PlayerBuildHint.GetComponentInChildren<UnityEngine.UI.Text>(true)
                 : null;
+            var wait = PlayerBuildWait;
             if (hint != null)
                 hint.text = PlayerTemplates.Count == 0
                     ? "Админ пока ничего не разрешил."
@@ -149,7 +150,11 @@ namespace AstvardServerMod
                       + "P — закрепить, стрелки — сдвиг."
                       + (PlayerTemplates.Count > MaxTemplateButtons
                           ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
-                          : "");
+                          : "")
+                      + (_playerBuildMinutes > 0
+                          ? $"{NEWLINE}Строить можно раз в {_playerBuildMinutes} мин."
+                          : "")
+                      + (wait > 0 ? $"{NEWLINE}Следующая — через {FormatWait(wait)}." : "");
 
             SetLabel(TemplatePlayersButton, _editingTemplate != null && IsForPlayers(_editingTemplate.Name)
                 ? "Запретить игрокам"
@@ -168,7 +173,7 @@ namespace AstvardServerMod
             if (template == null || RefuseWhileBuilding()) return;
 
             _awaitedBuild = template.Name;
-            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplGet, template.Name);
+            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplBuild, template.Name);
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Загружаю «{template.Name}»…");
         }
 
@@ -179,6 +184,8 @@ namespace AstvardServerMod
             if (!LoadTemplate(body.Split('\n'), name)) return;
 
             StartPlacement($"шаблон «{name}»");
+            _playerPlacement = true;
+            _playerPlacementName = name;
             InventoryGui.instance?.Hide();
         }
 
@@ -195,6 +202,7 @@ namespace AstvardServerMod
             _sharedListAskedOn = ZNet.instance;
             SharedTemplates.Clear();
             PlayerTemplates.Clear();
+            _nextPlayerBuildAt = 0f;
             AskSharedList();
         }
 

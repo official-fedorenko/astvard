@@ -55,6 +55,8 @@ namespace AstvardServerMod
         private const int StateFence = 37;      // частокол кольцом вокруг игрока
         private const int StateAreaFill = 38;   // заполнить замкнутый контур: пол, потом остальное
         private const int StatePlayerBuild = 39; // постройки игрока: что админ открыл игрокам
+        private const int StateSettings = 40;   // настройки админа: пауза построек, что открыто игрокам
+        private const int StatePlayerCooldown = 41; // пауза между постройками игроков
 
         internal static GameObject Panel;
 
@@ -735,6 +737,8 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            CreateSettingsWidgets(gui);
+
             SnapButton = MakeButton(gui, "Прилипание", () =>
             {
                 IsSnapEnabled = !IsSnapEnabled;
@@ -900,6 +904,7 @@ namespace AstvardServerMod
                     if (index >= SharedTemplates.Count) return;
 
                     _selectedShared = SharedTemplates[index];
+                    _sharedItemBack = StateSharedList;
                     MenuState = StateSharedItem;
                     RefreshMenu();
                 });
@@ -916,7 +921,7 @@ namespace AstvardServerMod
             {
                 DeleteSharedTemplate(_selectedShared);
                 _selectedShared = null;
-                MenuState = StateSharedList;
+                MenuState = _sharedItemBack;
                 RefreshMenu();
             });
 
@@ -963,7 +968,9 @@ namespace AstvardServerMod
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
                 else if (MenuState == StateTemplateEdit) MenuState = StateTemplateList;
                 else if (MenuState == StateSharedList) MenuState = StateTemplates;
-                else if (MenuState == StateSharedItem) MenuState = StateSharedList;
+                else if (MenuState == StateSharedItem) MenuState = _sharedItemBack;
+                else if (MenuState == StatePlayerCooldown) MenuState = StateSettings;
+                else if (MenuState == StateSettings) MenuState = StateAdmin;
                 else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateFeatures;
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
@@ -1301,6 +1308,7 @@ namespace AstvardServerMod
                                                     && i < PlayerTemplates.Count);
             SetActive(TemplatePlayersButton, admin && MenuState == StateTemplateEdit);
             SetActive(SharedPlayersButton, admin && MenuState == StateSharedItem);
+            RefreshSettingsVisibility(admin);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);

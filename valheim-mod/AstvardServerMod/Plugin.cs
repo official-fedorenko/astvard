@@ -68,6 +68,8 @@ namespace AstvardServerMod
                 + "Радиус округляется наружу до целых зон по 64 м.");
             ParseZones(_zones.Value, Zones);
 
+            BindBuildPause(Config);
+
             _harmony = new Harmony("astvard.servermod");
             _harmony.PatchAll();
             Log.LogInfo("AstvardServerMod loaded");

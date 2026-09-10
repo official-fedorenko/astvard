@@ -59,6 +59,7 @@ namespace AstvardServerMod
             rpc.Register<string>(RpcTplGet, OnTemplateGet);
             rpc.Register<string, string, string, string>(RpcTplBody, OnTemplateBody);
             rpc.Register<string, bool>(RpcTplPlayers, OnTemplatePlayers);
+            RegisterBuildPauseRpcs(rpc);
         }
 
         // ---------------- server side ----------------
@@ -167,6 +168,7 @@ namespace AstvardServerMod
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
             ReplySharedList(sender);
+            ReplyBuildRules(sender);
         }
 
         private static void BroadcastSharedList()
@@ -213,9 +215,9 @@ namespace AstvardServerMod
             // The shared library is an admin tool - the buttons for it are drawn only
             // for an admin. This is the one shared payload that is never broadcast, so
             // without a check here a modded client could read a name off the freely
-            // broadcast list and pull the whole blueprint down. What an admin has opened
-            // to players is the exception: handing that over is the point of opening it.
-            if (!template.ForPlayers && !ServerAllows(sender)) return;
+            // broadcast list and pull the whole blueprint down. Players get what was
+            // opened to them through AstvardTplBuild, which also keeps their pause.
+            if (!ServerAllows(sender)) return;
 
             ZRoutedRpc.instance?.InvokeRoutedRPC(sender, RpcTplBody,
                 template.Name, template.Category, template.Author,
