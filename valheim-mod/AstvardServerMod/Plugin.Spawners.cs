@@ -184,6 +184,11 @@ namespace AstvardServerMod
         internal static void PlaceSpawner(int slot)
         {
             if (slot < 0 || slot >= ShownKinds.Count) return;
+            // The builder walks the clipboard across a yield, re-reading its count each
+            // time round, so emptying it here would stop a build already in progress
+            // partway and leave the placement state pointing at nothing. RunCopy and
+            // RunCopyToFile already refuse for the same reason.
+            if (BuildInProgress) return;
 
             var kind = ShownKinds[slot];
             var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;

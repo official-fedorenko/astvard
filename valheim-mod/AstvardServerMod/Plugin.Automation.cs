@@ -300,6 +300,16 @@ namespace AstvardServerMod
                 // from, so skip the reads and reflection the feeding half would do.
                 var feeding = IsAutoFillEnabled || supplyChests.Count > 0;
 
+                // And with nowhere to put anything either, the whole second pass is
+                // waste: five GetComponentInChildren per piece, each a recursive walk of
+                // a multi-part prefab, on every loaded piece within sixty-four metres,
+                // once a second. A base of fifteen hundred pieces is some seven thousand
+                // tree walks a second to reach a row of MayHarvest calls that can only
+                // answer false. The chest sweep above still has to run, since it is what
+                // decides this.
+                var harvesting = collectSpots.Count > 0 || IsAutoCollectEnabled;
+                if (!feeding && !harvesting) continue;
+
                 foreach (var piece in pieces)
                 {
                     if (piece == null) continue;
@@ -307,20 +317,20 @@ namespace AstvardServerMod
                     var cooking = piece.GetComponentInChildren<CookingStation>();
                     if (cooking != null)
                     {
-                        if (MayHarvest(cooking, collectSpots))
+                        if (MayHarvest(cooking, collectSpots, anyChests))
                             cooking.GetComponent<ZNetView>()
                                 .InvokeRPC("RPC_RemoveDoneItem", player.transform.position, 1);
                         if (feeding) FillCooking(cooking, supplyChests, anyChests);
                     }
 
                     var beehive = piece.GetComponentInChildren<Beehive>();
-                    if (beehive != null && MayHarvest(beehive, collectSpots))
+                    if (beehive != null && MayHarvest(beehive, collectSpots, anyChests))
                         beehive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
 
                     var fermenter = piece.GetComponentInChildren<Fermenter>();
                     if (fermenter != null)
                     {
-                        if (MayHarvest(fermenter, collectSpots))
+                        if (MayHarvest(fermenter, collectSpots, anyChests))
                             fermenter.GetComponent<ZNetView>().InvokeRPC("RPC_Tap");
                         if (feeding) FillFermenter(fermenter, supplyChests, anyChests);
                     }
@@ -329,7 +339,10 @@ namespace AstvardServerMod
                     if (smelter != null)
                     {
                         if (feeding) FillSmelter(smelter, supplyChests, anyChests);
-                        FlushSmelter(smelter);
+                        // Gated like its three siblings. Tipping the kiln out with
+                        // nowhere to put the coal turns one fifty-stack at the end of
+                        // the burn into fifty singles on the floor, one a second.
+                        if (MayHarvest(smelter, collectSpots, anyChests)) FlushSmelter(smelter);
                     }
 
                     var fireplace = piece.GetComponentInChildren<Fireplace>();
@@ -342,16 +355,37 @@ namespace AstvardServerMod
         /// Only the owner runs a producer's logic. The chest check matters too: without
         /// somewhere to put the goods, harvesting unattended would just tip them onto
         /// the ground, which is worse than leaving them where they are.
+        ///
+        /// That is what the comment said and what the code did not do. The toggle
+        /// returned true before the distance scan ran, so turning on «Сбор в сундук»
+        /// with no chest assigned harvested every owned hive, oven and fermenter within
+        /// sixty-four metres straight onto the floor - the exact outcome the check
+        /// exists to prevent. The two tiers now mirror TryStoreNearby, which had them
+        /// the right way round all along: an assigned chest is a decision made in the
+        /// world and counts whatever the toggle says, and the toggle only opens the
+        /// shorter guess-the-nearest-chest range.
+        ///
+        /// It stays a proximity test. A chest that is in range but full still ends in a
+        /// ground drop, because at this point nobody knows which item is about to
+        /// appear; closing that would mean threading the product through every branch.
         /// </summary>
-        private static bool MayHarvest(Component producer, List<Vector3> assignedChests)
+        private static bool MayHarvest(Component producer, List<Vector3> assignedChests,
+                                       List<Container> anyChests)
         {
             if (!OwnedAndValid(producer)) return false;
-            if (IsAutoCollectEnabled) return true;
 
             var origin = producer.transform.position;
+
             var range = AssignedChestRadius * AssignedChestRadius;
             foreach (var chest in assignedChests)
                 if ((chest - origin).sqrMagnitude <= range) return true;
+
+            if (!IsAutoCollectEnabled) return false;
+
+            range = AutoCollectRadius * AutoCollectRadius;
+            foreach (var chest in anyChests)
+                if (chest != null
+                    && (chest.transform.position - origin).sqrMagnitude <= range) return true;
 
             return false;
         }

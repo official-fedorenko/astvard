@@ -160,6 +160,11 @@ namespace AstvardServerMod
         private static void OnTemplateGet(long sender, string name)
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
+            // The shared library is an admin tool - the buttons for it are drawn only
+            // for an admin. This is the one shared payload that is never broadcast, so
+            // without a check here a modded client could read a name off the freely
+            // broadcast list and pull the whole blueprint down.
+            if (!ServerAllows(sender)) return;
 
             var template = ReadTemplate(SharedPath(name));
             if (template == null) return;
@@ -202,6 +207,28 @@ namespace AstvardServerMod
                                            string author, string body)
         {
             if (string.IsNullOrEmpty(body)) return;
+
+            // Only a body we asked for.
+            //
+            // A routed RPC is delivered to whatever peer the sender names, and the relay
+            // does not care who sent it or what it is - so this handler, which writes a
+            // file and takes a name from the packet, was reachable by any modded client
+            // on any other client. Sent in a loop it fills the templates folder with
+            // attacker-chosen content. Nothing was overwritten, because the loop below
+            // walks to a free name, but junk that arrives faster than you can delete it
+            // is damage enough.
+            //
+            // The same shape as the admin grant: remember what was asked for, and drop
+            // anything else. It closes the hole without a rights check, which would be
+            // wrong here - the server answers this one to an admin who asked.
+            if (_awaitedShared == null || _awaitedShared != name)
+            {
+                Log.LogWarning($"[AstvardServerMod] Unsolicited template '{name}' "
+                               + $"from {sender}; ignored.");
+                return;
+            }
+
+            _awaitedShared = null;
 
             var path = System.IO.Path.Combine(TemplatesDir, SafeFileName(name) + ".txt");
             // Two people can easily name a build the same thing, and a copy taken from
@@ -250,9 +277,14 @@ namespace AstvardServerMod
                 $"Отправлено: {template.Name}");
         }
 
+        /// <summary>What we last asked the server for; see OnTemplateBody.</summary>
+        private static string _awaitedShared;
+
         internal static void TakeSharedTemplate(SharedTemplate template)
         {
             if (template == null) return;
+
+            _awaitedShared = template.Name;
             ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplGet, template.Name);
         }
 

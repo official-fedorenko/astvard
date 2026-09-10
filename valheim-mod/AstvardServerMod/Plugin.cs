@@ -132,6 +132,25 @@ namespace AstvardServerMod
         /// </summary>
         private static long _adminNonce;
 
+        /// <summary>
+        /// Forgets that the server ever said yes.
+        ///
+        /// The flag was set once and never cleared, so it outlived the connection that
+        /// earned it: leave for the main menu, join a different server, and the whole
+        /// admin half of the panel is still open there - including the parts that never
+        /// ask the server anything, like ForceDelete and terrain. It also meant that
+        /// taking somebody out of adminlist.txt left their client-side powers standing
+        /// until they restarted the game.
+        ///
+        /// The nonce goes with it as hygiene; it only ever travelled to the server that
+        /// was asked, and a stale one would answer a grant nobody requested.
+        /// </summary>
+        internal static void ForgetAdmin()
+        {
+            _adminNonce = 0;
+            IsAdminUnlocked = false;
+        }
+
         internal static void RegisterAdminRpcs()
         {
             var rpc = ZRoutedRpc.instance;

@@ -121,8 +121,16 @@ namespace AstvardServerMod
             var level = view.GetZDO().GetInt(ZDOVars.s_level);
             if (level <= 0) return true;
 
+            // Vanilla spawns the jars one at a time and scales each through
+            // Game.ScaleDrops, so a world with the Resources modifier raised pays more
+            // than the hive's level. Handing the raw level to the chest quietly ignored
+            // that: on double resources a level four hive paid four into a chest and
+            // eight onto the ground. Rates below one are unaffected either way, since
+            // ScaleDrops floors each jar at one.
+            var amount = level * Game.instance.ScaleDrops(__instance.m_honeyItem.m_itemData, 1);
+
             if (!Plugin.TryStoreNearby(__instance.transform.position,
-                    __instance.m_honeyItem.gameObject, level)) return true;
+                    __instance.m_honeyItem.gameObject, amount)) return true;
 
             __instance.m_spawnEffect.Create(__instance.m_spawnPoint.position, Quaternion.identity);
             view.GetZDO().Set(ZDOVars.s_level, 0);
@@ -313,12 +321,34 @@ namespace AstvardServerMod
         }
     }
 
+    /// <summary>
+    /// Admin lasts as long as the connection that granted it, and no longer.
+    ///
+    /// ZNet.OnDestroy runs on a clean logout, a kick and a dropped link alike, which is
+    /// why the hook hangs there rather than on a disconnect message. It fires on the
+    /// headless server too, where there is no panel - hence no RefreshMenu call here.
+    /// </summary>
+    [HarmonyPatch(typeof(ZNet), "OnDestroy")]
+    public static class ForgetAdminOnDisconnect
+    {
+        private static void Postfix()
+        {
+            Plugin.ForgetAdmin();
+        }
+    }
+
     [HarmonyPatch(typeof(InventoryGui), "Show")]
     public static class InventoryShowPatch
     {
         private static void Postfix()
         {
             if (Plugin.Panel != null) Plugin.Panel.SetActive(true);
+            // Coming back to the panel means the trip to the chest was abandoned. The
+            // flag used to survive it - and everything else short of quitting the game -
+            // so the next chest opened for any reason was swallowed and quietly turned
+            // into a collect chest instead. A real assignment never reaches here,
+            // because the prefix suppresses the very Interact that would open it.
+            Plugin.PendingChestAssign = null;
             Plugin.RefreshMenu();
         }
     }

@@ -73,6 +73,31 @@ namespace AstvardServerMod
             AccessTools.Method(typeof(ZoneSystem), "PokeLocalZone");
 
         /// <summary>
+        /// PokeLocalZone bound to the current ZoneSystem, so the poke loop can call it
+        /// directly instead of through MethodInfo.Invoke.
+        ///
+        /// Invoke boxes every argument into a fresh object[]. A 256 m zone is nine cells
+        /// square, poked twice a second, which was 162 reflection calls and 324 throwaway
+        /// allocations a second for one zone - and the radius box could be left holding
+        /// 256 by accident. Binding once costs one delegate per world.
+        /// </summary>
+        private static System.Action<Vector2s> _pokeLocalZone;
+
+        private static ZoneSystem _pokeBoundTo;
+
+        private static System.Action<Vector2s> PokeFor(ZoneSystem system)
+        {
+            if (system == null || MPokeLocalZone == null) return null;
+            if (_pokeBoundTo == system && _pokeLocalZone != null) return _pokeLocalZone;
+
+            _pokeBoundTo = system;
+            _pokeLocalZone = (System.Action<Vector2s>)System.Delegate.CreateDelegate(
+                typeof(System.Action<Vector2s>), system, MPokeLocalZone, false);
+
+            return _pokeLocalZone;
+        }
+
+        /// <summary>
         /// An area the server keeps loaded, as a radius in metres around a point.
         /// The world's zone grid is fixed — cell i spans [64i-32, 64i+32] — so the
         /// radius is not free to land anywhere; it is rounded out to whole cells.
@@ -430,8 +455,53 @@ namespace AstvardServerMod
         /// The pools are fixed size, so the lists move under them rather than the other
         /// way round.
         /// </summary>
+        /// <summary>
+        /// Whether the wipe button is waiting for its second press.
+        ///
+        /// One press used to be enough, and it clears every admin's zones with no undo:
+        /// the coordinates only ever lived in the config string it empties. The wipe
+        /// stays server-wide on purpose - zones are a shared resource here and every
+        /// other button on this page already edits anybody's - so the safety is a second
+        /// press rather than a narrower delete.
+        ///
+        /// It disarms after five seconds and whenever the page is rebuilt, so an armed
+        /// button is never left lying about for the next person to lean on.
+        /// </summary>
+        internal static bool ZoneWipeArmed
+        {
+            get
+            {
+                return _zoneWipeArmedAt > 0f
+                       && Time.realtimeSinceStartup - _zoneWipeArmedAt <= 5f;
+            }
+        }
+
+        private static float _zoneWipeArmedAt;
+
+        private static void SetLabel(GameObject button, string text)
+        {
+            var label = button != null ? button.GetComponentInChildren<Text>(true) : null;
+            if (label != null) label.text = text;
+        }
+
+        internal static void ArmZoneWipe()
+        {
+            _zoneWipeArmedAt = Time.realtimeSinceStartup;
+            SetLabel(ZoneClearButton, "Точно? Нажми ещё раз");
+        }
+
+        internal static void DisarmZoneWipe()
+        {
+            if (_zoneWipeArmedAt <= 0f) return;
+
+            _zoneWipeArmedAt = 0f;
+            SetLabel(ZoneClearButton, "Удалить все зоны сервера");
+        }
+
         private static void RebuildZoneViews()
         {
+            DisarmZoneWipe();
+
             var me = LocalPlayerName();
 
             VisibleZones.Clear();
@@ -618,12 +688,17 @@ namespace AstvardServerMod
             // generator has not finished with.
             if (system == null || !system.LocationsGenerated) return;
 
+            // A null here means the signature moved under us; falling back to Invoke
+            // would only fail the same way one line later.
+            var poke = PokeFor(system);
+            if (poke == null) return;
+
             foreach (var zone in Zones)
             {
                 ZoneCells(zone, out var min, out var max);
                 for (var y = min.y; y <= max.y; y++)
                 for (var x = min.x; x <= max.x; x++)
-                    MPokeLocalZone.Invoke(system, new object[] { new Vector2s(x, y) });
+                    poke(new Vector2s(x, y));
             }
         }
 

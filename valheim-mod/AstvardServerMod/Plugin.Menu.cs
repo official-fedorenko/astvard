@@ -279,6 +279,10 @@ namespace AstvardServerMod
                 {
                     if (index >= VisibleZones.Count) return;
                     _editingZone = VisibleZones[index];
+                    // The radius box is shared with the add page, and this page promises
+                    // that leaving it empty keeps the zone's current radius. It can only
+                    // keep that promise if it starts empty.
+                    SetField(ZoneSizeInput, "");
                     MenuState = StateZoneEdit;
                     RefreshMenu();
                 });
@@ -302,8 +306,20 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            ZoneClearButton = MakeButton(gui, "Удалить все", () =>
+            // Two presses, because one press wipes every admin's zones and there is
+            // no undo: the coordinates only ever lived in the config string that this
+            // clears. The wipe stays server-wide on purpose - zones are a shared
+            // resource here and every other button on the page already edits anybody's -
+            // so the label says so, and the arming says it again.
+            ZoneClearButton = MakeButton(gui, "Удалить все зоны сервера", () =>
             {
+                if (!ZoneWipeArmed)
+                {
+                    ArmZoneWipe();
+                    return;
+                }
+
+                DisarmZoneWipe();
                 ZRoutedRpc.instance?.InvokeRoutedRPC(RpcZoneDel, 0f, 0f, true);
             });
 
@@ -684,15 +700,13 @@ namespace AstvardServerMod
             CopyButton = MakeButton(gui, "Копировать", () =>
             {
                 _copyToFile = false;
-                MenuState = StateCopyForm;
-                RefreshMenu();
+                OpenCopyForm();
             });
 
             PasteButton = MakeButton(gui, "Скопировать", () =>
             {
                 _copyToFile = true;
-                MenuState = StateCopyForm;
-                RefreshMenu();
+                OpenCopyForm();
             });
 
             TemplatesButton = MakeButton(gui, "Шаблоны", () =>
@@ -770,6 +784,10 @@ namespace AstvardServerMod
             TemplatePlaceButton = MakeButton(gui, "Поставить", () =>
             {
                 if (_editingTemplate == null) return;
+                // Loading a template rewrites the clipboard, and the builder is reading
+                // it. Starting a second template mid-build used to splice the new one's
+                // pieces into the old one's origin.
+                if (BuildInProgress) return;
                 if (!LoadTemplate(_editingTemplate.Lines, _editingTemplate.Name)) return;
 
                 StartPlacement();
@@ -983,15 +1001,52 @@ namespace AstvardServerMod
         /// Writes a value into a text box the way a player typing it would, so a field
         /// and whatever a button just decided keep telling the same story.
         /// </summary>
+        /// <summary>
+        /// Reaches a text box whether or not it is on screen.
+        ///
+        /// GetComponentInChildren skips inactive objects unless told otherwise, and every
+        /// box in this panel is inactive most of the time: RefreshMenu hides the ones
+        /// that do not belong to the current page, and closing the inventory takes the
+        /// whole panel down. So the plain overload returned null for a box the player had
+        /// filled in, every caller quietly took its fallback, and nobody was told.
+        ///
+        /// It was doing real damage. The bridge and road tools read their numbers from an
+        /// update that runs while the player walks - with the panel shut - so the preview
+        /// was drawn at width 2 with no lift no matter what was typed, while «Построить»,
+        /// pressed with the panel open, built the bridge that was actually asked for. The
+        /// preview and the building never matched and could not. «Дистанция» was dead
+        /// outright, since placement hides the inventory before the ghost ever moves.
+        ///
+        /// The one place that already passed true is UpdatePanelInputBlocking, which had
+        /// to, or keyboard blocking would never have engaged.
+        /// </summary>
+        private static InputField FieldOf(GameObject inputGo)
+        {
+            return inputGo != null ? inputGo.GetComponentInChildren<InputField>(true) : null;
+        }
+
+        /// <summary>
+        /// The name and category boxes are one pair of widgets serving both this page and
+        /// the rename page, so a new save has to start from empty rather than from
+        /// whatever the last rename left behind.
+        /// </summary>
+        private static void OpenCopyForm()
+        {
+            SetField(TemplateNameInput, "");
+            SetField(TemplateCategoryInput, "");
+            MenuState = StateCopyForm;
+            RefreshMenu();
+        }
+
         private static void SetField(GameObject inputGo, string text)
         {
-            var field = inputGo != null ? inputGo.GetComponentInChildren<InputField>() : null;
+            var field = FieldOf(inputGo);
             if (field != null) field.text = text;
         }
 
         private static float ParseField(GameObject inputGo, float fallback)
         {
-            var field = inputGo != null ? inputGo.GetComponentInChildren<InputField>() : null;
+            var field = FieldOf(inputGo);
             if (field == null || string.IsNullOrEmpty(field.text)) return fallback;
             return float.TryParse(field.text.Replace(',', '.'),
                 System.Globalization.NumberStyles.Float,

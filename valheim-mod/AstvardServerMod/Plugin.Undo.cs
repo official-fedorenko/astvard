@@ -149,8 +149,20 @@ namespace AstvardServerMod
 
             RebuildHeightmaps(step.Centre, step.Reach);
 
+            // Say when only part of it came back. A step covers every zone the tool
+            // touched, and a zone that has unloaded since is skipped - which used to be
+            // reported as a clean undo, leaving the far half of a long road painted and
+            // its snapshot gone. The snapshot cannot be kept for a later attempt either:
+            // it holds a TerrainComp, and a zone that reloads gets a new one, so the
+            // reference would stay dead however long the step waited. Being honest about
+            // it is the whole fix available without redesigning the snapshot.
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                restored == 0 ? "Не удалось откатить" : $"Откат: {step.Label}");
+                restored == 0
+                    ? "Не удалось откатить: зоны выгружены"
+                    : restored < step.Zones.Count
+                        ? $"Откат: {step.Label} — {restored} из {step.Zones.Count} зон, "
+                          + "остальные выгружены"
+                        : $"Откат: {step.Label}");
 
             Log.LogInfo($"[AstvardServerMod] Undo '{step.Label}': {restored} of "
                         + $"{step.Zones.Count} zones restored, {UndoStack.Count} steps left.");

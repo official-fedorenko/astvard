@@ -46,6 +46,17 @@ namespace AstvardServerMod
 
         private static bool _building;
 
+        /// <summary>
+        /// Whether a blueprint is still materialising. Anything that would rewrite the
+        /// clipboard has to ask first: the builder re-reads Clipboard.Count on every
+        /// iteration across its yield, so a clipboard swapped out underneath it ends the
+        /// build wherever it had got to.
+        /// </summary>
+        internal static bool BuildInProgress
+        {
+            get { return _building; }
+        }
+
         private static bool _copyToFile;
 
         /// <summary>True while a ghost is following the player, waiting to be placed.</summary>
