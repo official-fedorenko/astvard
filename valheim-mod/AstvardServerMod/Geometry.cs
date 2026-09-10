@@ -322,6 +322,32 @@ namespace AstvardServerMod
             return plan;
         }
 
+        /// <summary>
+        /// Where along one side of a ring the walkway's floors and the roof's panels go,
+        /// from the side's middle. They are two metres wide and stand two metres apart,
+        /// as in the player's «Секция 6шт.», one for each stake: laid at the stakes' own
+        /// closer step they would overlap flat on flat and flicker. So they keep their
+        /// own step and run a little past a short side's corners, where the next side's
+        /// panels meet them at an angle instead.
+        /// </summary>
+        public static float[] SectionPanels(int perSide)
+        {
+            var panels = new float[Math.Max(0, perSide)];
+            for (var j = 0; j < panels.Length; j++) panels[j] = (j + 0.5f) * 2f - perSide;
+            return panels;
+        }
+
+        /// <summary>
+        /// Where along one side the roof's posts stand. «Секция 6шт.» has two, four metres
+        /// out either way from the middle - a panel in from each end - and a shorter side
+        /// keeps them a panel in; a side too short for two gets one in the middle.
+        /// </summary>
+        public static float[] SectionPosts(int perSide)
+        {
+            var inset = perSide - 2;
+            return inset > 0 ? new[] { -(float)inset, (float)inset } : new[] { 0f };
+        }
+
         // ---------------- grids ----------------
 
         /// <summary>

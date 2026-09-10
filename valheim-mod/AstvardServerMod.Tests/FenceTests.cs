@@ -115,6 +115,46 @@ public class FenceTests
         Assert.Empty(Geometry.FenceRing(10f, 0, StakeWidth).Stakes);
     }
 
+    [Fact]
+    public void ASixStakeSideIsThePlayersSectionExactly()
+    {
+        // «Секция 6шт.»: floors and roof panels at x = -5, -3 ... 5, posts at x = -4 and 4.
+        Assert.Equal(new[] { -5f, -3f, -1f, 1f, 3f, 5f }, Geometry.SectionPanels(6));
+        Assert.Equal(new[] { -4f, 4f }, Geometry.SectionPosts(6));
+    }
+
+    [Fact]
+    public void PanelsKeepTheirOwnTwoMetreStepOnAShorterSide()
+    {
+        Assert.Equal(new[] { -3f, -1f, 1f, 3f }, Geometry.SectionPanels(4));
+        Assert.Equal(new[] { -1f, 1f }, Geometry.SectionPanels(2));
+        Assert.Equal(new[] { 0f }, Geometry.SectionPanels(1));
+    }
+
+    [Fact]
+    public void PostsStayAPanelInFromTheEnds()
+    {
+        Assert.Equal(new[] { -2f, 2f }, Geometry.SectionPosts(4));
+        Assert.Equal(new[] { -1f, 1f }, Geometry.SectionPosts(3));
+        Assert.Equal(new[] { 0f }, Geometry.SectionPosts(2));
+        Assert.Equal(new[] { 0f }, Geometry.SectionPosts(1));
+    }
+
+    [Fact]
+    public void PanelsNeverRunMoreThanAMetrePastACorner()
+    {
+        // The stakes fill a side exactly; the panels keep a two metre step, so on a
+        // side that is not a whole number of panels long they run over its ends.
+        for (var radius = 4f; radius <= 64f; radius += 0.5f)
+        {
+            var plan = Geometry.FenceRing(radius, 6, StakeWidth);
+            var sideLength = plan.PerSide * plan.Spacing;
+            var panels = Geometry.SectionPanels(plan.PerSide);
+            var over = panels[^1] + 1f - sideLength * 0.5f;
+            Assert.InRange(over, -1e-3f, 1f + 1e-3f);
+        }
+    }
+
     private static float Distance(Vec2 a, Vec2 b)
     {
         var dx = a.X - b.X;
