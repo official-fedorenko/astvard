@@ -612,6 +612,19 @@ namespace AstvardServerMod
             });
             UpdateRoadSmoothButtonLabel();
 
+            RoadTorchButton = MakeButton(gui, "", () =>
+            {
+                NextRoadTorch();
+                RefreshMenu();
+            });
+            UpdateRoadTorchButtonLabel();
+
+            RoadTorchInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.DecimalNumber, "шаг факелов, напр. 10", 16, 160f, 32f);
+            AddFixedSize(RoadTorchInput, 160f, 32f);
+
             RoadLeftButton = MakeButton(gui, "Изгиб влево", () =>
             {
                 _roadBendLeft = true;
@@ -1271,6 +1284,8 @@ namespace AstvardServerMod
             SetActive(RoadDirtButton, MenuState == StateRoad);
             SetActive(RoadClearButton, admin && MenuState == StateRoad);
             SetActive(RoadSmoothButton, MenuState == StateRoad);
+            SetActive(RoadTorchButton, MenuState == StateRoad);
+            SetActive(RoadTorchInput, MenuState == StateRoad && IsRoadTorches);
             SetActive(RoadLeftButton, MenuState == StateRoad);
             SetActive(RoadRightButton, MenuState == StateRoad);
             SetActive(RoadStartButton, MenuState == StateRoad);

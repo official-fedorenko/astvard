@@ -16,6 +16,21 @@ namespace AstvardServerMod
         }
     }
 
+    /// <summary>A place for a post beside a road, and the way the road runs there.</summary>
+    internal struct Post
+    {
+        public Vec2 At;
+
+        /// <summary>Unit vector along the road at the post, for sliding it along the edge.</summary>
+        public Vec2 Along;
+
+        public Post(Vec2 at, Vec2 along)
+        {
+            At = at;
+            Along = along;
+        }
+    }
+
     /// <summary>
     /// The arithmetic behind the terrain, zone and blueprint tools, kept free of Unity
     /// and of the game's own types so it can be exercised without either.
@@ -116,6 +131,101 @@ namespace AstvardServerMod
             }
 
             return (float)Math.Sqrt(best);
+        }
+
+        // ---------------- posts along a road ----------------
+
+        /// <summary>
+        /// Places for posts along both edges of a road: pairs facing each other across
+        /// it, one every <paramref name="spacing"/> metres of its length, each
+        /// <paramref name="offset"/> metres out from the centre line.
+        ///
+        /// The step is measured along the road itself, not along the chord, so a bend
+        /// keeps the step of a straight - the curve's own samples are not evenly spaced
+        /// and cannot be counted instead. The row is centred on the length: whatever the
+        /// step does not divide is shared between the two ends, so a road a whole number
+        /// of steps long gets a pair right at either end, and one shorter than a step
+        /// gets a single pair in its middle.
+        /// </summary>
+        public static List<Post> EdgePosts(IList<Vec2> path, float spacing, float offset)
+        {
+            var posts = new List<Post>();
+
+            // Points on top of one another have no direction to take a side from.
+            var points = new List<Vec2>();
+            foreach (var point in path)
+            {
+                if (points.Count > 0)
+                {
+                    var last = points[points.Count - 1];
+                    if (Math.Abs(point.X - last.X) < 1e-4f && Math.Abs(point.Z - last.Z) < 1e-4f) continue;
+                }
+
+                points.Add(point);
+            }
+
+            if (points.Count < 2) return posts;
+
+            var along = new float[points.Count];
+            for (var i = 1; i < points.Count; i++)
+            {
+                var dx = points[i].X - points[i - 1].X;
+                var dz = points[i].Z - points[i - 1].Z;
+                along[i] = along[i - 1] + (float)Math.Sqrt(dx * dx + dz * dz);
+            }
+
+            var length = along[points.Count - 1];
+            spacing = Math.Max(spacing, 0.5f);
+            var stations = (int)Math.Floor(length / spacing + 1e-4) + 1;
+            var first = (length - (stations - 1) * spacing) * 0.5f;
+
+            var k = 0;
+            for (var s = 0; s < stations; s++)
+            {
+                var at = first + s * spacing;
+                while (k < points.Count - 2 && along[k + 1] < at) k++;
+
+                var a = points[k];
+                var b = points[k + 1];
+                var segment = along[k + 1] - along[k];
+                var t = Math.Max(0f, Math.Min(1f, (at - along[k]) / segment));
+
+                var dirX = (b.X - a.X) / segment;
+                var dirZ = (b.Z - a.Z) / segment;
+                var x = a.X + (b.X - a.X) * t;
+                var z = a.Z + (b.Z - a.Z) * t;
+                var direction = new Vec2(dirX, dirZ);
+
+                // Left of the travel is (-dz, dx), the same side a positive curve bows to.
+                posts.Add(new Post(new Vec2(x - dirZ * offset, z + dirX * offset), direction));
+                posts.Add(new Post(new Vec2(x + dirZ * offset, z - dirX * offset), direction));
+            }
+
+            return posts;
+        }
+
+        /// <summary>
+        /// Places for posts round the rim of a round pad: as many as the step fits into
+        /// the circumference, never fewer than three, evenly shared out.
+        /// </summary>
+        public static List<Post> RingPosts(Vec2 centre, float radius, float spacing)
+        {
+            var posts = new List<Post>();
+            if (radius <= 0f) return posts;
+
+            var count = Math.Max(3, (int)Math.Round(2.0 * Math.PI * radius / Math.Max(spacing, 0.5f)));
+            for (var i = 0; i < count; i++)
+            {
+                var angle = 2.0 * Math.PI * i / count;
+                var cos = (float)Math.Cos(angle);
+                var sin = (float)Math.Sin(angle);
+
+                // Along the rim is the tangent, a quarter turn from the radius.
+                posts.Add(new Post(new Vec2(centre.X + cos * radius, centre.Z + sin * radius),
+                                   new Vec2(-sin, cos)));
+            }
+
+            return posts;
         }
 
         // ---------------- grids ----------------

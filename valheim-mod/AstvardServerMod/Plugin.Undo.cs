@@ -27,6 +27,12 @@ namespace AstvardServerMod
             public Vector3 Centre;
             public float Reach;
             public List<ZoneSnapshot> Zones;
+
+            // Torches put up along with the change. Undo takes them down, and hands back
+            // what they cost if the player paid for them.
+            public List<ZDOID> Pieces;
+            public string PiecePrefab;
+            public bool PiecesPaid;
         }
 
         // Deep enough to walk back a few mistakes, shallow enough that the copies stay
@@ -47,12 +53,14 @@ namespace AstvardServerMod
 
         /// <summary>
         /// Records the zones an operation is about to touch. Called before the change,
-        /// which is the only moment the old state still exists anywhere.
+        /// which is the only moment the old state still exists anywhere. Returns the step,
+        /// for whatever else the operation puts up to be taken down with it; null when
+        /// nothing could be recorded.
         /// </summary>
-        internal static void RecordTerrainUndo(string label, List<TerrainComp> comps,
-                                               Vector3 centre, float reach)
+        private static TerrainUndoStep RecordTerrainUndo(string label, List<TerrainComp> comps,
+                                                         Vector3 centre, float reach)
         {
-            if (comps == null || comps.Count == 0) return;
+            if (comps == null || comps.Count == 0) return null;
 
             var step = new TerrainUndoStep
             {
@@ -68,13 +76,14 @@ namespace AstvardServerMod
                 if (snapshot != null) step.Zones.Add(snapshot);
             }
 
-            if (step.Zones.Count == 0) return;
+            if (step.Zones.Count == 0) return null;
 
             UndoStack.Add(step);
             while (UndoStack.Count > UndoDepth) UndoStack.RemoveAt(0);
 
             Log.LogInfo($"[AstvardServerMod] Undo recorded: {label}, {step.Zones.Count} zones "
                         + $"({UndoStack.Count}/{UndoDepth} kept).");
+            return step;
         }
 
         private static ZoneSnapshot Capture(TerrainComp comp)
@@ -148,6 +157,7 @@ namespace AstvardServerMod
             }
 
             RebuildHeightmaps(step.Centre, step.Reach);
+            var torches = TakeDownPieces(step);
 
             // Say when only part of it came back. A step covers every zone the tool
             // touched, and a zone that has unloaded since is skipped - which used to be
@@ -156,16 +166,45 @@ namespace AstvardServerMod
             // it holds a TerrainComp, and a zone that reloads gets a new one, so the
             // reference would stay dead however long the step waited. Being honest about
             // it is the whole fix available without redesigning the snapshot.
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                restored == 0
-                    ? "Не удалось откатить: зоны выгружены"
-                    : restored < step.Zones.Count
-                        ? $"Откат: {step.Label} — {restored} из {step.Zones.Count} зон, "
-                          + "остальные выгружены"
-                        : $"Откат: {step.Label}");
+            var text = restored == 0
+                ? "Не удалось откатить: зоны выгружены"
+                : restored < step.Zones.Count
+                    ? $"Откат: {step.Label} — {restored} из {step.Zones.Count} зон, "
+                      + "остальные выгружены"
+                    : $"Откат: {step.Label}";
+            if (torches > 0) text += $", факелов убрано: {torches}";
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, text);
 
             Log.LogInfo($"[AstvardServerMod] Undo '{step.Label}': {restored} of "
-                        + $"{step.Zones.Count} zones restored, {UndoStack.Count} steps left.");
+                        + $"{step.Zones.Count} zones restored, {torches} pieces taken down, "
+                        + $"{UndoStack.Count} steps left.");
+        }
+
+        /// <summary>
+        /// Takes down the pieces a step put up. Only those still loaded here can go, as
+        /// with the zones, and only those that went are paid back.
+        /// </summary>
+        private static int TakeDownPieces(TerrainUndoStep step)
+        {
+            if (step.Pieces == null || step.Pieces.Count == 0 || ZNetScene.instance == null) return 0;
+
+            var removed = 0;
+            foreach (var id in step.Pieces)
+            {
+                // Gone already - taken down by hand, or burnt away - is simply not found.
+                var go = ZNetScene.instance.FindInstance(id);
+                var view = go != null ? go.GetComponent<ZNetView>() : null;
+                if (view == null || !view.IsValid()) continue;
+
+                // Destroy erases the world record only for its owner; for anyone else's
+                // copy it deletes the local view and leaves the torch standing for all.
+                view.ClaimOwnership();
+                ZNetScene.instance.Destroy(go);
+                removed++;
+            }
+
+            if (step.PiecesPaid) GiveBackTorches(step.PiecePrefab, removed);
+            return removed;
         }
     }
 }

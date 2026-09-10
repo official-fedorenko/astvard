@@ -176,11 +176,16 @@ namespace AstvardServerMod
             var clear = RoadClearingActive
                 ? $"{NEWLINE}Деревья и камни на пути снесёт —{NEWLINE}откат их не вернёт."
                 : "";
+            var torches = !IsRoadTorches
+                ? ""
+                : IsAdminUnlocked
+                    ? $"{NEWLINE}По краям встанут факелы."
+                    : $"{NEWLINE}По краям встанут факелы —{NEWLINE}из твоих материалов.";
             label.text = _roadStarted
                 ? $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Начало отмечено — иди в конец{NEWLINE}"
-                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить.{smooth}{clear}"
+                  + $"и нажми ЛКМ или «Закончить».{NEWLINE}Esc — отменить.{smooth}{clear}{torches}"
                 : $"Кладка: {kind}, изгиб {bend}.{NEWLINE}Встань в начало дорожки{NEWLINE}"
-                  + $"и нажми «Начать».{smooth}{clear}";
+                  + $"и нажми «Начать».{smooth}{clear}{torches}";
         }
 
         private static readonly List<Vector3> RoadPath = new List<Vector3>();
@@ -1044,7 +1049,7 @@ namespace AstvardServerMod
                                             float radius, Color paint, float length,
                                             float width, float scale, string kind)
         {
-            RecordTerrainUndo(kind == "area" ? "площадка" : "дорожка", comps,
+            var undo = RecordTerrainUndo(kind == "area" ? "площадка" : "дорожка", comps,
                 path[path.Count / 2], length * 0.5f + radius + 16f);
 
             _roadLaying = true;
@@ -1118,12 +1123,23 @@ namespace AstvardServerMod
                 foreach (var touched in target.Touched)
                     if (touched) painted++;
 
+            // Last, on the finished ground, and a frame on: the rebuilt terrain has to be
+            // what a ray hits, not only what is drawn. A road stopped halfway gets none -
+            // there is no telling where its edges were meant to run.
+            var torches = new TorchRun();
+            if (!stopped && IsRoadTorches)
+            {
+                yield return null;
+                torches = LineWithTorches(path, radius, kind == "area", undo);
+            }
+
             _roadLaying = false;
             _roadCancelled = false;
             if (_roadPreview != null) _roadPreview.SetActive(false);
 
             var clearedNote = (IsRoadSmoothing ? ", сглажена" : "")
-                              + (cleared > 0 ? $", снесено: {cleared}" : "");
+                              + (cleared > 0 ? $", снесено: {cleared}" : "")
+                              + TorchNote(torches);
             if (!stopped)
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     kind == "area"
@@ -1133,7 +1149,8 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] {kind} {(_roadPaved ? "paved" : "dirt")} " +
                         $"{length:F1} m width {width:F1} brush={radius:F2} grid={scale:F2} " +
                         $"nodes={path.Count} zones={comps.Count} owned={owned} verts={painted} " +
-                        $"cleared={cleared} smoothed={IsRoadSmoothing}");
+                        $"cleared={cleared} smoothed={IsRoadSmoothing} " +
+                        $"torches={torches.Placed}/{torches.Placed + torches.Skipped + torches.Unpaid}");
         }
 
         /// <summary>
