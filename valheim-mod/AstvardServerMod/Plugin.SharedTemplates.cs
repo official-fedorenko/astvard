@@ -60,6 +60,7 @@ namespace AstvardServerMod
             rpc.Register<string, string, string, string>(RpcTplBody, OnTemplateBody);
             rpc.Register<string, bool>(RpcTplPlayers, OnTemplatePlayers);
             RegisterBuildPauseRpcs(rpc);
+            RegisterTerrainRuleRpcs(rpc);
         }
 
         // ---------------- server side ----------------
@@ -169,6 +170,7 @@ namespace AstvardServerMod
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
             ReplySharedList(sender);
             ReplyBuildRules(sender);
+            ReplyTerrainRules(sender);
         }
 
         private static void BroadcastSharedList()

@@ -157,7 +157,7 @@ namespace AstvardServerMod
                 else run.Skipped++;
             }
 
-            var free = IsAdminUnlocked || player.NoCostCheat()
+            var free = !TorchesPaidHere || player.NoCostCheat()
                        || zones.GetGlobalKey(piece.FreeBuildKey());
             var count = free ? spots.Count : Mathf.Min(spots.Count, Affordable(player, piece));
             run.Unpaid = spots.Count - count;

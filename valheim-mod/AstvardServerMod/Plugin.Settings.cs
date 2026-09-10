@@ -45,6 +45,8 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            CreateTerrainRulesButton(gui);
+
             AllowedHint = MakeText(gui, "");
 
             for (var slot = 0; slot < MaxTemplateButtons; slot++)
@@ -77,6 +79,8 @@ namespace AstvardServerMod
                 MenuState = StateSettings;
                 RefreshMenu();
             });
+
+            CreateTerrainRuleWidgets(gui);
         }
 
         private static void RebuildSettingsViews()
@@ -113,6 +117,8 @@ namespace AstvardServerMod
             SetActive(CooldownHint, admin && MenuState == StatePlayerCooldown);
             SetActive(CooldownInput, admin && MenuState == StatePlayerCooldown);
             SetActive(CooldownApplyButton, admin && MenuState == StatePlayerCooldown);
+
+            RefreshTerrainRuleViews(admin);
         }
     }
 }

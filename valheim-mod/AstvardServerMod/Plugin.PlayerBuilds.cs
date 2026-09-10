@@ -190,8 +190,9 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Asks for the shared list once per connection, so a player's panel knows whether
-        /// to offer «Постройки» at all; see _sharedListAskedOn.
+        /// Asks for the shared list once per connection - with it come the pause between
+        /// builds and the rules of «Рельеф» - so a player's panel knows what to offer at
+        /// all; see _sharedListAskedOn.
         /// </summary>
         internal static void AskSharedListOnce()
         {
@@ -203,6 +204,7 @@ namespace AstvardServerMod
             SharedTemplates.Clear();
             PlayerTemplates.Clear();
             _nextPlayerBuildAt = 0f;
+            _terrainRulesKnown = false;
             AskSharedList();
         }
 

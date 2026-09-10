@@ -69,6 +69,7 @@ namespace AstvardServerMod
             ParseZones(_zones.Value, Zones);
 
             BindBuildPause(Config);
+            BindTerrainRules(Config);
 
             _harmony = new Harmony("astvard.servermod");
             _harmony.PatchAll();

@@ -104,18 +104,30 @@ namespace AstvardServerMod
         internal static bool IsRoadClearing;
 
         /// <summary>
-        /// Clearing is an admin power, though the road itself is everybody's. Paint only
-        /// changes how the ground looks; clearing removes what other people may have meant
-        /// to keep, and there is no undo for it.
+        /// Clearing is an admin's unless the admins open it to players, though the road
+        /// itself is everybody's. Paint only changes how the ground looks; clearing removes
+        /// what other people may have meant to keep, and there is no undo for it.
         ///
-        /// The toggle is drawn for an admin only, and the grant is checked again here at
+        /// The toggle is drawn only where it is allowed, and that is asked again here at
         /// the point of use: the setting outlives the grant - ForgetAdmin clears the admin
         /// bit on disconnect, not every tool's settings - so a player who switched it on
-        /// and then lost admin would otherwise keep clearing.
+        /// and then lost admin, or had it closed to them, would otherwise keep clearing.
         /// </summary>
         private static bool RoadClearingActive
         {
-            get { return IsRoadClearing && IsAdminUnlocked; }
+            get { return IsRoadClearing && TerrainAllowed("clear"); }
+        }
+
+        /// <summary>Smoothing as it will actually happen: switched on, and open to whoever is laying.</summary>
+        private static bool RoadSmoothingActive
+        {
+            get { return IsRoadSmoothing && TerrainAllowed("smooth"); }
+        }
+
+        /// <summary>Torches as they will actually be set: chosen, and open to whoever is laying.</summary>
+        private static bool RoadTorchesActive
+        {
+            get { return IsRoadTorches && TerrainAllowed("torches"); }
         }
 
         private static void UpdateRoadClearButtonLabel()
@@ -130,6 +142,12 @@ namespace AstvardServerMod
         // Long enough for a real stretch of road, short enough that one press does not
         // rewrite the terrain of a dozen zones at once.
         private const float MaxRoadLength = 200f;
+
+        // The heightmap only covers one 64 m zone, so a pad levelled wider than that is
+        // clipped at its edge anyway - generous rather than exact.
+        private const float MaxLevelRadius = 64f;
+
+        private const float MaxAreaRadius = 32f;
 
         private static bool _roadPaved = true;
 
@@ -233,15 +251,15 @@ namespace AstvardServerMod
             var label = RoadHint != null ? RoadHint.GetComponentInChildren<Text>(true) : null;
             if (label == null) return;
 
-            var smooth = IsRoadSmoothing ? $"{NEWLINE}Землю сгладит." : "";
+            var smooth = RoadSmoothingActive ? $"{NEWLINE}Землю сгладит." : "";
             var clear = RoadClearingActive
                 ? $"{NEWLINE}Деревья и камни на пути снесёт —{NEWLINE}откат их не вернёт."
                 : "";
-            var torches = !IsRoadTorches
+            var torches = !RoadTorchesActive
                 ? ""
-                : IsAdminUnlocked
-                    ? $"{NEWLINE}По краям встанут факелы."
-                    : $"{NEWLINE}По краям встанут факелы —{NEWLINE}из твоих материалов.";
+                : TorchesPaidHere
+                    ? $"{NEWLINE}По краям встанут факелы —{NEWLINE}из твоих материалов."
+                    : $"{NEWLINE}По краям встанут факелы.";
             var notes = smooth + clear + torches;
 
             switch (MenuState)
@@ -260,14 +278,15 @@ namespace AstvardServerMod
                     label.text = $"Шаг между факелами, от 4 до 50 м.{NEWLINE}Потом выбери, какие ставить.";
                     break;
                 case StateRoadArea:
-                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до 32 м. Кладка и всё{NEWLINE}"
+                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до {TerrainLimit("area", MaxAreaRadius):0} м. Кладка и всё{NEWLINE}"
                                  + $"остальное — как у дорожки.{notes}";
                     break;
                 default:
                     label.text = _roadStarted
                         ? $"Начало отмечено — иди в конец{NEWLINE}и нажми ЛКМ или «Закончить».{NEWLINE}"
                           + $"Esc — отменить. P — закрепить{NEWLINE}конец, стрелки — сдвинуть.{notes}"
-                        : $"Встань в начало дорожки{NEWLINE}и нажми «Начать».{notes}";
+                        : $"Встань в начало дорожки{NEWLINE}и нажми «Начать».{notes}"
+                          + TerrainLimitNote("road", MaxRoadLength);
                     break;
             }
         }
@@ -430,6 +449,15 @@ namespace AstvardServerMod
             {
                 // Something removed earlier in this loop can take a neighbour with it.
                 if (view == null || !view.IsValid()) continue;
+
+                // A player's clearing leaves what stands in someone else's ward, as the
+                // hammer would. The road's own ward check covers only its band, and a
+                // boulder can stand across the edge of it with its middle in the ward.
+                if (!IsAdminUnlocked && !PrivateArea.CheckAccess(view.transform.position, 0f, false, false))
+                {
+                    Tally(run.Kept, Utils.GetPrefabName(view.gameObject) + " (ward)");
+                    continue;
+                }
 
                 Tally(removed, Utils.GetPrefabName(view.gameObject));
                 view.ClaimOwnership();
@@ -642,7 +670,7 @@ namespace AstvardServerMod
         /// </summary>
         private static string SmoothingNote(float radius)
         {
-            return IsRoadSmoothing
+            return RoadSmoothingActive
                 ? $"{NEWLINE}Сглаживание захватывает ещё {SmoothBlend(radius):F0} м по краям"
                 : "";
         }
@@ -1051,6 +1079,14 @@ namespace AstvardServerMod
                 return;
             }
 
+            // The start may have been marked before the admins closed roads.
+            if (!TerrainAllowed("road"))
+            {
+                CancelRoad();
+                player.Message(MessageHud.MessageType.Center, "Дорожки игрокам сейчас закрыты");
+                return;
+            }
+
             var from = _roadStart;
             var to = RoadEnd(player);
             var length = new Vector3(to.x - from.x, 0f, to.z - from.z).magnitude;
@@ -1061,10 +1097,11 @@ namespace AstvardServerMod
                 return;
             }
 
-            if (length > MaxRoadLength)
+            var maxLength = TerrainLimit("road", MaxRoadLength);
+            if (length > maxLength)
             {
                 player.Message(MessageHud.MessageType.Center,
-                    $"Далеко: {length:F0} м, максимум {MaxRoadLength:F0}");
+                    $"Далеко: {length:F0} м, максимум {maxLength:F0}");
                 return;
             }
 
@@ -1084,7 +1121,7 @@ namespace AstvardServerMod
             // Smoothing reaches past the paint into the blend band. So does the ward
             // check, and so does the list of zones: every zone the road writes has to be
             // in it - that is also what undo records.
-            var reach = IsRoadSmoothing ? radius + SmoothBlend(radius) : radius;
+            var reach = RoadSmoothingActive ? radius + SmoothBlend(radius) : radius;
 
             // Before any zone is looked up, so a refusal makes no compiler either; and
             // like the refusals below, it keeps the start marked for another end.
@@ -1129,14 +1166,20 @@ namespace AstvardServerMod
             var player = Player.m_localPlayer;
             if (player == null) return;
 
-            var area = Mathf.Clamp(ParseField(RoadAreaInput, 8f), 2f, 32f);
+            if (!TerrainAllowed("area"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Площадки игрокам сейчас закрыты");
+                return;
+            }
+
+            var area = Mathf.Clamp(ParseField(RoadAreaInput, 8f), 2f, TerrainLimit("area", MaxAreaRadius));
             var centre = player.transform.position;
             var scale = PaintGridScale(centre);
 
             RoadPath.Clear();
             RoadPath.Add(centre);
 
-            var reach = IsRoadSmoothing ? area + SmoothBlend(area) : area;
+            var reach = RoadSmoothingActive ? area + SmoothBlend(area) : area;
             if (!WardsAllowStroke("area", RoadPath, reach))
             {
                 player.Message(MessageHud.MessageType.Center,
@@ -1200,7 +1243,7 @@ namespace AstvardServerMod
 
             // Before the paint, so the first stretch's save carries both, and the
             // heightmaps the paint rebuilds show the new ground under it.
-            if (IsRoadSmoothing) SmoothAlongPath(path, comps, radius);
+            if (RoadSmoothingActive) SmoothAlongPath(path, comps, radius);
 
             var save = AccessTools.Method(typeof(TerrainComp), "Save");
             var owned = 0;
@@ -1250,7 +1293,7 @@ namespace AstvardServerMod
             // what a ray hits, not only what is drawn. A road stopped halfway gets none -
             // there is no telling where its edges were meant to run.
             var torches = new TorchRun();
-            if (!stopped && IsRoadTorches)
+            if (!stopped && RoadTorchesActive)
             {
                 yield return null;
                 torches = LineWithTorches(path, radius, kind == "area", undo);
@@ -1260,7 +1303,7 @@ namespace AstvardServerMod
             _roadCancelled = false;
             if (_roadPreview != null) _roadPreview.SetActive(false);
 
-            var clearedNote = (IsRoadSmoothing ? ", сглажена" : "")
+            var clearedNote = (RoadSmoothingActive ? ", сглажена" : "")
                               + (cleared > 0 ? $", снесено: {cleared}" : "")
                               + TorchNote(torches);
             if (!stopped)
@@ -1272,7 +1315,7 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] {kind} {(_roadPaved ? "paved" : "dirt")} " +
                         $"{length:F1} m width {width:F1} brush={radius:F2} grid={scale:F2} " +
                         $"nodes={path.Count} zones={comps.Count} owned={owned} verts={painted} " +
-                        $"cleared={cleared} smoothed={IsRoadSmoothing} " +
+                        $"cleared={cleared} smoothed={RoadSmoothingActive} " +
                         $"torches={torches.Placed}/{torches.Placed + torches.Skipped + torches.Unpaid}");
         }
 
@@ -1366,11 +1409,16 @@ namespace AstvardServerMod
             var player = Player.m_localPlayer;
             if (player == null) return;
 
+            // The page may have been open when the admins closed it.
+            if (!TerrainAllowed("level"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Выравнивание игрокам сейчас закрыто");
+                return;
+            }
+
             var radius = ParseField(RadiusInput, 8f);
             var asked = ParseField(HeightInput, 0f);
-            // The heightmap only covers one 64 m zone, so anything past its edge is
-            // silently clipped — the cap is generous rather than exact.
-            radius = Mathf.Clamp(radius, 1f, 64f);
+            radius = Mathf.Clamp(radius, 1f, TerrainLimit("level", MaxLevelRadius));
 
             var playerPos = player.transform.position;
 

@@ -57,6 +57,8 @@ namespace AstvardServerMod
         private const int StatePlayerBuild = 39; // постройки игрока: что админ открыл игрокам
         private const int StateSettings = 40;   // настройки админа: пауза построек, что открыто игрокам
         private const int StatePlayerCooldown = 41; // пауза между постройками игроков
+        private const int StateTerrainRules = 42; // что игроки могут в «Рельефе»
+        private const int StateTerrainRule = 43;  // один инструмент: можно ли и до скольких метров
 
         internal static GameObject Panel;
 
@@ -562,7 +564,7 @@ namespace AstvardServerMod
 
             UndoButton = MakeButton(gui, "", () =>
             {
-                UndoTerrain();
+                if (TerrainAllowed("undo")) UndoTerrain();
                 RefreshMenu();
             });
 
@@ -606,6 +608,12 @@ namespace AstvardServerMod
             {
                 var player = Player.m_localPlayer;
                 if (player == null) return;
+
+                if (!TerrainAllowed("road"))
+                {
+                    player.Message(MessageHud.MessageType.Center, "Дорожки игрокам сейчас закрыты");
+                    return;
+                }
 
                 _roadStart = player.transform.position;
                 _roadStarted = true;
@@ -970,6 +978,8 @@ namespace AstvardServerMod
                 else if (MenuState == StateSharedList) MenuState = StateTemplates;
                 else if (MenuState == StateSharedItem) MenuState = _sharedItemBack;
                 else if (MenuState == StatePlayerCooldown) MenuState = StateSettings;
+                else if (MenuState == StateTerrainRule) MenuState = StateTerrainRules;
+                else if (MenuState == StateTerrainRules) MenuState = StateSettings;
                 else if (MenuState == StateSettings) MenuState = StateAdmin;
                 else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateFeatures;
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
@@ -1219,7 +1229,9 @@ namespace AstvardServerMod
                 SetActive(ZoneButtons[i], admin && listing && i < VisibleZones.Count);
                 SetActive(OwnerButtons[i], admin && MenuState == StateZoneOthers && i < ZoneOwners.Count);
             }
-            SetActive(TerrainButton, MenuState == StateRoot);
+            // A player sees what the admins left open, and nothing of it until the server
+            // has said what that is.
+            SetActive(TerrainButton, MenuState == StateRoot && AnyTerrainAllowed);
             SetActive(BuildButton, admin && MenuState == StateAdmin);
 
             SetActive(GodButton, admin && MenuState == StateCheats);
@@ -1349,10 +1361,10 @@ namespace AstvardServerMod
             SetActive(CopyRadiusInput, admin && MenuState == StateCopyForm);
             SetActive(CopyApplyButton, admin && MenuState == StateCopyForm);
 
-            SetActive(LevelCircleButton, MenuState == StateTerrain);
-            SetActive(RoadButton, MenuState == StateTerrain);
-            SetActive(BridgeButton, MenuState == StateTerrain);
-            SetActive(UndoButton, MenuState == StateTerrain && CanUndoTerrain);
+            SetActive(LevelCircleButton, MenuState == StateTerrain && TerrainAllowed("level"));
+            SetActive(RoadButton, MenuState == StateTerrain && (TerrainAllowed("road") || TerrainAllowed("area")));
+            SetActive(BridgeButton, MenuState == StateTerrain && TerrainAllowed("bridge"));
+            SetActive(UndoButton, MenuState == StateTerrain && CanUndoTerrain && TerrainAllowed("undo"));
             UpdateUndoButtonLabel();
             var road = MenuState == StateRoad;
             if (IsRoadPage(MenuState)) UpdateRoadHint();
@@ -1361,11 +1373,11 @@ namespace AstvardServerMod
             SetActive(RoadKindButton, road);
             SetActive(RoadWidthButton, road);
             SetActive(RoadBendButton, road);
-            SetActive(RoadSmoothButton, road);
-            SetActive(RoadClearButton, admin && road);
-            SetActive(RoadTorchButton, road);
-            SetActive(RoadAreaButton, road);
-            SetActive(RoadStartButton, road);
+            SetActive(RoadSmoothButton, road && TerrainAllowed("smooth"));
+            SetActive(RoadClearButton, road && TerrainAllowed("clear"));
+            SetActive(RoadTorchButton, road && TerrainAllowed("torches"));
+            SetActive(RoadAreaButton, road && TerrainAllowed("area"));
+            SetActive(RoadStartButton, road && TerrainAllowed("road"));
             SetActive(RoadEndButton, road && RoadAwaitingEnd);
             SetActive(RoadCancelButton, road && RoadInProgress);
 
@@ -1380,8 +1392,9 @@ namespace AstvardServerMod
                 SetActive(choice, MenuState == StateRoadTorches);
             SetActive(RoadAreaInput, MenuState == StateRoadArea);
             SetActive(RoadAreaMakeButton, MenuState == StateRoadArea);
-            SetActive(LevelSquareButton, MenuState == StateTerrain);
+            SetActive(LevelSquareButton, MenuState == StateTerrain && TerrainAllowed("level"));
 
+            if (MenuState == StateBridge) UpdateBridgeHint();
             SetActive(BridgeHint, MenuState == StateBridge);
             SetActive(BridgeWidthInput, MenuState == StateBridge);
             SetActive(BridgeCoverButton, MenuState == StateBridge);
@@ -1391,6 +1404,9 @@ namespace AstvardServerMod
             SetActive(BridgeEndButton, MenuState == StateBridge);
             SetActive(BridgeCancelButton, MenuState == StateBridge && BridgeInProgress);
 
+            if (MenuState == StateTerrainForm)
+                SetLabel(TerrainHint, "Радиус (м) и высота над водой.\n0 или пусто — уровень игрока.\nКрая сшиваются автоматически."
+                                      + TerrainLimitNote("level", MaxLevelRadius));
             SetActive(TerrainHint, MenuState == StateTerrainForm);
             SetActive(RadiusInput, MenuState == StateTerrainForm);
             SetActive(HeightInput, MenuState == StateTerrainForm);
