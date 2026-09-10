@@ -38,6 +38,23 @@ npm start --prefix backend           # сайт на :3001, читает ../.env
 powershell -c "Start-Process 'C:\Games\steamapps\common\Valheim dedicated server\start_astvard.bat' -WorkingDirectory 'C:\Games\steamapps\common\Valheim dedicated server' -WindowStyle Hidden"
 ```
 
+**Останавливать — только Ctrl+C в его консоль.** Тогда игра пишет мир на выходе: в логе
+`Game - OnApplicationQuit`, `ZNet Shutdown`, `World save (5/5) done`, а в
+`worlds_local\AstwardWorld` появляется следующий номер `_main.N.*`. Убитый процесс теряет
+всё после последнего автосохранения (`-saveinterval 900`, то есть до 15 минут). Окно
+скрыто, поэтому Ctrl+C нажимает `valheim-mod/server/send_ctrl_c.ps1`, и только отдельным
+скрытым процессом: ему приходится бросить свою консоль и подцепиться к консоли сервера.
+`cmd.exe` от bat после этого остаётся висеть в скрытом окне (судя по всему, на «Terminate
+batch job (Y/N)?») — его добить. Проверено 10.09.2026: сервер вышел за 2.6 с и записал
+сохранение № 17. Из корня репозитория:
+
+```powershell
+$server = (Get-Process valheim_server).Id
+Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"$PWD\valheim-mod\server\send_ctrl_c.ps1",'-TargetPid',$server -WindowStyle Hidden -Wait
+# дождаться, пока valheim_server исчезнет, и проверить в логе World save (5/5) done, затем:
+Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object CommandLine -match 'start_astvard' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
 Проверка, что всё действительно живо (не верь тому, что процесс просто есть):
 
 ```bash
