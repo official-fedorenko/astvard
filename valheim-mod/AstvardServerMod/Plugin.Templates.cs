@@ -21,6 +21,9 @@ namespace AstvardServerMod
             public string Path;
             public string[] Lines;
             public int Pieces;
+
+            /// <summary>Server copies only: an admin has opened it to players.</summary>
+            public bool ForPlayers;
         }
 
         private const string TemplateFolder = "astvard-templates";
@@ -121,7 +124,8 @@ namespace AstvardServerMod
                             + $"категория «{_selectedShared.Category}»."
                             + (string.IsNullOrEmpty(_selectedShared.Author)
                                 ? ""
-                                : $"{NEWLINE}Выложил: {_selectedShared.Author}");
+                                : $"{NEWLINE}Выложил: {_selectedShared.Author}")
+                            + (_selectedShared.ForPlayers ? $"{NEWLINE}Игрокам: разрешён." : "");
                 return;
             }
 
@@ -165,7 +169,8 @@ namespace AstvardServerMod
                   + $"категория «{_editingTemplate.Category}»."
                   + (string.IsNullOrEmpty(_editingTemplate.Author)
                       ? ""
-                      : $"{NEWLINE}Автор: {_editingTemplate.Author}");
+                      : $"{NEWLINE}Автор: {_editingTemplate.Author}")
+                  + (IsForPlayers(_editingTemplate.Name) ? $"{NEWLINE}Игрокам: разрешён." : "");
         }
 
         // ---------------- reading ----------------
@@ -259,6 +264,7 @@ namespace AstvardServerMod
             if (key == "name") template.Name = value;
             else if (key == "category") template.Category = value;
             else if (key == "author") template.Author = value;
+            else if (key == "players") template.ForPlayers = value == "yes";
         }
 
         internal static List<string> TemplateCategories()

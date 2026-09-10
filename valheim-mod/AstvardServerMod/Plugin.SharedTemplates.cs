@@ -17,6 +17,9 @@ namespace AstvardServerMod
             public string Category;
             public string Author;
             public int Pieces;
+
+            /// <summary>An admin has opened it to players: it shows in their «Постройки».</summary>
+            public bool ForPlayers;
         }
 
         private const string SharedFolder = "astvard-templates-shared";
@@ -27,6 +30,11 @@ namespace AstvardServerMod
         private const string RpcTplList = "AstvardTplList";
         private const string RpcTplGet = "AstvardTplGet";
         private const string RpcTplBody = "AstvardTplBody";
+        private const string RpcTplPlayers = "AstvardTplPlayers";
+
+        // The mark a shared template carries while players may build it. A header line,
+        // so the file stays the whole record and a restart keeps what was opened.
+        private const string PlayersHeader = "#players yes";
 
         // Records are newline separated, fields tab separated; both are stripped from
         // anything a player can type, so a name cannot split its own record.
@@ -50,6 +58,7 @@ namespace AstvardServerMod
             rpc.Register<string>(RpcTplList, OnTemplateList);
             rpc.Register<string>(RpcTplGet, OnTemplateGet);
             rpc.Register<string, string, string, string>(RpcTplBody, OnTemplateBody);
+            rpc.Register<string, bool>(RpcTplPlayers, OnTemplatePlayers);
         }
 
         // ---------------- server side ----------------
@@ -69,6 +78,11 @@ namespace AstvardServerMod
             {
                 System.IO.Directory.CreateDirectory(SharedDir);
 
+                // A newer version keeps what the old one was open to: fixing a build the
+                // players already have should not quietly take it away from them.
+                var path = SharedPath(name);
+                var before = System.IO.File.Exists(path) ? ReadTemplate(path) : null;
+
                 var lines = new List<string>
                 {
                     "# astvard shared template",
@@ -76,9 +90,10 @@ namespace AstvardServerMod
                     "#category " + category,
                 };
                 if (!string.IsNullOrEmpty(author)) lines.Add("#author " + author);
+                if (before != null && before.ForPlayers) lines.Add(PlayersHeader);
                 lines.AddRange(body.Split('\n'));
 
-                System.IO.File.WriteAllLines(SharedPath(name), lines);
+                System.IO.File.WriteAllLines(path, lines);
                 Log.LogInfo($"[AstvardServerMod] Shared template '{name}' received from {sender}.");
             }
             catch (System.Exception ex)
@@ -118,6 +133,36 @@ namespace AstvardServerMod
             BroadcastSharedList();
         }
 
+        /// <summary>Opens a shared template to players, or closes it to them again.</summary>
+        private static void OnTemplatePlayers(long sender, string name, bool allow)
+        {
+            if (!ServerAllows(sender)) return;
+
+            try
+            {
+                var path = SharedPath(name);
+                if (!System.IO.File.Exists(path))
+                {
+                    Log.LogWarning($"[AstvardServerMod] No shared template '{name}' to open or close to players.");
+                    return;
+                }
+
+                var lines = new List<string>(System.IO.File.ReadAllLines(path));
+                lines.RemoveAll(line => line.Trim().StartsWith("#players", System.StringComparison.OrdinalIgnoreCase));
+                if (allow) lines.Insert(lines.Count > 0 ? 1 : 0, PlayersHeader);
+                System.IO.File.WriteAllLines(path, lines);
+
+                Log.LogInfo($"[AstvardServerMod] Shared template '{name}' {(allow ? "opened" : "closed")} to players.");
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogError($"[AstvardServerMod] Could not change who may build '{name}': {ex.Message}");
+                return;
+            }
+
+            BroadcastSharedList();
+        }
+
         private static void OnTemplateQuery(long sender)
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
@@ -145,7 +190,8 @@ namespace AstvardServerMod
                     packed.Append(template.Name).Append(FieldSeparator)
                           .Append(template.Category).Append(FieldSeparator)
                           .Append(template.Author).Append(FieldSeparator)
-                          .Append(template.Pieces);
+                          .Append(template.Pieces).Append(FieldSeparator)
+                          .Append(template.ForPlayers ? "1" : "0");
                 }
             }
             catch (System.Exception ex)
@@ -160,14 +206,16 @@ namespace AstvardServerMod
         private static void OnTemplateGet(long sender, string name)
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
-            // The shared library is an admin tool - the buttons for it are drawn only
-            // for an admin. This is the one shared payload that is never broadcast, so
-            // without a check here a modded client could read a name off the freely
-            // broadcast list and pull the whole blueprint down.
-            if (!ServerAllows(sender)) return;
 
             var template = ReadTemplate(SharedPath(name));
             if (template == null) return;
+
+            // The shared library is an admin tool - the buttons for it are drawn only
+            // for an admin. This is the one shared payload that is never broadcast, so
+            // without a check here a modded client could read a name off the freely
+            // broadcast list and pull the whole blueprint down. What an admin has opened
+            // to players is the exception: handing that over is the point of opening it.
+            if (!template.ForPlayers && !ServerAllows(sender)) return;
 
             ZRoutedRpc.instance?.InvokeRoutedRPC(sender, RpcTplBody,
                 template.Name, template.Category, template.Author,
@@ -196,10 +244,14 @@ namespace AstvardServerMod
                         Category = parts[1],
                         Author = parts[2],
                         Pieces = pieces,
+                        ForPlayers = parts.Length > 4 && parts[4] == "1",
                     });
                 }
             }
 
+            // The page open on a server template keeps showing it, with what is true now.
+            if (_selectedShared != null) _selectedShared = FindShared(_selectedShared.Name) ?? _selectedShared;
+            RebuildPlayerTemplates();
             RefreshMenu();
         }
 
@@ -207,6 +259,14 @@ namespace AstvardServerMod
                                            string author, string body)
         {
             if (string.IsNullOrEmpty(body)) return;
+
+            // Asked for to build, not to keep: a player's pick from their «Постройки».
+            if (_awaitedBuild != null && _awaitedBuild == name)
+            {
+                _awaitedBuild = null;
+                StartPlayerBuild(name, body);
+                return;
+            }
 
             // Only a body we asked for.
             //
@@ -264,7 +324,13 @@ namespace AstvardServerMod
             ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplQuery);
         }
 
-        internal static void PushTemplate(BlueprintTemplate template)
+        /// <summary>Asks for the list without emptying the one shown in the meantime.</summary>
+        internal static void AskSharedList()
+        {
+            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplQuery);
+        }
+
+        internal static void PushTemplate(BlueprintTemplate template, bool say = true)
         {
             if (template == null) return;
 
@@ -273,8 +339,9 @@ namespace AstvardServerMod
                 string.IsNullOrEmpty(template.Author) ? LocalPlayerName() : template.Author,
                 string.Join("\n", template.Lines));
 
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                $"Отправлено: {template.Name}");
+            if (say)
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    $"Отправлено: {template.Name}");
         }
 
         /// <summary>What we last asked the server for; see OnTemplateBody.</summary>

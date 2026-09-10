@@ -514,6 +514,15 @@ namespace AstvardServerMod
                     return;
                 }
 
+                // A player's build asks every piece's place the way the hammer would, and
+                // stays in hand to be carried clear.
+                if (!WardsAllowGhost())
+                {
+                    _inputHeldUntil = Time.time + 0.3f;
+                    player.Message(MessageHud.MessageType.Center, "Постройка задевает чужой оберег — отнеси её в сторону");
+                    return;
+                }
+
                 IsPlacing = false;
                 _ghostPinned = false;
                 _inputHeldUntil = Time.time + 0.3f;

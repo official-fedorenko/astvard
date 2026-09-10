@@ -54,6 +54,7 @@ namespace AstvardServerMod
         private const int StateRoadArea = 36;   // площадка вокруг игрока
         private const int StateFence = 37;      // частокол кольцом вокруг игрока
         private const int StateAreaFill = 38;   // заполнить замкнутый контур: пол, потом остальное
+        private const int StatePlayerBuild = 39; // постройки игрока: что админ открыл игрокам
 
         internal static GameObject Panel;
 
@@ -524,6 +525,8 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            CreatePlayerBuildWidgets(gui);
+
             LevelCircleButton = MakeButton(gui, "Выровнять круг", () =>
             {
                 _terrainSquare = false;
@@ -772,6 +775,9 @@ namespace AstvardServerMod
                 // Read the folder on the way in, so a file dropped there while the
                 // game was running shows up without a restart.
                 ReloadTemplates();
+                // And ask the server which of them players may build, for the switch on
+                // each template's page.
+                AskSharedList();
                 RefreshMenu();
             });
 
@@ -875,6 +881,8 @@ namespace AstvardServerMod
                 PushTemplate(_editingTemplate);
             });
 
+            CreateTemplatePlayersWidget(gui);
+
             SharedButton = MakeButton(gui, "Общие", () =>
             {
                 MenuState = StateSharedList;
@@ -901,6 +909,8 @@ namespace AstvardServerMod
             {
                 TakeSharedTemplate(_selectedShared);
             });
+
+            CreateSharedPlayersWidget(gui);
 
             SharedDeleteButton = MakeButton(gui, "Удалить с сервера", () =>
             {
@@ -958,6 +968,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
                 else if (MenuState == StateZoneOthers) MenuState = StateZone;
+                else if (MenuState == StatePlayerBuild) MenuState = StateRoot;
                 else if (MenuState == StateFeatures) MenuState = StateRoot;
                 else if (MenuState == StateTerrain) MenuState = StateRoot;
                 else if (MenuState == StateAdmin) MenuState = StateRoot;
@@ -1273,11 +1284,23 @@ namespace AstvardServerMod
             SetActive(AreaFillHint, admin && MenuState == StateAreaFill);
             SetActive(AreaFloorButton, admin && MenuState == StateAreaFill);
 
-            // On every page of «Постройки», and on any page at all while a build is still
-            // going up: the panel always reopens at the root, and stopping a base halfway
-            // should not take a walk through the menu first.
+            // On every page of «Постройки» - a player's own, for a player - and on any page
+            // at all while a build is still going up: the panel always reopens at the root,
+            // and stopping a base halfway should not take a walk through the menu first.
             DisarmBuildUndo();
-            SetActive(BuildUndoButton, admin && CanUndoBuild && (BuildGoingUp || IsBuildPage(MenuState)));
+            var buildPage = admin ? IsBuildPage(MenuState) : MenuState == StatePlayerBuild;
+            SetActive(BuildUndoButton, CanUndoBuild && (BuildGoingUp || buildPage));
+
+            // A player's own «Постройки»: whatever an admin has opened to players, and
+            // nothing at all until something is.
+            RebuildPlayerBuildViews();
+            SetActive(PlayerBuildButton, !admin && MenuState == StateRoot && PlayerTemplates.Count > 0);
+            SetActive(PlayerBuildHint, !admin && MenuState == StatePlayerBuild);
+            for (var i = 0; i < MaxTemplateButtons; i++)
+                SetActive(PlayerTemplateButtons[i], !admin && MenuState == StatePlayerBuild
+                                                    && i < PlayerTemplates.Count);
+            SetActive(TemplatePlayersButton, admin && MenuState == StateTemplateEdit);
+            SetActive(SharedPlayersButton, admin && MenuState == StateSharedItem);
             SetActive(SnapButton, admin && MenuState == StateBuild);
             SetActive(LevelGroundButton, admin && MenuState == StateBuild);
             SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
@@ -1414,7 +1437,8 @@ namespace AstvardServerMod
         {
             return state == StateFeatures || state == StateFill || state == StateCollect
                    || state == StateTerrain || state == StateTerrainForm
-                   || state == StateRoad || state == StateBridge || IsRoadPage(state);
+                   || state == StateRoad || state == StateBridge || IsRoadPage(state)
+                   || state == StatePlayerBuild;
         }
 
         private static readonly string NEWLINE = "\n";

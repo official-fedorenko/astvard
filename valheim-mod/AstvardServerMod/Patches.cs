@@ -368,6 +368,9 @@ namespace AstvardServerMod
             // into a collect chest instead. A real assignment never reaches here,
             // because the prefix suppresses the very Interact that would open it.
             Plugin.PendingChestAssign = null;
+            // A player's panel needs the server's word on what they may build before it
+            // can offer «Постройки»; once per connection, broadcasts carry the rest.
+            Plugin.AskSharedListOnce();
             Plugin.RefreshMenu();
         }
     }
