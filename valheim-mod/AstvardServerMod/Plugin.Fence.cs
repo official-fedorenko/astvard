@@ -276,90 +276,66 @@ namespace AstvardServerMod
                 }
 
                 var stakeLift = PivotAboveBase(stakePrefab);
-                var creator = player.GetPlayerID();
-                var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
                 var panels = Geometry.SectionPanels(plan.PerSide);
                 var posts = Geometry.SectionPosts(plan.PerSide);
-                var sideLength = plan.PerSide * plan.Spacing;
+
+                // Every place is judged before any piece goes up. Judged a side at a time
+                // as they were built, each side's first span took the side before it - its
+                // floor and panels run past the corner - for somebody else's building and
+                // gave up its walkway, its roof and its post; the last side lost both its
+                // posts, and its roof came down.
+                var sides = new List<FenceSide>(plan.Sides);
+                for (var side = 0; side < plan.Sides; side++)
+                    sides.Add(JudgeFenceSide(plan, side, centre, radius, panels, posts, walkway, roof));
+
+                var creator = player.GetPlayerID();
+                var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
                 var built = new List<ZDOID>();
                 var skipped = 0;
+                var roofless = 0;
 
-                for (var side = 0; side < plan.Sides; side++)
+                foreach (var fs in sides)
                 {
                     if (ZNetScene.instance == null || Player.m_localPlayer == null) break;
 
-                    var yaw = plan.Stakes[side * plan.PerSide].Yaw;
-                    var turn = Quaternion.Euler(0f, yaw, 0f);
-                    var angle = yaw * Mathf.Deg2Rad;
-                    var outward = new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle));
-                    var along = new Vector3(Mathf.Cos(angle), 0f, -Mathf.Sin(angle));
+                    skipped += fs.Skipped;
+                    if (roof && !fs.Roofed) roofless++;
 
-                    var feet = new Vector3[plan.PerSide];
-                    var standing = new bool[plan.PerSide];
-                    var roomy = new bool[plan.PerSide];
-                    var lowest = float.MaxValue;
-                    for (var j = 0; j < plan.PerSide; j++)
+                    if (fs.Lowest < float.MaxValue)
                     {
-                        var stake = plan.Stakes[side * plan.PerSide + j];
-                        standing[j] = FindStakeFooting(centre, stake, out feet[j]);
-                        if (!standing[j])
-                        {
-                            skipped++;
-                            continue;
-                        }
-
-                        lowest = Mathf.Min(lowest, feet[j].y);
-                        roomy[j] = sections && SectionClear(feet[j], stake.Yaw, walkway, roof);
-                    }
-
-                    if (lowest < float.MaxValue)
-                    {
+                        var turn = Quaternion.Euler(0f, fs.Yaw, 0f);
                         for (var j = 0; j < plan.PerSide; j++)
                         {
-                            if (!standing[j]) continue;
-                            var baseY = sections ? lowest : feet[j].y;
-                            PlaceFencePiece(stakePrefab, new Vector3(feet[j].x, baseY + stakeLift, feet[j].z),
+                            if (!fs.Standing[j]) continue;
+                            var baseY = sections ? fs.Lowest : fs.Feet[j].y;
+                            PlaceFencePiece(stakePrefab, new Vector3(fs.Feet[j].x, baseY + stakeLift, fs.Feet[j].z),
                                             turn, creator, platform, built);
                         }
 
-                        if (sections)
+                        var pivot = Vector3.up * (fs.Lowest + stakeLift);
+                        for (var j = 0; j < panels.Length; j++)
                         {
-                            var middle = new Vector3(centre.x, 0f, centre.z) + outward * radius;
-                            var pivot = Vector3.up * (lowest + stakeLift);
+                            var at = fs.Middle + fs.Along * panels[j] + pivot;
 
-                            for (var j = 0; j < panels.Length; j++)
+                            if (fs.Floor[j])
+                                PlaceFencePiece(floorPrefab, at + Vector3.up * WalkwayRise - fs.Outward * WalkwayInset,
+                                                turn, creator, platform, built);
+
+                            if (fs.Roofed && fs.Roof[j])
                             {
-                                if (!roomy[j]) continue;
-                                var at = middle + along * panels[j] + pivot;
-
-                                if (walkway)
-                                    PlaceFencePiece(floorPrefab, at + Vector3.up * WalkwayRise - outward * WalkwayInset,
-                                                    turn, creator, platform, built);
-
-                                if (roof)
-                                {
-                                    PlaceFencePiece(roofPrefab, at + Vector3.up * RoofLowRise + outward * RoofReach,
-                                                    turn, creator, platform, built);
-                                    PlaceFencePiece(roofPrefab, at + Vector3.up * RoofHighRise - outward * RoofReach,
-                                                    turn, creator, platform, built);
-                                }
+                                PlaceFencePiece(roofPrefab, at + Vector3.up * RoofLowRise + fs.Outward * RoofReach,
+                                                turn, creator, platform, built);
+                                PlaceFencePiece(roofPrefab, at + Vector3.up * RoofHighRise - fs.Outward * RoofReach,
+                                                turn, creator, platform, built);
                             }
+                        }
 
-                            if (roof)
-                            {
-                                foreach (var post in posts)
-                                {
-                                    // A post goes with the stake whose place it stands in.
-                                    var slot = Mathf.Clamp(
-                                        Mathf.RoundToInt((post + sideLength * 0.5f) / plan.Spacing - 0.5f),
-                                        0, plan.PerSide - 1);
-                                    if (!roomy[slot]) continue;
-
-                                    foreach (var rise in PostRises)
-                                        PlaceFencePiece(postPrefab, middle + along * post + pivot + Vector3.up * rise,
-                                                        turn, creator, platform, built);
-                                }
-                            }
+                        if (fs.Roofed)
+                        {
+                            foreach (var post in posts)
+                                foreach (var rise in PostRises)
+                                    PlaceFencePiece(postPrefab, fs.Middle + fs.Along * post + pivot + Vector3.up * rise,
+                                                    turn, creator, platform, built);
                         }
                     }
 
@@ -374,10 +350,11 @@ namespace AstvardServerMod
                     $"Забор {radius:0.#} м ({parts}): деталей {built.Count}"
                     + (undo != null ? ", выровнен" : "")
                     + (cleared > 0 ? $", снесено: {cleared}" : "")
-                    + (skipped > 0 ? $", мест пропущено: {skipped}" : ""));
+                    + (skipped > 0 ? $", мест пропущено: {skipped}" : "")
+                    + (roofless > 0 ? $", сторон без крыши: {roofless}" : ""));
                 Log.LogInfo($"[AstvardServerMod] Fence r={radius:F1} sides={plan.Sides} perSide={plan.PerSide} " +
                             $"spacing={plan.Spacing:F2} walkway={walkway} roof={roof} levelled={undo != null} " +
-                            $"pieces={built.Count} skipped={skipped} cleared={cleared} at {centre}");
+                            $"pieces={built.Count} skipped={skipped} roofless={roofless} cleared={cleared} at {centre}");
             }
             finally
             {
@@ -437,16 +414,115 @@ namespace AstvardServerMod
             return !BuiltWithin(footing, stake.Yaw, -0.25f, 0.25f, 2.5f);
         }
 
-        /// <summary>
-        /// Whether the walkway and roof over a stake have room: nothing built where the
-        /// floor goes inside the line, nor where the roof and its eave go over both. A
-        /// house against the wall inside loses its stretch of walkway, not its stake -
-        /// the ring stays shut either way.
-        /// </summary>
-        private static bool SectionClear(Vector3 footing, float yaw, bool walkway, bool roof)
+        /// <summary>One side of a ring, judged before anything of the ring is built.</summary>
+        private sealed class FenceSide
         {
-            return !BuiltWithin(footing, yaw, walkway || roof ? -2f : -0.25f, roof ? 2f : 0.25f,
-                                roof ? 6.5f : 2.5f);
+            public float Yaw;
+
+            /// <summary>On the line, halfway along the side, at height 0.</summary>
+            public Vector3 Middle;
+
+            public Vector3 Along;
+
+            public Vector3 Outward;
+
+            public Vector3[] Feet;
+
+            public bool[] Standing;
+
+            public int Skipped;
+
+            /// <summary>
+            /// The lowest footing among the side's stakes. A walkway and a roof take it for
+            /// the whole side, so that they line up and no stake floats.
+            /// </summary>
+            public float Lowest = float.MaxValue;
+
+            public bool[] Floor;
+
+            public bool[] Roof;
+
+            /// <summary>
+            /// Every post of the side has its place, so its roof may go up. Panels hang off
+            /// the posts, and a roof short of one comes down within the minute.
+            /// </summary>
+            public bool Roofed;
+        }
+
+        /// <summary>
+        /// Where one side's pieces can go, each part asked about its own room: the
+        /// stake by FindStakeFooting, the floor where it lies inside the line, the
+        /// panels over both and out to the eave, each post up the line itself. A house
+        /// against the wall inside costs its stretch of walkway, not its stake - the ring
+        /// stays shut either way.
+        /// </summary>
+        private static FenceSide JudgeFenceSide(FencePlan plan, int side, Vector3 centre, float radius,
+                                                float[] panels, float[] posts, bool walkway, bool roof)
+        {
+            var yaw = plan.Stakes[side * plan.PerSide].Yaw;
+            var angle = yaw * Mathf.Deg2Rad;
+            var fs = new FenceSide
+            {
+                Yaw = yaw,
+                Outward = new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle)),
+                // A quarter turn clockwise from the outward face, the way the stakes run.
+                Along = new Vector3(Mathf.Cos(angle), 0f, -Mathf.Sin(angle)),
+                Feet = new Vector3[plan.PerSide],
+                Standing = new bool[plan.PerSide],
+                Floor = new bool[plan.PerSide],
+                Roof = new bool[plan.PerSide],
+            };
+            fs.Middle = new Vector3(centre.x, 0f, centre.z) + fs.Outward * radius;
+
+            for (var j = 0; j < plan.PerSide; j++)
+            {
+                fs.Standing[j] = FindStakeFooting(centre, plan.Stakes[side * plan.PerSide + j], out fs.Feet[j]);
+                if (fs.Standing[j]) fs.Lowest = Mathf.Min(fs.Lowest, fs.Feet[j].y);
+                else fs.Skipped++;
+            }
+
+            if (fs.Lowest == float.MaxValue || !(walkway || roof)) return fs;
+
+            // Heights from the lowest ground under the side's stakes: the floor lies at
+            // about 1.9 m over it, the two panel rows at about 4.9 and 5.9.
+            var ground = fs.Lowest + FenceSink;
+            for (var j = 0; j < panels.Length; j++)
+            {
+                if (!fs.Standing[j]) continue;
+                fs.Floor[j] = walkway && !SideBuiltWithin(fs, panels[j], 0.9f, -1.9f, -0.1f, ground + 1.4f, ground + 2.4f);
+                fs.Roof[j] = roof && !SideBuiltWithin(fs, panels[j], 0.9f, -1.9f, 1.9f, ground + 4.2f, ground + 6.8f);
+            }
+
+            if (!roof) return fs;
+
+            fs.Roofed = true;
+            var sideLength = plan.PerSide * plan.Spacing;
+            foreach (var post in posts)
+            {
+                // A post stands in the line, in the span of one stake; where that stake
+                // could not stand, neither can the post.
+                var slot = Mathf.Clamp(Mathf.FloorToInt((post + sideLength * 0.5f) / plan.Spacing),
+                                       0, plan.PerSide - 1);
+                if (!fs.Standing[slot] || SideBuiltWithin(fs, post, 0.3f, -0.3f, 0.3f, ground + 0.5f, ground + 5.8f))
+                    fs.Roofed = false;
+            }
+
+            return fs;
+        }
+
+        /// <summary>
+        /// Whether any built piece stands in a box on one side of the ring: centred
+        /// <paramref name="at"/> metres along it, from <paramref name="inner"/> to
+        /// <paramref name="outer"/> across the line, between two heights.
+        /// </summary>
+        private static bool SideBuiltWithin(FenceSide fs, float at, float halfAlong, float inner, float outer,
+                                            float bottom, float top)
+        {
+            var box = fs.Middle + fs.Along * at + fs.Outward * ((inner + outer) * 0.5f)
+                      + Vector3.up * ((bottom + top) * 0.5f);
+
+            return Physics.CheckBox(box, new Vector3(halfAlong, (top - bottom) * 0.5f, (outer - inner) * 0.5f),
+                                    Quaternion.Euler(0f, fs.Yaw, 0f), PieceLayer, QueryTriggerInteraction.Ignore);
         }
 
         /// <summary>
