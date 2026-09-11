@@ -114,7 +114,7 @@ namespace AstvardServerMod
                       "радиус", 1, (int)MaxLevelRadius, (int)MaxLevelRadius),
             LimitRule("road", "Road", "Дорожка", RuleGroup.Terrain, true,
                       "длина", 10, (int)MaxRoadLength, (int)MaxRoadLength),
-            LimitRule("area", "Area", "Площадка", RuleGroup.Terrain, true,
+            LimitRule("area", "Area", "Мощение", RuleGroup.Terrain, true,
                       "радиус", 2, (int)MaxAreaRadius, (int)MaxAreaRadius),
             LimitRule("bridge", "Bridge", "Мост", RuleGroup.Terrain, true,
                       "длина", 10, (int)MaxBridgeLength, (int)MaxBridgeLength),

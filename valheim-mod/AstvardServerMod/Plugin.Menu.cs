@@ -51,7 +51,7 @@ namespace AstvardServerMod
         private const int StateRoadWidth = 33;  // ширина дорожки
         private const int StateRoadBend = 34;   // изгиб: насколько и в какую сторону
         private const int StateRoadTorches = 35; // факелы: какие и через сколько
-        private const int StateRoadArea = 36;   // площадка вокруг игрока
+        private const int StateRoadArea = 36;   // мощение вокруг игрока, из «Рельефа»
         private const int StateFence = 37;      // частокол кольцом вокруг игрока
         private const int StateAreaFill = 38;   // заполнить замкнутый контур: пол, потом остальное
         private const int StatePlayerBuild = 39; // постройки игрока: что админ открыл игрокам
@@ -587,7 +587,7 @@ namespace AstvardServerMod
             // they stand on it; the pages behind them follow.
             RoadHint = MakeText(gui, "");
 
-            RoadKindButton = MakeButton(gui, "", () => OpenRoadPage(StateRoadKind));
+            RoadKindButton = MakeButton(gui, "", () => OpenPavingSubPage(StateRoadKind));
 
             RoadWidthButton = MakeButton(gui, "", () => OpenRoadPage(StateRoadWidth));
 
@@ -611,9 +611,11 @@ namespace AstvardServerMod
             });
             UpdateRoadClearButtonLabel();
 
-            RoadTorchButton = MakeButton(gui, "", () => OpenRoadPage(StateRoadTorches));
+            RoadTorchButton = MakeButton(gui, "", () => OpenPavingSubPage(StateRoadTorches));
 
-            RoadAreaButton = MakeButton(gui, "Площадка вокруг меня", () => OpenRoadPage(StateRoadArea));
+            // On «Рельеф» itself, beside the road it shares its paving with: made here so it
+            // stands right after «Дорожка» there.
+            RoadAreaButton = MakeButton(gui, "Мощение вокруг", () => OpenRoadPage(StateRoadArea));
 
             RoadStartButton = MakeButton(gui, "Начать", () =>
             {
@@ -645,17 +647,18 @@ namespace AstvardServerMod
             });
 
             // A choice made on one of these pages takes the player straight back to the
-            // road, where the button now says what was chosen.
+            // road or the paving it was opened from, where the button now says what was
+            // chosen.
             RoadStoneButton = MakeButton(gui, "Каменная", () =>
             {
                 _roadPaved = true;
-                OpenRoadPage(StateRoad);
+                OpenRoadPage(_pavingBack);
             });
 
             RoadDirtButton = MakeButton(gui, "Земляная", () =>
             {
                 _roadPaved = false;
-                OpenRoadPage(StateRoad);
+                OpenRoadPage(_pavingBack);
             });
 
             RoadWidthInput = gui.CreateInputField(
@@ -694,14 +697,14 @@ namespace AstvardServerMod
                 RoadTorchChoiceButtons[i] = MakeButton(gui, TorchChoiceLabels[i], () =>
                 {
                     ChooseRoadTorch(choice);
-                    OpenRoadPage(StateRoad);
+                    OpenRoadPage(_pavingBack);
                 });
             }
 
             RoadAreaInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                InputField.ContentType.DecimalNumber, "радиус площадки, напр. 8", 16, 160f, 32f);
+                InputField.ContentType.DecimalNumber, "радиус, напр. 8", 16, 160f, 32f);
             AddFixedSize(RoadAreaInput, 160f, 32f);
 
             RoadAreaMakeButton = MakeButton(gui, "Поставить", StartAreaPreview);
@@ -975,6 +978,8 @@ namespace AstvardServerMod
                 if (MenuState == StateTerrainForm) MenuState = StateTerrain;
                 else if (MenuState == StateBridge) MenuState = StateTerrain;
                 else if (MenuState == StateRoad) MenuState = StateTerrain;
+                else if (MenuState == StateRoadArea) MenuState = StateTerrain;
+                else if (MenuState == StateRoadKind || MenuState == StateRoadTorches) MenuState = _pavingBack;
                 else if (IsRoadPage(MenuState)) MenuState = StateRoad;
                 else if (MenuState == StateFence) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
                 else if (MenuState == StateAreaFill) MenuState = StateBuild;
@@ -1387,21 +1392,24 @@ namespace AstvardServerMod
             SetActive(CopyApplyButton, copying && MenuState == StateCopyForm);
 
             SetActive(LevelCircleButton, MenuState == StateTerrain && RuleAllows("level"));
-            SetActive(RoadButton, MenuState == StateTerrain && (RuleAllows("road") || RuleAllows("area")));
+            SetActive(RoadButton, MenuState == StateTerrain && RuleAllows("road"));
             SetActive(BridgeButton, MenuState == StateTerrain && RuleAllows("bridge"));
             SetActive(UndoButton, MenuState == StateTerrain && CanUndoTerrain && RuleAllows("undo"));
             UpdateUndoButtonLabel();
+            // The paving page has the road's paving, smoothing, clearing and torches on it
+            // too - the same settings, shared - so it needs no trip to the road for them.
             var road = MenuState == StateRoad;
+            var paving = MenuState == StateRoadArea;
             if (IsRoadPage(MenuState)) UpdateRoadHint();
-            if (road) UpdateRoadLabels();
+            if (road || paving) UpdateRoadLabels();
             SetActive(RoadHint, IsRoadPage(MenuState));
-            SetActive(RoadKindButton, road);
+            SetActive(RoadKindButton, road || paving);
             SetActive(RoadWidthButton, road);
             SetActive(RoadBendButton, road);
-            SetActive(RoadSmoothButton, road && RuleAllows("smooth"));
-            SetActive(RoadClearButton, road && RuleAllows("clear"));
-            SetActive(RoadTorchButton, road && RuleAllows("torches"));
-            SetActive(RoadAreaButton, road && RuleAllows("area"));
+            SetActive(RoadSmoothButton, (road || paving) && RuleAllows("smooth"));
+            SetActive(RoadClearButton, (road || paving) && RuleAllows("clear"));
+            SetActive(RoadTorchButton, (road || paving) && RuleAllows("torches"));
+            SetActive(RoadAreaButton, MenuState == StateTerrain && RuleAllows("area"));
             SetActive(RoadStartButton, road && RuleAllows("road"));
             SetActive(RoadEndButton, road && RoadAwaitingEnd);
             SetActive(RoadCancelButton, road && RoadInProgress);

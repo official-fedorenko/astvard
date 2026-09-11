@@ -219,6 +219,16 @@ namespace AstvardServerMod
                    || state == StateRoadBend || state == StateRoadTorches || state == StateRoadArea;
         }
 
+        // Where a choice of paving or of torches goes back to: the road it was opened from,
+        // or the paving round the player, which shares both with the road.
+        private static int _pavingBack = StateRoad;
+
+        private static void OpenPavingSubPage(int state)
+        {
+            _pavingBack = MenuState == StateRoadArea ? StateRoadArea : StateRoad;
+            OpenRoadPage(state);
+        }
+
         private static void OpenRoadPage(int state)
         {
             MenuState = state;
@@ -265,7 +275,7 @@ namespace AstvardServerMod
             switch (MenuState)
             {
                 case StateRoadKind:
-                    label.text = "Чем выложить дорожку и площадку.";
+                    label.text = "Чем мостить дорожку и землю вокруг.";
                     break;
                 case StateRoadWidth:
                     label.text = "Ширина дорожки, от 1 до 8 м.";
@@ -278,9 +288,9 @@ namespace AstvardServerMod
                     label.text = $"Шаг между факелами, от 4 до 50 м.{NEWLINE}Потом выбери, какие ставить.";
                     break;
                 case StateRoadArea:
-                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до {RuleLimit("area", MaxAreaRadius):0} м. «Поставить» покажет{NEWLINE}"
-                                 + $"её кругом: ЛКМ — сделать,{NEWLINE}Esc — отменить, P — закрепить,{NEWLINE}"
-                                 + $"стрелки — сдвиг. Кладка и всё{NEWLINE}остальное — как у дорожки.{notes}";
+                    label.text = $"Мощение вокруг тебя: круг{NEWLINE}радиусом от 2 до {RuleLimit("area", MaxAreaRadius):0} м. «Поставить»{NEWLINE}"
+                                 + $"покажет его: ЛКМ — замостить,{NEWLINE}Esc — отменить, P — закрепить,{NEWLINE}"
+                                 + $"стрелки — сдвиг. Кладка и прочее{NEWLINE}— общие с дорожкой.{notes}";
                     break;
                 default:
                     label.text = _roadStarted
@@ -1016,7 +1026,7 @@ namespace AstvardServerMod
 
             if (!RuleAllows("area"))
             {
-                player.Message(MessageHud.MessageType.Center, "Площадки игрокам сейчас закрыты");
+                player.Message(MessageHud.MessageType.Center, "Мощение игрокам сейчас закрыто");
                 return;
             }
 
@@ -1036,7 +1046,7 @@ namespace AstvardServerMod
             NoteToolStart();
             UpdateRoadHint();
             InventoryGui.instance?.Hide();
-            player.Message(MessageHud.MessageType.Center, "ЛКМ — сделать площадку, Esc — отменить, P — закрепить");
+            player.Message(MessageHud.MessageType.Center, "ЛКМ — замостить, Esc — отменить, P — закрепить");
         }
 
         internal static void CancelAreaPreview()
@@ -1401,13 +1411,13 @@ namespace AstvardServerMod
 
             if (!RuleAllows("area"))
             {
-                player.Message(MessageHud.MessageType.Center, "Площадки игрокам сейчас закрыты");
+                player.Message(MessageHud.MessageType.Center, "Мощение игрокам сейчас закрыто");
                 return false;
             }
 
             var area = AreaRadius();
             var scale = PaintGridScale(centre);
-            SayHeldToLimit("Площадка", ParseField(RoadAreaInput, 8f), area);
+            SayHeldToLimit("Мощение", ParseField(RoadAreaInput, 8f), area);
 
             RoadPath.Clear();
             RoadPath.Add(centre);
@@ -1416,7 +1426,7 @@ namespace AstvardServerMod
             if (!WardsAllowStroke("area", RoadPath, reach))
             {
                 player.Message(MessageHud.MessageType.Center,
-                    "Площадка задевает чужой оберег — уменьши радиус или отойди" + SmoothingNote(area));
+                    "Мощение задевает чужой оберег — уменьши радиус или отойди" + SmoothingNote(area));
                 return false;
             }
 
@@ -1424,7 +1434,7 @@ namespace AstvardServerMod
             if (comps == null)
             {
                 player.Message(MessageHud.MessageType.Center, unloaded
-                    ? "Площадка выходит за прогруженную землю"
+                    ? "Мощение выходит за прогруженную землю"
                     : "Земля вокруг ещё прогружается — подожди пару секунд и нажми снова");
                 return false;
             }
@@ -1449,7 +1459,7 @@ namespace AstvardServerMod
                                             float radius, Color paint, float length,
                                             float width, float scale, string kind)
         {
-            var undo = RecordTerrainUndo(kind == "area" ? "площадка" : "дорожка", comps,
+            var undo = RecordTerrainUndo(kind == "area" ? "мощение" : "дорожка", comps,
                 path[path.Count / 2], length * 0.5f + radius + 16f);
 
             _roadLaying = true;
@@ -1537,13 +1547,13 @@ namespace AstvardServerMod
             _roadCancelled = false;
             if (_roadPreview != null) _roadPreview.SetActive(false);
 
-            var clearedNote = (RoadSmoothingActive ? ", сглажена" : "")
+            var clearedNote = (RoadSmoothingActive ? (kind == "area" ? ", земля сглажена" : ", сглажена") : "")
                               + (cleared > 0 ? $", снесено: {cleared}" : "")
                               + TorchNote(torches);
             if (!stopped)
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     kind == "area"
-                        ? $"Площадка радиусом {length:F0} м{clearedNote}"
+                        ? $"Мощение радиусом {length:F0} м готово{clearedNote}"
                         : $"Дорожка {length:F0} м, ширина {width:F1} м{clearedNote}");
 
             Log.LogInfo($"[AstvardServerMod] {kind} {(_roadPaved ? "paved" : "dirt")} " +
@@ -1707,6 +1717,13 @@ namespace AstvardServerMod
             foreach (var c in comps) save.Invoke(c, new object[] { false });
 
             RebuildHeightmaps(target, reach);
+
+            // Said in the size it came out, not the one typed: for a player the admins'
+            // limit may have cut it, and a square's radius is half its side.
+            var height = Mathf.Approximately(asked, 0f) ? "на уровне игрока" : $"на {asked:0.#} м над водой";
+            player.Message(MessageHud.MessageType.Center, _terrainSquare
+                ? $"Выровнено квадратом {radius * 2f:0}×{radius * 2f:0} м, {height}"
+                : $"Выровнено кругом радиусом {radius:0} м, {height}");
 
             Log.LogInfo($"[AstvardServerMod] Level {(_terrainSquare ? "square" : "circle")} " +
                         $"r={radius} h={asked:F1} -> y={targetY:F1} blend={blend:F1} " +
