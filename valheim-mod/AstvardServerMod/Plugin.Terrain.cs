@@ -176,11 +176,12 @@ namespace AstvardServerMod
         // rewrite the terrain of a dozen zones at once.
         private const float MaxRoadLength = 200f;
 
-        // An admin's reach. The ground a client can change is the 5x5 zones round the
-        // player - 130 to 190 m each way - so past 200 m the far end has gone by the time
-        // the player gets there. With the end pinned and the player back near the middle,
-        // both ends are in reach up to about this; further, and CompsForStamps turns it down.
-        private const float AdminMaxRoadLength = 300f;
+        // An admin's reach, which is no real limit: past ServerRoadFrom the server lays the
+        // road itself, loading the ground along the way, so the ground round the player -
+        // 130 to 190 m each way, all a client can change - no longer bounds it. Ten
+        // kilometres is the world's radius; the number is there so a typing slip in some
+        // later change cannot send the server off across the whole map.
+        private const float AdminMaxRoadLength = 10000f;
 
         private static float RoadMaxLength
         {
@@ -337,11 +338,13 @@ namespace AstvardServerMod
                                  + $"стрелки — сдвиг. Кладка и прочее{NEWLINE}— общие с дорожкой.{notes}";
                     break;
                 default:
-                    // Past 200 m only an admin, and only from near the middle: see AdminMaxRoadLength.
+                    // Past ServerRoadFrom an admin's road goes to the server: see Plugin.RoadJob.cs.
                     var longRoad = IsAdminUnlocked
-                        ? $"{NEWLINE}До {AdminMaxRoadLength:0} м. Длиннее {MaxRoadLength:0} —{NEWLINE}"
-                          + $"закрепи конец (P) и встань{NEWLINE}ближе к середине."
+                        ? $"{NEWLINE}Длиннее {ServerRoadFrom:0} м кладёт сервер:{NEWLINE}"
+                          + $"сам грузит землю, по {RoadJobPiece} м,{NEWLINE}можно уходить. До {AdminMaxRoadLength / 1000f:0} км."
                         : "";
+                    if (_roadServerJob != 0)
+                        longRoad += $"{NEWLINE}{_roadServerProgress}.";
                     label.text = _roadStarted
                         ? $"Начало отмечено — иди в конец{NEWLINE}и нажми ЛКМ или «Закончить».{NEWLINE}"
                           + $"Esc — отменить. P — закрепить{NEWLINE}конец, стрелки — сдвинуть.{notes}{longRoad}"
@@ -463,8 +466,12 @@ namespace AstvardServerMod
         /// What went and what was seen in the way and left are both logged by name. The
         /// question this gets is always why that one is still standing, and the log
         /// answers it without another trip into the game.
+        ///
+        /// <paramref name="admin"/> says whose clearing it is rather than asking this
+        /// machine: on the server, laying an admin's long road, there is no local player
+        /// to ask, and with none every ward answers no.
         /// </summary>
-        private static int ClearAlongPath(List<Vector3> path, float radius)
+        private static int ClearAlongPath(List<Vector3> path, float radius, bool admin)
         {
             if (path == null || path.Count == 0 || ZNetScene.instance == null) return 0;
 
@@ -514,7 +521,7 @@ namespace AstvardServerMod
                 // A player's clearing leaves what stands in someone else's ward, as the
                 // hammer would. The road's own ward check covers only its band, and a
                 // boulder can stand across the edge of it with its middle in the ward.
-                if (!IsAdminUnlocked && !PrivateArea.CheckAccess(view.transform.position, 0f, false, false))
+                if (!admin && !PrivateArea.CheckAccess(view.transform.position, 0f, false, false))
                 {
                     Tally(run.Kept, Utils.GetPrefabName(view.gameObject) + " (ward)");
                     continue;
@@ -1292,14 +1299,18 @@ namespace AstvardServerMod
             var sagitta = RoadSagitta(length);
 
             // Drawn again only when something that shapes it has moved: every point is a look
-            // at the ground, and a road standing still needs none of them.
-            var key = $"{_roadStart}|{Mathf.Round(to.x * 10f)}|{Mathf.Round(to.z * 10f)}|{half}|{sagitta:F2}"
+            // at the ground, and a road standing still needs none of them. A long one moves on
+            // a coarser grain, or every step the player took would redraw a kilometre.
+            var grain = length > 1000f ? 0.2f : length > 300f ? 1f : 10f;
+            var key = $"{_roadStart}|{Mathf.Round(to.x * grain)}|{Mathf.Round(to.z * grain)}|{half}|{sagitta:F2}"
                       + $"|{blend}|{torches}|{TorchSpacing()}|{tooLong}";
             if (key == _roadPreviewKey && _roadPreview.activeSelf) return;
             _roadPreviewKey = key;
 
-            // Half a metre apart, so the band keeps to the ground over every bump.
-            RoadPoints(_roadStart, to, sagitta, 0.5f, PreviewStamps);
+            // Half a metre apart, so the band keeps to the ground over every bump - up to four
+            // hundred points a line, which a road the server lays can run far past: each point
+            // of each of the five lines is a ray at the ground.
+            RoadPoints(_roadStart, to, sagitta, Mathf.Max(0.5f, length / 400f), PreviewStamps);
             if (PreviewStamps.Count < 2)
             {
                 _roadPreview.SetActive(false);
@@ -1321,7 +1332,9 @@ namespace AstvardServerMod
                 DrawAlongGround(_roadRightBlend, PreviewStamps, -(half + blend), 0.15f, 0.17f, Faded(colour, 0.4f));
             }
 
-            if (torches && !tooLong)
+            // Posts only while there are few enough to be worth a look: a long road's hundreds
+            // would be as many objects drawn, most of them out of sight.
+            if (torches && !tooLong && length <= 400f)
             {
                 PreviewFlat.Clear();
                 foreach (var point in PreviewStamps) PreviewFlat.Add(new Vec2(point.x, point.z));
@@ -1561,6 +1574,14 @@ namespace AstvardServerMod
             // carefully it is drawn. The asked-for width still widens it beyond that.
             var radius = Mathf.Max(width * 0.5f, scale * 0.75f);
 
+            // Past a hundred metres an admin's road is the server's: it loads the ground
+            // along the way itself, which no client can, and the admin need not wait by it.
+            if (IsAdminUnlocked && length > ServerRoadFrom)
+            {
+                StartServerRoad(player, from, to, length, width, radius);
+                return;
+            }
+
             // A metre between samples is plenty: the distance is measured to the line
             // itself, so sampling only has to follow the curve, not cover it.
             RoadPoints(from, to, RoadSagitta(length), 1f, RoadPath);
@@ -1691,7 +1712,7 @@ namespace AstvardServerMod
             // reach its ground does not leave a cleared strip behind it. All at once
             // rather than stretch by stretch: the paint takes twenty frames, far too
             // quick for a cancel to land between them.
-            var cleared = RoadClearingActive ? ClearAlongPath(path, radius) : 0;
+            var cleared = RoadClearingActive ? ClearAlongPath(path, radius, IsAdminUnlocked) : 0;
 
             // Before the paint, so the first stretch's save carries both, and the
             // heightmaps the paint rebuilds show the new ground under it.

@@ -33,6 +33,17 @@ namespace AstvardServerMod
             public List<ZDOID> Pieces;
             public string PiecePrefab;
             public bool PiecesPaid;
+
+            // A long road the server laid: its zones are the server's to put back, most of
+            // them never loaded here. Non-zero, this is the job's id and Zones is empty.
+            public int ServerJob;
+        }
+
+        /// <summary>Puts a step on the stack that was made some other way than by recording zones here.</summary>
+        private static void PushUndoStep(TerrainUndoStep step)
+        {
+            UndoStack.Add(step);
+            while (UndoStack.Count > UndoDepth) UndoStack.RemoveAt(0);
         }
 
         // Deep enough to walk back a few mistakes, shallow enough that the copies stay
@@ -137,6 +148,31 @@ namespace AstvardServerMod
             {
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     "Тут ещё идёт постройка — останови её кнопкой «Отменить постройку»");
+                return;
+            }
+
+            if (step.ServerJob != 0)
+            {
+                // Taken back while it is still going down, it would race the server's own
+                // next piece; stopping it first is one button away.
+                if (step.ServerJob == _roadServerJob)
+                {
+                    Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                        "Сервер ещё строит эту дорожку — сначала «Остановить укладку»");
+                    return;
+                }
+
+                if (_roadUndoAsked == step.ServerJob)
+                {
+                    Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                        "Уже откатываю — жду ответа сервера");
+                    return;
+                }
+
+                // The step stays until the server says it is done: one that cannot undo it
+                // yet - a road still going down, known only to the server after a reconnect -
+                // leaves it here for another try.
+                AskServerRoadUndo(step.ServerJob);
                 return;
             }
 

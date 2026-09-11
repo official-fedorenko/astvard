@@ -239,6 +239,7 @@ namespace AstvardServerMod
             RegisterTemplateRpcs();
             RegisterAdminRpcs();
             RegisterPlayerFeatureRpcs(rpc);
+            RegisterRoadJobRpcs(rpc);
         }
 
         /// <summary>
@@ -760,7 +761,16 @@ namespace AstvardServerMod
                         // would, no more.
                         for (var y = min.y; y <= max.y; y++)
                         for (var x = min.x; x <= max.x; x++)
-                            man.FindSectorObjects(new Vector2s(x, y), new SimulationDistance(0, 0), KeptZoneObjects);
+                        {
+                            // Cell by cell, not only once the poke is bound: the objects of a
+                            // cell whose ground is still being built wait for it. A terrain
+                            // compiler woken with no heightmap under it never initialises -
+                            // its first load throws - and is never found by anyone looking
+                            // for the zone's compiler.
+                            var cell = new Vector2s(x, y);
+                            if (ZoneHasGround(cell))
+                                man.FindSectorObjects(cell, new SimulationDistance(0, 0), KeptZoneObjects);
+                        }
                     }
 
                 // Overlapping zones share cells, and the same ZDO twice would have the

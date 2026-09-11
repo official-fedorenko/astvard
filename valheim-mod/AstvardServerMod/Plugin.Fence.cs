@@ -594,7 +594,8 @@ namespace AstvardServerMod
             try
             {
                 var cleared = clearing
-                    ? ClearAlongPath(FenceLine(plan, centre, 0.5f), kit.Sections ? SectionClearRadius : FenceClearRadius)
+                    ? ClearAlongPath(FenceLine(plan, centre, 0.5f), kit.Sections ? SectionClearRadius : FenceClearRadius,
+                                     IsAdminUnlocked)
                     : 0;
 
                 TerrainUndoStep undo = null;

@@ -639,6 +639,10 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            // A long road the server is laying. Not Escape: the admin is free to go about
+            // other things meanwhile, and Escape there means the pause menu or another tool.
+            RoadServerStopButton = MakeButton(gui, "Остановить укладку", StopServerRoad);
+
             // A choice made on one of these pages takes the player straight back to the
             // road or the paving it was opened from, where the button now says what was
             // chosen.
@@ -1407,6 +1411,7 @@ namespace AstvardServerMod
             SetActive(RoadContinueButton, road && _roadHasLastEnd && !RoadInProgress && RuleAllows("road"));
             SetActive(RoadEndButton, road && RoadAwaitingEnd);
             SetActive(RoadCancelButton, road && RoadInProgress);
+            SetActive(RoadServerStopButton, road && _roadServerJob != 0 && _roadServerTaken);
 
             SetActive(RoadStoneButton, MenuState == StateRoadKind);
             SetActive(RoadDirtButton, MenuState == StateRoadKind);

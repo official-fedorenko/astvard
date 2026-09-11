@@ -153,7 +153,7 @@ namespace AstvardServerMod
             var spots = new List<Vector3>();
             foreach (var post in posts)
             {
-                if (FindTorchSpot(post, out var spot)) spots.Add(spot);
+                if (FindTorchSpot(post, IsAdminUnlocked, out var spot)) spots.Add(spot);
                 else run.Skipped++;
             }
 
@@ -214,8 +214,12 @@ namespace AstvardServerMod
         /// The ground is a ray against the terrain, not a heightmap read: the heightmap
         /// answers with its nearest vertex, which on a slope can leave a torch floating a
         /// hand's width or buried to the flame.
+        ///
+        /// <paramref name="admin"/> skips the wards, as the hammer does for an admin. It is
+        /// passed in because the server, lining an admin's long road, has no player of its
+        /// own to ask - and with none, every ward answers no.
         /// </summary>
-        private static bool FindTorchSpot(Post post, out Vector3 spot)
+        private static bool FindTorchSpot(Post post, bool admin, out Vector3 spot)
         {
             spot = Vector3.zero;
             var zones = ZoneSystem.instance;
@@ -229,7 +233,7 @@ namespace AstvardServerMod
 
                 var at = new Vector3(x, ground, z);
                 if (Location.IsInsideNoBuildLocation(at)) continue;
-                if (!IsAdminUnlocked && !PrivateArea.CheckAccess(at, 0f, false)) continue;
+                if (!admin && !PrivateArea.CheckAccess(at, 0f, false)) continue;
 
                 // A torch's worth of room, from knee height up, so the ground itself and the
                 // grass on it do not count.

@@ -24,10 +24,18 @@ namespace AstvardServerMod
         /// <summary>Unit vector along the road at the post, for sliding it along the edge.</summary>
         public Vec2 Along;
 
-        public Post(Vec2 at, Vec2 along)
+        /// <summary>
+        /// Metres along the road to the post's station, both posts of a pair alike; 0 round
+        /// a pad. A road the server lays piece by piece hands each piece the posts whose
+        /// stations fall in it, so the step runs on across the joins.
+        /// </summary>
+        public float Station;
+
+        public Post(Vec2 at, Vec2 along, float station = 0f)
         {
             At = at;
             Along = along;
+            Station = station;
         }
     }
 
@@ -212,6 +220,24 @@ namespace AstvardServerMod
             return (float)Math.Sqrt(best);
         }
 
+        /// <summary>
+        /// Metres along the path to each of its points: 0 for the first, the whole length for
+        /// the last. The same measure <see cref="EdgePosts"/> gives its stations in, so a post
+        /// can be matched to the stretch of path it stands by.
+        /// </summary>
+        public static float[] Distances(IList<Vec2> path)
+        {
+            var along = new float[path.Count];
+            for (var i = 1; i < path.Count; i++)
+            {
+                var dx = path[i].X - path[i - 1].X;
+                var dz = path[i].Z - path[i - 1].Z;
+                along[i] = along[i - 1] + (float)Math.Sqrt(dx * dx + dz * dz);
+            }
+
+            return along;
+        }
+
         // ---------------- posts along a road ----------------
 
         /// <summary>
@@ -276,8 +302,8 @@ namespace AstvardServerMod
                 var direction = new Vec2(dirX, dirZ);
 
                 // Left of the travel is (-dz, dx), the same side a positive curve bows to.
-                posts.Add(new Post(new Vec2(x - dirZ * offset, z + dirX * offset), direction));
-                posts.Add(new Post(new Vec2(x + dirZ * offset, z - dirX * offset), direction));
+                posts.Add(new Post(new Vec2(x - dirZ * offset, z + dirX * offset), direction, at));
+                posts.Add(new Post(new Vec2(x + dirZ * offset, z - dirX * offset), direction, at));
             }
 
             return posts;

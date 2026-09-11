@@ -280,14 +280,22 @@ namespace AstvardServerMod
     [HarmonyPatch(typeof(ZoneSystem), "Update")]
     public static class KeepZoneTerrainAlive
     {
-        private static void Postfix() => Plugin.PokeKeptZones();
+        private static void Postfix()
+        {
+            Plugin.PokeKeptZones();
+            Plugin.PokeRoadJobZones();
+        }
     }
 
     [HarmonyPatch(typeof(ZNetScene), "CreateObjects")]
     public static class KeepZoneObjectsLoaded
     {
         private static void Prefix(List<ZDO> currentNearObjects)
-            => Plugin.AppendKeptZoneObjects(currentNearObjects);
+        {
+            Plugin.AppendKeptZoneObjects(currentNearObjects);
+            // After the kept zones, so it sees theirs too and adds none of them twice.
+            Plugin.AppendRoadJobObjects(currentNearObjects);
+        }
     }
 
     /// <summary>
@@ -335,6 +343,8 @@ namespace AstvardServerMod
         {
             Plugin.ForgetAdmin();
             Plugin.ForgetRoadEnd();
+            Plugin.ForgetServerRoad();
+            Plugin.StopRoadJobOnShutdown();
             // On a server this is the way out: runes earned since the last minute's save
             // would otherwise go with it.
             Plugin.SavePurses();

@@ -109,6 +109,43 @@ public class PostTests
     }
 
     [Fact]
+    public void EachPairKnowsHowFarAlongTheRoadItStands()
+    {
+        // The server lays a long road a hundred metres at a time and gives each piece the
+        // posts whose stations fall in it; a pair split between two pieces would leave a
+        // torch standing alone at the join.
+        var posts = Geometry.EdgePosts(Straight(47f), 10f, 2f);
+
+        for (var i = 0; i < posts.Count / 2; i++)
+        {
+            Assert.Equal(3.5f + i * 10f, posts[2 * i].Station, 3);
+            Assert.Equal(posts[2 * i].Station, posts[2 * i + 1].Station, 3);
+        }
+    }
+
+    [Fact]
+    public void StationsAndDistancesMeasureTheSameRoad()
+    {
+        // Pieces are cut by the path's own points, posts found by station: both have to
+        // count metres the same way, or a post near a join would fall in neither piece.
+        var bend = Geometry.Bezier(new Vec2(0f, 0f), new Vec2(100f, 0f), 12f, 1f);
+        var along = Geometry.Distances(bend);
+        var posts = Geometry.EdgePosts(bend, 10f, 0f);
+
+        Assert.Equal(bend.Count, along.Length);
+        Assert.Equal(0f, along[0]);
+        foreach (var post in posts)
+        {
+            // A post with no offset stands on the path itself, at its station.
+            var k = 0;
+            while (k < along.Length - 2 && along[k + 1] < post.Station) k++;
+            var t = (post.Station - along[k]) / (along[k + 1] - along[k]);
+            Assert.Equal(bend[k].X + (bend[k + 1].X - bend[k].X) * t, post.At.X, 2);
+            Assert.Equal(bend[k].Z + (bend[k + 1].Z - bend[k].Z) * t, post.At.Z, 2);
+        }
+    }
+
+    [Fact]
     public void NoPathNoPosts()
     {
         Assert.Empty(Geometry.EdgePosts(new List<Vec2>(), 10f, 2f));

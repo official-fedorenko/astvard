@@ -447,6 +447,7 @@ namespace AstvardServerMod
             UpdateAreaPreview();
             CheckBuildAskTimeout();
             TickPlayerBuildHint();
+            TickServerRoad();
 
             // The fence's projection answers the same two keys a blueprint's does.
             if (HandleFencePreviewInput()) return;
