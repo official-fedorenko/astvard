@@ -38,6 +38,10 @@ fi
 
 say "Код в $DIR (ветка $BRANCH)"
 apt-get install -y -qq git
+# git отказывается работать в чужом каталоге ("dubious ownership"): владелец
+# репозитория — $SITE_USER, а скрипт под root. Без этой строки повторная установка
+# и каждое обновление падают на первом же fetch.
+git config --global --add safe.directory "$DIR"
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" fetch origin "$BRANCH"
   git -C "$DIR" checkout "$BRANCH"
