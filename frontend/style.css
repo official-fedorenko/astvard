@@ -140,3 +140,44 @@ th, td {
 
 .status.online { color: #4ade80; }
 .status.offline { color: #6b6880; }
+
+.muted {
+  color: #6b6880;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+pre {
+  background: #0b0b0f;
+  border: 1px solid #201f2b;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: #e8e6f0;
+}
+
+.wl-status {
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.wl-approved { color: #4ade80; }
+.wl-pending  { color: #fbbf24; }
+.wl-rejected { color: #f87171; }
+.wl-none     { color: #6b6880; }
+
+/* The reject button sits next to the approve one and must not read as the default
+   action — the accent fill is the site's "yes". */
+.wl-reject {
+  background: transparent;
+  border: 1px solid #201f2b;
+  color: #a8a5b8;
+}

@@ -9,9 +9,17 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+// The rank is read from the database, never from the caller's token: a JWT keeps
+// the role it was signed with for a week, so a demotion would not take hold until
+// it expired. Returning a promise is safe — server.js awaits the handler and turns
+// a rejection into a 500.
 function requireRole(...roles) {
-  return (handler) => (req, res, params) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+  return (handler) => async (req, res, params) => {
+    if (!req.user) {
+      return sendJson(res, 403, { error: 'Недостаточно прав' });
+    }
+    const actor = await findUserById(req.user.sub);
+    if (!actor || !roles.includes(actor.role)) {
       return sendJson(res, 403, { error: 'Недостаточно прав' });
     }
     return handler(req, res, params);

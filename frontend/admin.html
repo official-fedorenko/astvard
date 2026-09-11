@@ -13,6 +13,25 @@
   </header>
   <main>
     <section>
+      <h2>Вайтлист</h2>
+      <table id="whitelist-table">
+        <thead>
+          <tr><th>Никнейм</th><th>Email</th><th>Steam ID</th><th>Статус</th><th>Подал</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="card">
+        <button id="permittedlist-btn">Собрать permittedlist.txt</button>
+        <p class="error" id="permittedlist-error"></p>
+        <pre id="permittedlist-out" hidden></pre>
+        <p id="permittedlist-hint" class="muted" hidden>
+          Положить рядом с сервером, в папку сохранений. Список перечитывается на ходу,
+          выпавшего из него кикает сразу.
+        </p>
+      </div>
+    </section>
+
+    <section>
       <h2>Пользователи</h2>
       <table id="users-table">
         <thead>
