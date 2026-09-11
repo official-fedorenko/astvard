@@ -80,19 +80,33 @@ namespace AstvardServerMod
         /// square, poked twice a second, which was 162 reflection calls and 324 throwaway
         /// allocations a second for one zone - and the radius box could be left holding
         /// 256 by accident. Binding once costs one delegate per world.
+        ///
+        /// The delegate has to say what the method returns - whether the zone was built -
+        /// even though nobody reads it. Bound as an Action it failed to bind at all, the
+        /// quiet overload handed back null, and from 10.09.2026 until 11.09.2026 no kept
+        /// zone had its ground poked, while its objects went on loading. Hence the log
+        /// line either way, at world start, where a failure cannot hide.
         /// </summary>
-        private static System.Action<Vector2s> _pokeLocalZone;
+        private static System.Func<Vector2s, bool> _pokeLocalZone;
 
         private static ZoneSystem _pokeBoundTo;
 
-        private static System.Action<Vector2s> PokeFor(ZoneSystem system)
+        private static System.Func<Vector2s, bool> PokeFor(ZoneSystem system)
         {
             if (system == null || MPokeLocalZone == null) return null;
-            if (_pokeBoundTo == system && _pokeLocalZone != null) return _pokeLocalZone;
+            // A failed bind is kept too: this is asked thirty times a second.
+            if (_pokeBoundTo == system) return _pokeLocalZone;
 
             _pokeBoundTo = system;
-            _pokeLocalZone = (System.Action<Vector2s>)System.Delegate.CreateDelegate(
-                typeof(System.Action<Vector2s>), system, MPokeLocalZone, false);
+            _pokeLocalZone = (System.Func<Vector2s, bool>)System.Delegate.CreateDelegate(
+                typeof(System.Func<Vector2s, bool>), system, MPokeLocalZone, false);
+
+            if (_pokeLocalZone != null)
+                Log.LogInfo("[AstvardServerMod] Kept zones: ZoneSystem.PokeLocalZone bound.");
+            else
+                Log.LogError("[AstvardServerMod] Kept zones: ZoneSystem.PokeLocalZone did not bind - "
+                             + "its signature has moved. Kept zones are off: their objects will not load "
+                             + "over ground that is not there.");
 
             return _pokeLocalZone;
         }
@@ -211,6 +225,10 @@ namespace AstvardServerMod
             // — and that would happen inside Game.Start, taking the load down with it.
             if (rpc == null || ReferenceEquals(rpc, _rpcRegisteredOn)) return;
             _rpcRegisteredOn = rpc;
+
+            // Bound now rather than at the first zone, so the log says at every start
+            // whether kept zones can work on this build of the game.
+            PokeFor(ZoneSystem.instance);
 
             rpc.Register<float, float, int>(RpcZoneAdd, OnZoneAdd);
             rpc.Register<float, float, float, float, int>(RpcZoneMove, OnZoneMove);
@@ -720,6 +738,10 @@ namespace AstvardServerMod
         internal static void AppendKeptZoneObjects(List<ZDO> currentNearObjects)
         {
             if (!KeptZonesActive() || currentNearObjects == null) return;
+
+            // Objects only where the ground under them is poked too: buildings loaded over
+            // missing terrain would come down, and that is worse than not loading them.
+            if (PokeFor(ZoneSystem.instance) == null) return;
 
             // CreateDestroyObjects runs 30 times a second; walking the sectors that
             // often would be pure waste when the zones do not move.
