@@ -58,6 +58,39 @@ namespace AstvardServerMod
 
         internal static GameObject RoadCancelButton;
 
+        internal static GameObject RoadContinueButton;
+
+        // Where the last road laid whole came to its end, for «Продолжить»: the next piece
+        // starts right there, so a road of any length goes down in pieces with no seam.
+        private static bool _roadHasLastEnd;
+
+        private static Vector3 _roadLastEnd;
+
+        /// <summary>A road's end belongs to its world: a disconnect forgets it.</summary>
+        internal static void ForgetRoadEnd()
+        {
+            _roadHasLastEnd = false;
+        }
+
+        /// <summary>Marks a road's start: where the player stands, or where the last piece ended.</summary>
+        private static void MarkRoadStart(Player player, Vector3 at, string said)
+        {
+            if (!RuleAllows("road"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Дорожки игрокам сейчас закрыты");
+                return;
+            }
+
+            CancelAreaPreview();
+            _roadStart = at;
+            _roadStarted = true;
+            _roadPinned = false;
+            NoteToolStart();
+            UpdateRoadHint();
+            InventoryGui.instance?.Hide();
+            player.Message(MessageHud.MessageType.Center, said);
+        }
+
         internal static GameObject UndoButton;
 
         private static bool _terrainSquare;
@@ -313,6 +346,7 @@ namespace AstvardServerMod
                         ? $"Начало отмечено — иди в конец{NEWLINE}и нажми ЛКМ или «Закончить».{NEWLINE}"
                           + $"Esc — отменить. P — закрепить{NEWLINE}конец, стрелки — сдвинуть.{notes}{longRoad}"
                         : $"Встань в начало дорожки{NEWLINE}и нажми «Начать».{notes}"
+                          + (_roadHasLastEnd ? $"{NEWLINE}«Продолжить» — от конца{NEWLINE}прошлого куска." : "")
                           + RuleLimitNote("road", MaxRoadLength) + longRoad;
                     break;
             }
@@ -1729,6 +1763,14 @@ namespace AstvardServerMod
                     kind == "area"
                         ? $"Мощение радиусом {length:F0} м готово{clearedNote}"
                         : $"Дорожка {length:F0} м, ширина {width:F1} м{clearedNote}");
+
+            // A road laid whole can be carried on from its end. One stopped partway cannot:
+            // its paint ends short of that point, and the next piece would leave a gap.
+            if (kind == "road")
+            {
+                _roadHasLastEnd = !stopped;
+                if (!stopped) _roadLastEnd = path[path.Count - 1];
+            }
 
             Log.LogInfo($"[AstvardServerMod] {kind} {(_roadPaved ? "paved" : "dirt")} " +
                         $"{length:F1} m width {width:F1} brush={radius:F2} grid={scale:F2} " +

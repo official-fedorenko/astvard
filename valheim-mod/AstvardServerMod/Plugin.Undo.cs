@@ -170,6 +170,9 @@ namespace AstvardServerMod
             RebuildHeightmaps(step.Centre, step.Reach);
             var torches = TakeDownPieces(step);
 
+            // A road undone is no end to carry on from.
+            if (step.Label == "дорожка") ForgetRoadEnd();
+
             // The build on that ground went with it; the button must not offer it again.
             if (_lastBuild != null && _lastBuild.Ground == step) _lastBuild = null;
 

@@ -334,6 +334,7 @@ namespace AstvardServerMod
         private static void Postfix()
         {
             Plugin.ForgetAdmin();
+            Plugin.ForgetRoadEnd();
             // On a server this is the way out: runes earned since the last minute's save
             // would otherwise go with it.
             Plugin.SavePurses();

@@ -620,22 +620,15 @@ namespace AstvardServerMod
             RoadStartButton = MakeButton(gui, "Начать", () =>
             {
                 var player = Player.m_localPlayer;
-                if (player == null) return;
+                if (player != null) MarkRoadStart(player, player.transform.position, "Начало отмечено");
+            });
 
-                if (!RuleAllows("road"))
-                {
-                    player.Message(MessageHud.MessageType.Center, "Дорожки игрокам сейчас закрыты");
-                    return;
-                }
-
-                CancelAreaPreview();
-                _roadStart = player.transform.position;
-                _roadStarted = true;
-                _roadPinned = false;
-                NoteToolStart();
-                UpdateRoadHint();
-                InventoryGui.instance?.Hide();
-                player.Message(MessageHud.MessageType.Center, "Начало отмечено");
+            // The next piece of a long road, from where the last one ended.
+            RoadContinueButton = MakeButton(gui, "Продолжить", () =>
+            {
+                var player = Player.m_localPlayer;
+                if (player == null || !_roadHasLastEnd) return;
+                MarkRoadStart(player, _roadLastEnd, "Начало — в конце прошлого куска. Иди дальше и жми ЛКМ");
             });
 
             RoadEndButton = MakeButton(gui, "Закончить", BuildRoad);
@@ -1411,6 +1404,7 @@ namespace AstvardServerMod
             SetActive(RoadTorchButton, (road || paving) && RuleAllows("torches"));
             SetActive(RoadAreaButton, MenuState == StateTerrain && RuleAllows("area"));
             SetActive(RoadStartButton, road && RuleAllows("road"));
+            SetActive(RoadContinueButton, road && _roadHasLastEnd && !RoadInProgress && RuleAllows("road"));
             SetActive(RoadEndButton, road && RoadAwaitingEnd);
             SetActive(RoadCancelButton, road && RoadInProgress);
 
