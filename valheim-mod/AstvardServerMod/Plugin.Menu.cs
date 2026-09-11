@@ -65,6 +65,8 @@ namespace AstvardServerMod
         private const int StatePlayerTemplates = 47; // у игрока: шаблоны сервера, открытые ему
         private const int StatePlayerZone = 48;   // у игрока: его зона автоматики
         private const int StateRuneMinutes = 49;  // сколько минут в игре даёт руну
+        private const int StateWallHeight = 50;   // высота стены по краю пола, из «Заполнить»
+        private const int StateBuildSettings = 51; // как ставятся постройки: прилипание, выравнивание, снос
 
         internal static GameObject Panel;
 
@@ -759,6 +761,10 @@ namespace AstvardServerMod
 
             CreateSettingsWidgets(gui);
 
+            // «Постройки» → «Настройки»: the button first on the build page, and behind it, in
+            // this order, the hint and the switches made just below.
+            CreateBuildSettingsWidgets(gui);
+
             SnapButton = MakeButton(gui, "Прилипание", () =>
             {
                 IsSnapEnabled = !IsSnapEnabled;
@@ -774,6 +780,8 @@ namespace AstvardServerMod
                 Log.LogInfo($"[AstvardServerMod] Level ground: {IsLevelGroundEnabled}");
             });
             UpdateLevelGroundButtonLabel();
+
+            CreateBuildClearWidget(gui);
 
             PlacementDistanceInput = gui.CreateInputField(
                 Panel.transform,
@@ -979,7 +987,9 @@ namespace AstvardServerMod
                 else if (MenuState == StateRoadKind || MenuState == StateRoadTorches) MenuState = _pavingBack;
                 else if (IsRoadPage(MenuState)) MenuState = StateRoad;
                 else if (MenuState == StateFence) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
-                else if (MenuState == StateAreaFill) MenuState = StateBuild;
+                else if (MenuState == StateWallHeight) MenuState = StateAreaFill;
+                else if (MenuState == StateAreaFill || MenuState == StateBuildSettings)
+                    MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
                 else if (MenuState == StateCopyForm) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
                 else if (MenuState == StateRepair && !IsAdminUnlocked) MenuState = StateFeatures;
                 else if (MenuState == StateTod || MenuState == StateRepair ||
@@ -1329,8 +1339,17 @@ namespace AstvardServerMod
             SetActive(FenceCancelButton, fencePage && IsFencePreviewing);
             SetActive(FencePinButton, fencePage && IsFencePreviewing);
             SetActive(AreaFillButton, admin && MenuState == StateBuild);
-            SetActive(AreaFillHint, admin && MenuState == StateAreaFill);
-            SetActive(AreaFloorButton, admin && MenuState == StateAreaFill);
+            // A player's too, from their own «Постройки», each part behind its rule.
+            var floorOpen = admin || RuleAllows("floor");
+            var wallOpen = admin || RuleAllows("wall");
+            var fillPage = MenuState == StateAreaFill;
+            if (fillPage) UpdateWallLabels();
+            SetActive(AreaFillHint, fillPage && (floorOpen || wallOpen));
+            SetActive(AreaFloorButton, fillPage && floorOpen);
+            SetActive(AreaWallButton, fillPage && wallOpen);
+            SetActive(AreaWallHeightButton, fillPage && wallOpen);
+            foreach (var choice in WallHeightButtons)
+                SetActive(choice, MenuState == StateWallHeight && wallOpen);
 
             // On every page of «Постройки» - a player's own, for a player - and on any page
             // at all while a build is still going up: the panel always reopens at the root,
@@ -1341,9 +1360,7 @@ namespace AstvardServerMod
 
             RefreshPlayerBuildVisibility(admin);
             RefreshSettingsVisibility(admin);
-            SetActive(SnapButton, admin && MenuState == StateBuild);
-            SetActive(LevelGroundButton, admin && MenuState == StateBuild);
-            SetActive(PlacementDistanceInput, admin && MenuState == StateBuild);
+            RefreshBuildSettingsVisibility(admin);
             RebuildTemplateViews();
 
             // A player's own templates, while copying is open to them: the same pages, less

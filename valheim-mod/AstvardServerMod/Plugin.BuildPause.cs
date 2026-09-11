@@ -146,10 +146,10 @@ namespace AstvardServerMod
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
 
-            // A floor or a fence has no template to look at, only its rule: closed says no,
-            // paid says yes without a count - a paid build prints nothing, so it has no pause
-            // to keep - and free goes on to the pause like a template.
-            if (name == "#floor" || name == "#fence")
+            // A floor, a wall or a fence has no template to look at, only its rule: closed says
+            // no, paid says yes without a count - a paid build prints nothing, so it has no
+            // pause to keep - and free goes on to the pause like a template.
+            if (name == "#floor" || name == "#wall" || name == "#fence")
             {
                 var mode = ServerRuleValue(name.Substring(1));
                 if (mode != ChoiceFree)
@@ -254,7 +254,7 @@ namespace AstvardServerMod
 
         private static void SayClosedToPlayers(string name)
         {
-            var what = name == "#floor" ? "Пол" : name == "#fence" ? "Забор" : $"«{name}»";
+            var what = name == "#floor" ? "Пол" : name == "#wall" ? "Стену" : name == "#fence" ? "Забор" : $"«{name}»";
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"{what} админ больше не разрешает");
             AskSharedList();
         }

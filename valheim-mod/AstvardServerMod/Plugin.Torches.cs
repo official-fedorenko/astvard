@@ -51,12 +51,23 @@ namespace AstvardServerMod
         // further out or in, so the row stays a row.
         private static readonly float[] TorchNudges = { 0f, 1f, -1f, 2f, -2f };
 
-        /// <summary>How far a piece reaches below its pivot and above it, by its solid colliders.</summary>
+        /// <summary>
+        /// How far a piece reaches below its pivot and above it, by its solid colliders - and
+        /// either way along its own two flat axes, for the ground a build clears under it.
+        /// </summary>
         private struct PieceSpan
         {
             public float Below;
 
             public float Above;
+
+            public float MinX;
+
+            public float MaxX;
+
+            public float MinZ;
+
+            public float MaxZ;
         }
 
         private static readonly Dictionary<string, PieceSpan> PieceSpans = new Dictionary<string, PieceSpan>();
@@ -303,17 +314,28 @@ namespace AstvardServerMod
                 probe = Instantiate(prefab, probeAt, Quaternion.identity);
                 var lowest = float.MaxValue;
                 var highest = float.MinValue;
+                float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
                 foreach (var col in probe.GetComponentsInChildren<Collider>())
                 {
                     if (col == null || !col.enabled || col.isTrigger) continue;
-                    lowest = Mathf.Min(lowest, col.bounds.min.y);
-                    highest = Mathf.Max(highest, col.bounds.max.y);
+                    var bounds = col.bounds;
+                    lowest = Mathf.Min(lowest, bounds.min.y);
+                    highest = Mathf.Max(highest, bounds.max.y);
+                    // Unturned, so the world box is the piece's own, from its pivot.
+                    minX = Mathf.Min(minX, bounds.min.x);
+                    maxX = Mathf.Max(maxX, bounds.max.x);
+                    minZ = Mathf.Min(minZ, bounds.min.z);
+                    maxZ = Mathf.Max(maxZ, bounds.max.z);
                 }
 
                 if (lowest < float.MaxValue)
                 {
                     span.Below = probeAt.y - lowest;
                     span.Above = highest - probeAt.y;
+                    span.MinX = minX - probeAt.x;
+                    span.MaxX = maxX - probeAt.x;
+                    span.MinZ = minZ - probeAt.z;
+                    span.MaxZ = maxZ - probeAt.z;
                 }
             }
             finally
@@ -328,6 +350,14 @@ namespace AstvardServerMod
                 Log.LogWarning($"[AstvardServerMod] {prefab.name}: measured {span.Below:F2} below and "
                                + $"{span.Above:F2} above the pivot, using 0.");
                 span = new PieceSpan();
+            }
+
+            // Nor is one wider than the widest piece the game has - a ship's is a vehicle.
+            if (span.MinX < -16f || span.MaxX > 16f || span.MinZ < -16f || span.MaxZ > 16f)
+            {
+                Log.LogWarning($"[AstvardServerMod] {prefab.name}: measured {span.MinX:F2}..{span.MaxX:F2} by "
+                               + $"{span.MinZ:F2}..{span.MaxZ:F2} round the pivot, using a point.");
+                span.MinX = span.MaxX = span.MinZ = span.MaxZ = 0f;
             }
 
             PieceSpans[prefab.name] = span;

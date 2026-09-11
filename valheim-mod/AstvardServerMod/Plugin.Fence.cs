@@ -225,6 +225,7 @@ namespace AstvardServerMod
             }
 
             CancelAreaPreview();
+            CancelWallPreview();
             _fencePreviewing = true;
             _fencePinned = false;
             _fenceGhostKey = null;

@@ -218,6 +218,7 @@ namespace AstvardServerMod
             }
 
             CancelAreaPreview();
+            CancelWallPreview();
             _bridgeStart = player.transform.position;
             _bridgeStarted = true;
             _bridgePinned = false;

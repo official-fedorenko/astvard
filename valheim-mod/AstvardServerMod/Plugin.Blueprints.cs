@@ -82,7 +82,11 @@ namespace AstvardServerMod
 
         internal static bool PlacementHoldsInput
         {
-            get { return IsPlacing || IsFencePreviewing || IsAreaPreviewing || Time.time < _inputHeldUntil; }
+            get
+            {
+                return IsPlacing || IsFencePreviewing || IsAreaPreviewing || IsWallPreviewing
+                       || Time.time < _inputHeldUntil;
+            }
         }
 
         private static int _escapeUsedFrame = -1;
@@ -104,7 +108,7 @@ namespace AstvardServerMod
             get
             {
                 return RoadInProgress || BridgeInProgress || IsPlacing || IsFencePreviewing
-                       || IsAreaPreviewing || _escapeUsedFrame == Time.frameCount;
+                       || IsAreaPreviewing || IsWallPreviewing || _escapeUsedFrame == Time.frameCount;
             }
         }
 
@@ -374,6 +378,8 @@ namespace AstvardServerMod
         {
             _placementLabel = label;
             CancelAreaPreview();
+            // Two projections up at once would both want the click.
+            if (_wallPreviewing) CancelWallPreview();
             // Any placement starts as a plain one: the floor fill and a player's pick from
             // the server each turn themselves on after, and a click still waiting on the
             // server's word belongs to the placement before.
@@ -445,6 +451,7 @@ namespace AstvardServerMod
             UpdateBridgePreview();
             UpdateFencePreview();
             UpdateAreaPreview();
+            UpdateWallPreview();
             CheckBuildAskTimeout();
             TickPlayerBuildHint();
             TickServerRoad();
@@ -452,6 +459,7 @@ namespace AstvardServerMod
             // The fence's projection answers the same two keys a blueprint's does.
             if (HandleFencePreviewInput()) return;
             if (HandleAreaPreviewInput()) return;
+            if (HandleWallPreviewInput()) return;
 
             // Escape gets the road and the bridge out of the way too, and it has to be
             // read before the placement guard below — a marked start is not a placement.
@@ -854,6 +862,24 @@ namespace AstvardServerMod
                 // player history that SetCreator itself runs for every piece - that cost
                 // is inside the call and stays.
                 var creatorPlatform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
+
+                // «Разрушать»: what stands where the pieces go comes out first - ahead of the
+                // levelling as well, so nothing is left hanging over a lowered pad.
+                if (BuildClearingActive && ZNetScene.instance != null)
+                {
+                    var places = new List<PiecePlacement>(Clipboard.Count);
+                    foreach (var entry in Clipboard)
+                    {
+                        var prefab = ZNetScene.instance.GetPrefab(entry.Prefab);
+                        if (prefab != null)
+                            places.Add(new PiecePlacement(prefab, origin + rotation * entry.LocalPos,
+                                                          rotation * entry.LocalRot));
+                    }
+
+                    var cleared = ClearUnderPieces(places);
+                    if (cleared > 0)
+                        player.Message(MessageHud.MessageType.Center, $"Снесено под постройкой: {cleared}");
+                }
 
                 // Before the pieces, not after: a floor dropped onto a slope and then
                 // levelled underneath would already have decided what it was resting on.

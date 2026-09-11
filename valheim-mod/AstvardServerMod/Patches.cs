@@ -345,6 +345,8 @@ namespace AstvardServerMod
             Plugin.ForgetRoadEnd();
             Plugin.ForgetServerRoad();
             Plugin.StopRoadJobOnShutdown();
+            // Its plan is the old world's floor, and its ghosts went with that world's scene.
+            Plugin.CancelWallPreview();
             // On a server this is the way out: runes earned since the last minute's save
             // would otherwise go with it.
             Plugin.SavePurses();

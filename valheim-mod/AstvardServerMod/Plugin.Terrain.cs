@@ -82,6 +82,7 @@ namespace AstvardServerMod
             }
 
             CancelAreaPreview();
+            CancelWallPreview();
             _roadStart = at;
             _roadStarted = true;
             _roadPinned = false;
@@ -436,36 +437,12 @@ namespace AstvardServerMod
         private const float ClearSlack = 8f;
 
         /// <summary>
-        /// Takes out what stands in the paint: trees, stumps, fallen logs, bare rocks and
-        /// bushes that give nothing but wood.
-        ///
-        /// What counts as in the way is decided by what a thing is, never by what it is
-        /// called. A tree is anything with a TreeBase, a log a TreeLog, a stump a
-        /// Destructible the game itself types as a tree. A rock counts only when all it
-        /// would ever drop is stone, down to what it turns into when broken - one rule
-        /// that keeps copper, tin, silver and obsidian deposits, muddy scrap piles and the
-        /// Mistlands' giant bones where they are, with no list of names to go stale. Left
-        /// alone as well: anything somebody built, anything inside a location's radius -
-        /// villages, ruins, dolmens, cave mouths - and everything ForceDelete already
-        /// protects. Pickables stay; a berry bush or a stone lying on the ground is not an
-        /// obstacle.
+        /// Takes out what stands in the paint - see <see cref="ClearWhere"/> for what goes and
+        /// what stays.
         ///
         /// The test is flat, like the paint. The path carries no terrain height, only a
         /// straight line between the heights of its two ends, so a vertical window would
         /// miss every tree on the crest of a hill the road goes over.
-        ///
-        /// Removal claims ownership first and goes through ZNetScene.Destroy. The claim is
-        /// what makes it stick: Destroy erases the world record only for an object this
-        /// client owns, and for anything else just deletes the local copy - gone here,
-        /// still there for everyone else, and back for this player on the next load.
-        /// Destroy is also silent, which is the point: Destructible.Destroy would drop the
-        /// wood and stone and play its effects, and a hundred metres of forest road would
-        /// come out paved with loot. A whole boulder it would not even remove - it would
-        /// put the broken one in its place.
-        ///
-        /// What went and what was seen in the way and left are both logged by name. The
-        /// question this gets is always why that one is still standing, and the log
-        /// answers it without another trip into the game.
         ///
         /// <paramref name="admin"/> says whose clearing it is rather than asking this
         /// machine: on the server, laying an admin's long road, there is no local player
@@ -473,7 +450,7 @@ namespace AstvardServerMod
         /// </summary>
         private static int ClearAlongPath(List<Vector3> path, float radius, bool admin)
         {
-            if (path == null || path.Count == 0 || ZNetScene.instance == null) return 0;
+            if (path == null || path.Count == 0) return 0;
 
             float minX = float.MaxValue, maxX = float.MinValue;
             float minZ = float.MaxValue, maxZ = float.MinValue;
@@ -487,7 +464,44 @@ namespace AstvardServerMod
 
             var reach = radius + ClearSlack;
             var area = Rect.MinMaxRect(minX - reach, minZ - reach, maxX + reach, maxZ + reach);
-            var run = new ClearingRun(path, radius, area);
+            return ClearWhere(area, go => FootprintDistance(go, path) <= radius, admin);
+        }
+
+        /// <summary>
+        /// Takes out, of what stands in <paramref name="area"/>, whatever
+        /// <paramref name="inWay"/> finds in the way: trees, stumps, fallen logs, bare rocks
+        /// and bushes that give nothing but wood. The road asks it of its band, a build of
+        /// the ground under its pieces.
+        ///
+        /// What counts as in the way is decided by what a thing is, never by what it is
+        /// called. A tree is anything with a TreeBase, a log a TreeLog, a stump a
+        /// Destructible the game itself types as a tree. A rock counts only when all it
+        /// would ever drop is stone, down to what it turns into when broken - one rule
+        /// that keeps copper, tin, silver and obsidian deposits, muddy scrap piles and the
+        /// Mistlands' giant bones where they are, with no list of names to go stale. Left
+        /// alone as well: anything somebody built, anything inside a location's radius -
+        /// villages, ruins, dolmens, cave mouths - and everything ForceDelete already
+        /// protects. Pickables stay; a berry bush or a stone lying on the ground is not an
+        /// obstacle.
+        ///
+        /// Removal claims ownership first and goes through ZNetScene.Destroy. The claim is
+        /// what makes it stick: Destroy erases the world record only for an object this
+        /// client owns, and for anything else just deletes the local copy - gone here,
+        /// still there for everyone else, and back for this player on the next load.
+        /// Destroy is also silent, which is the point: Destructible.Destroy would drop the
+        /// wood and stone and play its effects, and a hundred metres of forest road would
+        /// come out paved with loot. A whole boulder it would not even remove - it would
+        /// put the broken one in its place.
+        ///
+        /// What went and what was seen in the way and left are both logged by name. The
+        /// question this gets is always why that one is still standing, and the log
+        /// answers it without another trip into the game.
+        /// </summary>
+        private static int ClearWhere(Rect area, System.Func<GameObject, bool> inWay, bool admin)
+        {
+            if (ZNetScene.instance == null) return 0;
+
+            var run = new ClearingRun(inWay, area);
 
             foreach (var tree in Object.FindObjectsByType<TreeBase>(FindObjectsSortMode.None))
                 run.Consider(tree, null);
@@ -519,7 +533,7 @@ namespace AstvardServerMod
                 if (view == null || !view.IsValid()) continue;
 
                 // A player's clearing leaves what stands in someone else's ward, as the
-                // hammer would. The road's own ward check covers only its band, and a
+                // hammer would. A tool's own ward check covers only its work, and a
                 // boulder can stand across the edge of it with its middle in the ward.
                 if (!admin && !PrivateArea.CheckAccess(view.transform.position, 0f, false, false))
                 {
@@ -552,16 +566,13 @@ namespace AstvardServerMod
             // is judged once, on the first look that finds it in the way.
             private readonly HashSet<ZNetView> _judged = new HashSet<ZNetView>();
 
-            private readonly List<Vector3> _path;
-
-            private readonly float _radius;
+            private readonly System.Func<GameObject, bool> _inWay;
 
             private readonly Rect _area;
 
-            public ClearingRun(List<Vector3> path, float radius, Rect area)
+            public ClearingRun(System.Func<GameObject, bool> inWay, Rect area)
             {
-                _path = path;
-                _radius = radius;
+                _inWay = inWay;
                 _area = area;
             }
 
@@ -596,7 +607,7 @@ namespace AstvardServerMod
                     else if (Location.IsInsideLocation(at, 0f)) refusal = "inside a location";
                 }
 
-                if (FootprintDistance(go, _path) > _radius) return;
+                if (!_inWay(go)) return;
 
                 _judged.Add(view);
                 if (refusal == null) Doomed.Add(view);
@@ -1097,6 +1108,7 @@ namespace AstvardServerMod
             // One projection at a time, or one click would answer two of them.
             if (IsPlacing) CancelPlacement();
             if (IsFencePreviewing) CancelFencePreview();
+            CancelWallPreview();
 
             _areaPreviewing = true;
             _areaPinned = false;

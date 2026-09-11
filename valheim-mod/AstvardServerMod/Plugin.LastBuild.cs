@@ -61,7 +61,8 @@ namespace AstvardServerMod
                    || state == StateTemplates || state == StateTemplateList || state == StateTemplateEdit
                    || state == StateSharedList || state == StateSharedItem
                    || state == StateSpawners || state == StateSpawnerList
-                   || state == StateFence || state == StateAreaFill;
+                   || state == StateFence || state == StateAreaFill || state == StateWallHeight
+                   || state == StateBuildSettings;
         }
 
         /// <summary>

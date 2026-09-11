@@ -85,12 +85,15 @@ namespace AstvardServerMod
             });
 
             AreaFillHint = MakeText(gui,
-                $"Обнеси место стенами или балками{NEWLINE}и приставь плиту к стене изнутри:{NEWLINE}"
-                + $"мод найдёт контур и покажет пол.{NEWLINE}ЛКМ — уложить, Esc — отменить,{NEWLINE}"
-                + $"P — закрепить, Q/E — повернуть.{NEWLINE}Если контур не замкнут, красная{NEWLINE}"
-                + $"линия пройдёт через дыру.{NEWLINE}Буфер копирования будет занят.");
+                $"Пол: обнеси место стенами или{NEWLINE}балками и приставь плиту к стене{NEWLINE}"
+                + $"изнутри — мод найдёт контур и{NEWLINE}покажет пол. Q/E — повернуть.{NEWLINE}"
+                + $"Если контур не замкнут, красная{NEWLINE}линия пройдёт через дыру.{NEWLINE}"
+                + $"Стена: встань на пол — стены{NEWLINE}встанут по его краю, где их нет.{NEWLINE}"
+                + $"ЛКМ — поставить, Esc — отменить,{NEWLINE}P — закрепить.");
 
             AreaFloorButton = MakeButton(gui, "Пол", StartFloorSeed);
+
+            CreateWallWidgets(gui);
         }
 
         /// <summary>A floor plate is being put to a wall, and the floor it would make is shown.</summary>
@@ -443,6 +446,9 @@ namespace AstvardServerMod
 
             try
             {
+                // «Разрушать»: a trunk or a rock inside the outline would stand through the floor.
+                var cleared = BuildClearingActive ? ClearUnderPieces(placements) : 0;
+
                 var creator = player.GetPlayerID();
                 var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
                 var built = record.Pieces;
@@ -464,7 +470,8 @@ namespace AstvardServerMod
                     yield break;
                 }
 
-                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Пол уложен: плит {built.Count}");
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    $"Пол уложен: плит {built.Count}" + (cleared > 0 ? $", снесено: {cleared}" : ""));
                 Log.LogInfo($"[AstvardServerMod] Floor laid: {built.Count} plates at "
                             + $"{(placements.Count > 0 ? placements[0].At : Vector3.zero)}.");
             }

@@ -11,9 +11,7 @@ namespace AstvardServerMod
 
         internal static GameObject PlayerBuildHint;
 
-        internal static GameObject PlayerSnapButton;
-
-        internal static GameObject PlayerFloorButton;
+        internal static GameObject PlayerFillButton;
 
         internal static GameObject PlayerFenceButton;
 
@@ -58,15 +56,15 @@ namespace AstvardServerMod
             PlayerBuildHint = MakeText(gui, "");
 
             // A player's page holds what the admins opened, each behind its own rule; the
-            // templates the server hands out are a page of their own under it.
-            PlayerSnapButton = MakeButton(gui, "", () =>
+            // templates the server hands out are a page of their own under it. The settings
+            // and «Заполнить» are the admin's own pages, showing a player what is open to them.
+            PlayerSettingsButton = MakeButton(gui, "Настройки", OpenBuildSettings);
+
+            PlayerFillButton = MakeButton(gui, "Заполнить", () =>
             {
-                IsSnapEnabled = !IsSnapEnabled;
-                UpdateSnapButtonLabel();
+                MenuState = StateAreaFill;
                 RefreshMenu();
             });
-
-            PlayerFloorButton = MakeButton(gui, "Заполнить пол", StartFloorSeed);
 
             PlayerFenceButton = MakeButton(gui, "Обнести забором", () =>
             {
@@ -223,7 +221,6 @@ namespace AstvardServerMod
                           + pause)
                     : "Постройки, открытые админом." + pause;
 
-            SetLabel(PlayerSnapButton, IsSnapEnabled ? "Прилипание: вкл" : "Прилипание: выкл");
             SetLabel(PlayerServerTemplatesButton, $"Шаблоны сервера: {PlayerTemplates.Count}");
 
             SetLabel(TemplatePlayersButton, _editingTemplate != null && IsForPlayers(_editingTemplate.Name)
@@ -239,8 +236,8 @@ namespace AstvardServerMod
         {
             get
             {
-                return PlayerTemplates.Count > 0 || RuleAllows("floor") || RuleAllows("fence")
-                       || RuleAllows("copy");
+                return PlayerTemplates.Count > 0 || RuleAllows("floor") || RuleAllows("wall")
+                       || RuleAllows("fence") || RuleAllows("copy");
             }
         }
 
@@ -249,7 +246,8 @@ namespace AstvardServerMod
         {
             return state == StatePlayerBuild || state == StatePlayerTemplates || state == StateFence
                    || state == StateCopyForm || state == StateTemplates || state == StateTemplateList
-                   || state == StateTemplateEdit;
+                   || state == StateTemplateEdit || state == StateAreaFill || state == StateWallHeight
+                   || state == StateBuildSettings;
         }
 
         private static void RefreshPlayerBuildVisibility(bool admin)
@@ -260,8 +258,7 @@ namespace AstvardServerMod
             SetActive(PlayerBuildHint, !admin && (MenuState == StatePlayerBuild || MenuState == StatePlayerTemplates));
 
             var page = !admin && MenuState == StatePlayerBuild;
-            SetActive(PlayerSnapButton, page && RuleAllows("snap"));
-            SetActive(PlayerFloorButton, page && RuleAllows("floor"));
+            SetActive(PlayerFillButton, page && (RuleAllows("floor") || RuleAllows("wall")));
             SetActive(PlayerFenceButton, page && RuleAllows("fence"));
             SetActive(PlayerCopyButton, page && RuleAllows("copy"));
             SetActive(PlayerSaveButton, page && RuleAllows("copy"));

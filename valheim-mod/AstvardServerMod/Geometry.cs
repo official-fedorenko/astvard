@@ -119,6 +119,44 @@ namespace AstvardServerMod
     }
 
     /// <summary>
+    /// One straight stretch of a floor's outer edge, on the half-metre grid of the floor
+    /// tools: the grid line it lies on, where along that line it starts and stops, and
+    /// which way is out.
+    /// </summary>
+    internal struct EdgeRun
+    {
+        /// <summary>
+        /// True: the line is one of constant i - cells Line-1 and Line meet across it - and
+        /// the run goes along j. False: constant j, and the run goes along i.
+        /// </summary>
+        public bool ConstantI;
+
+        public int Line;
+
+        /// <summary>The first cell along the line the run passes, and one past its last.</summary>
+        public int From;
+
+        public int To;
+
+        /// <summary>+1: out is towards higher i (or j), -1: towards lower.</summary>
+        public int Outward;
+    }
+
+    /// <summary>One wall panel along a run: its first cell and its width, both in half-metre cells.</summary>
+    internal struct WallPanel
+    {
+        public int Start;
+
+        public int Width;
+
+        public WallPanel(int start, int width)
+        {
+            Start = start;
+            Width = width;
+        }
+    }
+
+    /// <summary>
     /// The arithmetic behind the terrain, zone and blueprint tools, kept free of Unity
     /// and of the game's own types so it can be exercised without either.
     ///
@@ -574,6 +612,156 @@ namespace AstvardServerMod
             for (var c = c0; c <= c1; c++)
                 for (var d = d0; d <= d1; d++)
                     if (Lay(free, covered, 2 * c, 2 * d, 2)) small.Add(new GridCell(c, d));
+        }
+
+        /// <summary>
+        /// The outer edge of a floor, as straight runs along the grid lines: every side of a
+        /// floored cell that faces the outside, joined with its neighbours on the same line
+        /// and facing the same way. Sorted, so the same floor always comes out the same.
+        ///
+        /// Outer only. The outside is what can be reached from beyond the floor without
+        /// crossing it; a hole in the middle - the opening a stair goes through, a missing
+        /// plate - is not, and gets no walls round it.
+        /// </summary>
+        public static List<EdgeRun> PerimeterRuns(HashSet<long> floored)
+        {
+            var runs = new List<EdgeRun>();
+            if (floored.Count == 0) return runs;
+
+            int minI = int.MaxValue, maxI = int.MinValue, minJ = int.MaxValue, maxJ = int.MinValue;
+            foreach (var key in floored)
+            {
+                var cell = CellOf(key);
+                if (cell.I < minI) minI = cell.I;
+                if (cell.I > maxI) maxI = cell.I;
+                if (cell.J < minJ) minJ = cell.J;
+                if (cell.J > maxJ) maxJ = cell.J;
+            }
+
+            // The outside: a flood of the empty cells from a frame one cell wider than the floor.
+            minI--; maxI++; minJ--; maxJ++;
+            var outside = new HashSet<long>();
+            var queue = new Queue<GridCell>();
+            for (var i = minI; i <= maxI; i++)
+            {
+                Reach(floored, outside, queue, i, minJ);
+                Reach(floored, outside, queue, i, maxJ);
+            }
+
+            for (var j = minJ; j <= maxJ; j++)
+            {
+                Reach(floored, outside, queue, minI, j);
+                Reach(floored, outside, queue, maxI, j);
+            }
+
+            while (queue.Count > 0)
+            {
+                var cell = queue.Dequeue();
+                if (cell.I > minI) Reach(floored, outside, queue, cell.I - 1, cell.J);
+                if (cell.I < maxI) Reach(floored, outside, queue, cell.I + 1, cell.J);
+                if (cell.J > minJ) Reach(floored, outside, queue, cell.I, cell.J - 1);
+                if (cell.J < maxJ) Reach(floored, outside, queue, cell.I, cell.J + 1);
+            }
+
+            // Each outward side, filed under its line and the way out; a side is one cell long.
+            var sides = new SortedDictionary<long, List<int>>();
+            foreach (var key in floored)
+            {
+                var c = CellOf(key);
+                if (outside.Contains(CellKey(c.I + 1, c.J))) File(sides, true, c.I + 1, 1, c.J);
+                if (outside.Contains(CellKey(c.I - 1, c.J))) File(sides, true, c.I, -1, c.J);
+                if (outside.Contains(CellKey(c.I, c.J + 1))) File(sides, false, c.J + 1, 1, c.I);
+                if (outside.Contains(CellKey(c.I, c.J - 1))) File(sides, false, c.J, -1, c.I);
+            }
+
+            foreach (var entry in sides)
+            {
+                var constantI = (entry.Key & 1) != 0;
+                var outward = (entry.Key & 2) != 0 ? 1 : -1;
+                var line = (int)(entry.Key >> 2);
+
+                var at = entry.Value;
+                at.Sort();
+                var from = at[0];
+                for (var k = 1; k <= at.Count; k++)
+                {
+                    if (k < at.Count && at[k] == at[k - 1] + 1) continue;
+
+                    runs.Add(new EdgeRun { ConstantI = constantI, Line = line, From = from, To = at[k - 1] + 1, Outward = outward });
+                    if (k < at.Count) from = at[k];
+                }
+            }
+
+            return runs;
+        }
+
+        private static void Reach(HashSet<long> floored, HashSet<long> outside, Queue<GridCell> queue, int i, int j)
+        {
+            var key = CellKey(i, j);
+            if (floored.Contains(key) || !outside.Add(key)) return;
+            queue.Enqueue(new GridCell(i, j));
+        }
+
+        private static void File(SortedDictionary<long, List<int>> sides, bool constantI, int line, int outward, int at)
+        {
+            // Line in the high bits, so the dictionary sorts by it; the two flags below.
+            var key = ((long)line << 2) | (outward > 0 ? 2L : 0L) | (constantI ? 1L : 0L);
+            if (!sides.TryGetValue(key, out var list))
+            {
+                list = new List<int>();
+                sides[key] = list;
+            }
+
+            list.Add(at);
+        }
+
+        /// <summary>
+        /// Cuts a run of wall into panels, in half-metre cells from <paramref name="from"/> up
+        /// to <paramref name="to"/>. Two-metre panels stand on the two-metre grid - a joint on
+        /// every fourth line, where a floor of two-metre plates laid from the same corner has
+        /// its own - and one-metre panels fill what a two-metre one cannot. What neither fills,
+        /// half a metre off the metre grid where a floor was laid off it by hand, stays open
+        /// and is counted, in cells, in <paramref name="gap"/>.
+        /// </summary>
+        public static List<WallPanel> WallPanels(int from, int to, out int gap)
+        {
+            var panels = new List<WallPanel>();
+            gap = 0;
+
+            var p = from;
+            while (p < to)
+            {
+                if (Mod(p, 2) != 0)
+                {
+                    gap++;
+                    p++;
+                    continue;
+                }
+
+                if (Mod(p, 4) == 0 && p + 4 <= to)
+                {
+                    panels.Add(new WallPanel(p, 4));
+                    p += 4;
+                    continue;
+                }
+
+                if (p + 2 <= to)
+                {
+                    panels.Add(new WallPanel(p, 2));
+                    p += 2;
+                    continue;
+                }
+
+                gap += to - p;
+                break;
+            }
+
+            return panels;
+        }
+
+        private static int Mod(int value, int by)
+        {
+            return ((value % by) + by) % by;
         }
 
         private static bool Lay(HashSet<long> free, HashSet<long> covered, int i0, int j0, int size)

@@ -134,6 +134,10 @@ namespace AstvardServerMod
             ToggleRule("snap", "Snap", "Прилипание", RuleGroup.Build, true),
             ChoiceRule("floor", "Floor", "Пол", RuleGroup.Build, ChoicePaid,
                        "Даром — с паузой между\nпостройками, платно — без неё."),
+            // Paid out of the box, as the floor it stands on: a wall taken down by the hammer
+            // gives back what it cost.
+            ChoiceRule("wall", "Wall", "Стена", RuleGroup.Build, ChoicePaid,
+                       "Стена по краю пола.\nДаром — с паузой между\nпостройками, платно — без неё."),
             ChoiceRule("fence", "Fence", "Забор", RuleGroup.Build, ChoicePaid,
                        "Даром — с паузой между\nпостройками, платно — без неё."),
             LimitRule("copy", "Copy", "Копирование", RuleGroup.Build, true, "радиус", 1, 64, 20),
