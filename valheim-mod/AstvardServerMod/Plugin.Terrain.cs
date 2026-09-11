@@ -143,6 +143,17 @@ namespace AstvardServerMod
         // rewrite the terrain of a dozen zones at once.
         private const float MaxRoadLength = 200f;
 
+        // An admin's reach. The ground a client can change is the 5x5 zones round the
+        // player - 130 to 190 m each way - so past 200 m the far end has gone by the time
+        // the player gets there. With the end pinned and the player back near the middle,
+        // both ends are in reach up to about this; further, and CompsForStamps turns it down.
+        private const float AdminMaxRoadLength = 300f;
+
+        private static float RoadMaxLength
+        {
+            get { return IsAdminUnlocked ? AdminMaxRoadLength : RuleLimit("road", MaxRoadLength); }
+        }
+
         // The heightmap only covers one 64 m zone, so a pad levelled wider than that is
         // clipped at its edge anyway - generous rather than exact.
         private const float MaxLevelRadius = 64f;
@@ -293,11 +304,16 @@ namespace AstvardServerMod
                                  + $"стрелки — сдвиг. Кладка и прочее{NEWLINE}— общие с дорожкой.{notes}";
                     break;
                 default:
+                    // Past 200 m only an admin, and only from near the middle: see AdminMaxRoadLength.
+                    var longRoad = IsAdminUnlocked
+                        ? $"{NEWLINE}До {AdminMaxRoadLength:0} м. Длиннее {MaxRoadLength:0} —{NEWLINE}"
+                          + $"закрепи конец (P) и встань{NEWLINE}ближе к середине."
+                        : "";
                     label.text = _roadStarted
                         ? $"Начало отмечено — иди в конец{NEWLINE}и нажми ЛКМ или «Закончить».{NEWLINE}"
-                          + $"Esc — отменить. P — закрепить{NEWLINE}конец, стрелки — сдвинуть.{notes}"
+                          + $"Esc — отменить. P — закрепить{NEWLINE}конец, стрелки — сдвинуть.{notes}{longRoad}"
                         : $"Встань в начало дорожки{NEWLINE}и нажми «Начать».{notes}"
-                          + RuleLimitNote("road", MaxRoadLength);
+                          + RuleLimitNote("road", MaxRoadLength) + longRoad;
                     break;
             }
         }
@@ -1238,7 +1254,7 @@ namespace AstvardServerMod
             var half = Mathf.Max(width * 0.5f, PaintGridScale(_roadStart) * 0.75f);
             var blend = RoadSmoothingActive ? SmoothBlend(half) : 0f;
             var torches = RoadTorchesActive;
-            var tooLong = length > RuleLimit("road", MaxRoadLength);
+            var tooLong = length > RoadMaxLength;
             var sagitta = RoadSagitta(length);
 
             // Drawn again only when something that shapes it has moved: every point is a look
@@ -1495,7 +1511,7 @@ namespace AstvardServerMod
                 return;
             }
 
-            var maxLength = RuleLimit("road", MaxRoadLength);
+            var maxLength = RoadMaxLength;
             if (length > maxLength)
             {
                 player.Message(MessageHud.MessageType.Center,
@@ -1535,7 +1551,9 @@ namespace AstvardServerMod
             {
                 // The start stays marked, so waiting and pressing again is all it takes.
                 player.Message(MessageHud.MessageType.Center, unloaded
-                    ? "Начало дорожки дальше прогруженной земли — сделай её короче"
+                    ? (_roadPinned
+                        ? "Конец дорожки дальше прогруженной земли — встань ближе к середине"
+                        : "Начало дорожки уже не прогружено — закрепи конец (P) и подойди к середине")
                     : "Земля по пути ещё прогружается — подожди пару секунд и нажми снова");
                 return;
             }
