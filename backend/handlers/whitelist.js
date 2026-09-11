@@ -1,15 +1,27 @@
 const { readJsonBody } = require('../util/body');
-const { toPermittedListId } = require('../steamid');
-const { findUserById } = require('../users');
+const { parseSteamId64, toPermittedListId, toAdminListIds } = require('../steamid');
+const { fetchPersonaName, fallbackNickname } = require('../steam-profile');
+const { findUserById, findUserBySteamId, createSteamUser } = require('../users');
 const {
   requestWhitelist,
+  grantWhitelist,
   listWhitelistRequests,
   decideWhitelist,
   listApprovedSteamIds,
+  setServerAdmin,
+  listServerAdmins,
 } = require('../whitelist');
 
 const VALID_DECISIONS = ['approved', 'rejected'];
 const MAX_NOTE_LENGTH = 500;
+
+function readNote(value, field) {
+  if (value === undefined || value === null || value === '') return { note: null };
+  if (typeof value !== 'string' || value.length > MAX_NOTE_LENGTH) {
+    return { error: `${field} — текст до ${MAX_NOTE_LENGTH} символов` };
+  }
+  return { note: value };
+}
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -34,11 +46,103 @@ async function requestAccess(req, res) {
     return sendJson(res, 409, { error: 'Доступ уже открыт' });
   }
 
-  const user = await requestWhitelist(actor.id);
+  // The body is optional here: the button works on its own, and a player who wants
+  // to say who they are can.
+  let body = {};
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return sendJson(res, 400, { error: 'Некорректный запрос' });
+  }
+  const requestNote = readNote(body.note, 'Сообщение');
+  if (requestNote.error) {
+    return sendJson(res, 400, { error: requestNote.error });
+  }
+
+  const user = await requestWhitelist(actor.id, requestNote.note);
   if (!user) {
     return sendJson(res, 409, { error: 'Заявку сейчас не принять' });
   }
   sendJson(res, 200, { user });
+}
+
+// An admin adding someone who never came to the site. This is the one place a
+// SteamID64 is still typed by hand, and the answer carries the Steam nickname back
+// so a typo shows up as a stranger's name rather than as silence.
+async function postEntry(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return sendJson(res, 400, { error: 'Некорректный запрос' });
+  }
+
+  const parsed = parseSteamId64(body.steam_id);
+  if (parsed.error) {
+    return sendJson(res, 400, { error: parsed.error });
+  }
+  const steamId = parsed.id;
+
+  let user = await findUserBySteamId(steamId);
+  if (!user) {
+    const persona = await fetchPersonaName(steamId);
+    user = await createSteamUser({
+      nickname: persona || fallbackNickname(steamId),
+      steamId,
+      // Typed in by an admin, not signed for by Steam. It flips the first time the
+      // owner signs in through Steam.
+      verified: false,
+    });
+    if (!user) {
+      return sendJson(res, 409, { error: 'Не удалось создать запись, попробуй ещё раз' });
+    }
+  }
+
+  const granted = await grantWhitelist({ userId: user.id, actorId: req.user.sub });
+  if (!granted) {
+    return sendJson(res, 409, { error: 'Не удалось выдать доступ' });
+  }
+  sendJson(res, 201, { user: granted });
+}
+
+// Rights inside the game: spawning, banning, kicking. Whoever can hand them out
+// can hand them to themselves, so this one is superadmin-only even though a plain
+// site admin may already answer whitelist requests.
+async function patchServerAdmin(req, res, params) {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return sendJson(res, 400, { error: 'Некорректный запрос' });
+  }
+  if (typeof body.server_admin !== 'boolean') {
+    return sendJson(res, 400, { error: 'server_admin: true или false' });
+  }
+
+  const id = Number(params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return sendJson(res, 400, { error: 'Некорректный идентификатор' });
+  }
+
+  const user = await setServerAdmin(id, body.server_admin);
+  if (!user) {
+    return sendJson(res, 404, { error: 'Игрок не найден или у него не привязан Steam' });
+  }
+  sendJson(res, 200, { user });
+}
+
+// Unlike permittedlist.txt, an empty adminlist.txt is harmless — it means nobody is
+// an admin, not that everybody is — so a list with no entries is written out rather
+// than refused. Taking rights away has to be possible.
+async function getAdminList(req, res) {
+  const admins = await listServerAdmins();
+  const lines = admins.flatMap((a) => toAdminListIds(a.steam_id));
+  const text = lines.length ? `${lines.join('\n')}\n` : '';
+  res.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Disposition': 'attachment; filename="adminlist.txt"',
+  });
+  res.end(text);
 }
 
 async function getRequests(req, res) {
@@ -62,13 +166,11 @@ async function decide(req, res, params) {
     return sendJson(res, 400, { error: 'Некорректный идентификатор' });
   }
 
-  let note = null;
-  if (body.note !== undefined && body.note !== null && body.note !== '') {
-    if (typeof body.note !== 'string' || body.note.length > MAX_NOTE_LENGTH) {
-      return sendJson(res, 400, { error: `Комментарий — текст до ${MAX_NOTE_LENGTH} символов` });
-    }
-    note = body.note;
+  const decided = readNote(body.note, 'Комментарий');
+  if (decided.error) {
+    return sendJson(res, 400, { error: decided.error });
   }
+  const note = decided.note;
 
   const user = await decideWhitelist({ userId: id, status: body.status, note, actorId: req.user.sub });
   if (!user) {
@@ -102,4 +204,4 @@ async function getPermittedList(req, res) {
   res.end(text);
 }
 
-module.exports = { requestAccess, getRequests, decide, getPermittedList };
+module.exports = { requestAccess, postEntry, getRequests, decide, patchServerAdmin, getPermittedList, getAdminList };

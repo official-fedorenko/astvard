@@ -48,4 +48,14 @@ function toPermittedListId(steamId) {
   return `V_${steamId}`;
 }
 
-module.exports = { parseSteamId64, toPermittedListId };
+// adminlist.txt needs both forms of the same id, and that is not belt-and-braces.
+// ZNet.PlayerIsAdmin compares the id raw — no FilterPlatformUserID on the way in —
+// so it only ever matches the form the client sent, Steam_<SteamID64>; the kick
+// button in the in-game player list hangs off that check. Everything else reading
+// the list goes through ListContainsId, which sees only V_<SteamID64>. Write one
+// form and half the rights silently fail to appear. See the root CLAUDE.md.
+function toAdminListIds(steamId) {
+  return [`V_${steamId}`, `Steam_${steamId}`];
+}
+
+module.exports = { parseSteamId64, toPermittedListId, toAdminListIds };

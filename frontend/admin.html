@@ -11,17 +11,35 @@
     <h1><a href="/">Astvard</a></h1>
     <nav><a href="/cabinet.html">Кабинет</a></nav>
   </header>
-  <main>
+  <main class="wide">
     <section>
       <h2>Вайтлист</h2>
-      <table id="whitelist-table">
-        <thead>
-          <tr><th>Никнейм</th><th>Email</th><th>Steam ID</th><th>Статус</th><th>Подал</th><th></th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+
+      <form id="add-entry-form" class="inline-form">
+        <input type="text" name="steam_id" placeholder="SteamID64 или ссылка на профиль" required>
+        <button type="submit">Добавить в вайтлист</button>
+      </form>
+      <p class="error" id="add-entry-error"></p>
+      <p class="muted">
+        Для тех, кто на сайт не заходил. Номер здесь вводится руками, поэтому сверь
+        никнейм в таблице — он приходит из Steam. Не тот человек — отклони запись.
+      </p>
+
+      <div class="table-scroll">
+        <table id="whitelist-table">
+          <thead>
+            <tr>
+              <th>Никнейм</th><th>Steam ID</th><th>Статус</th><th>Сообщение</th>
+              <th>Когда</th><th>Админка</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
       <div class="card">
         <button id="permittedlist-btn">Собрать permittedlist.txt</button>
+        <button id="adminlist-btn">Собрать adminlist.txt</button>
         <p class="error" id="permittedlist-error"></p>
         <pre id="permittedlist-out" hidden></pre>
         <p id="permittedlist-hint" class="muted" hidden>
@@ -33,12 +51,14 @@
 
     <section>
       <h2>Пользователи</h2>
-      <table id="users-table">
-        <thead>
-          <tr><th>Никнейм</th><th>Email</th><th>Роль</th><th></th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+      <div class="table-scroll">
+        <table id="users-table">
+          <thead>
+            <tr><th>Никнейм</th><th>Email</th><th>Роль</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section>
@@ -50,12 +70,14 @@
         <button type="submit">Добавить</button>
       </form>
       <button id="refresh-btn">Обновить статус</button>
-      <table id="servers-table">
-        <thead>
-          <tr><th>Название</th><th>Адрес</th><th>Статус</th><th>Игроки</th><th>Проверен</th><th></th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+      <div class="table-scroll">
+        <table id="servers-table">
+          <thead>
+            <tr><th>Название</th><th>Адрес</th><th>Статус</th><th>Игроки</th><th>Проверен</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
   </main>
   <script src="/common.js"></script>

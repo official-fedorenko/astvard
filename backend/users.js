@@ -4,7 +4,9 @@ const { pool } = require('./db');
 // /api/me and the admin list at once; a second hand-written list would not.
 // password_hash is deliberately absent — only findUserByEmail needs it.
 const USER_FIELDS = `id, nickname, email, role, created_at,
-  steam_id, whitelist_status, whitelist_requested_at, whitelist_decided_at, whitelist_note`;
+  steam_id, steam_id_verified, server_admin,
+  whitelist_status, whitelist_requested_at, whitelist_decided_at,
+  whitelist_note, whitelist_request_note`;
 
 function createUser({ nickname, email, passwordHash }) {
   return pool
@@ -35,7 +37,7 @@ function findUserBySteamId(steamId) {
 
 // Steam is the only thing vouching for this row, so it carries no email and no
 // password — the check constraint in db/schema.sql is what keeps that legal.
-async function createSteamUser({ nickname, steamId }) {
+async function createSteamUser({ nickname, steamId, verified }) {
   // Two players can carry the same Steam persona name, and nickname is unique.
   // Only a nickname clash is worth another go: a clash on steam_id means the
   // caller should have found an existing row and must not paper over it here.
@@ -43,8 +45,9 @@ async function createSteamUser({ nickname, steamId }) {
     const candidate = attempt === 1 ? nickname : `${nickname} (${attempt})`;
     try {
       const { rows } = await pool.query(
-        `INSERT INTO users (nickname, steam_id) VALUES ($1, $2) RETURNING ${USER_FIELDS}`,
-        [candidate, steamId]
+        `INSERT INTO users (nickname, steam_id, steam_id_verified)
+         VALUES ($1, $2, $3) RETURNING ${USER_FIELDS}`,
+        [candidate, steamId, Boolean(verified)]
       );
       return rows[0];
     } catch (err) {
@@ -58,11 +61,13 @@ async function createSteamUser({ nickname, steamId }) {
 // Binding a different Steam account takes the whitelist answer with it — the old
 // decision was about the old id. It lands on 'none' rather than 'pending' because
 // asking for access is something the player does on purpose.
+// Only the Steam return calls this, so the number is signed for by definition.
 function attachSteamId(userId, steamId) {
   return pool
     .query(
       `UPDATE users
        SET steam_id = $2,
+           steam_id_verified = true,
            whitelist_status = 'none',
            whitelist_requested_at = NULL,
            whitelist_decided_at = NULL,
@@ -71,6 +76,20 @@ function attachSteamId(userId, steamId) {
        WHERE id = $1
        RETURNING ${USER_FIELDS}`,
       [userId, steamId]
+    )
+    .then((r) => r.rows[0]);
+}
+
+// An admin can enter a number by hand, and the row then waits for its owner. When
+// that owner finally signs in through Steam, the same number arrives signed — this
+// is where the row stops being someone's typed guess.
+function markSteamIdVerified(userId) {
+  return pool
+    .query(
+      `UPDATE users SET steam_id_verified = true
+       WHERE id = $1 AND steam_id_verified = false
+       RETURNING ${USER_FIELDS}`,
+      [userId]
     )
     .then((r) => r.rows[0]);
 }
@@ -98,6 +117,7 @@ module.exports = {
   findUserBySteamId,
   createSteamUser,
   attachSteamId,
+  markSteamIdVerified,
   listUsers,
   updateUserRole,
 };

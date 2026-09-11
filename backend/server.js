@@ -108,7 +108,15 @@ router.post('/api/admin/servers/refresh', requireAdmin(admin.refreshServers));
 // which makes that harmless — but only by accident.
 router.get('/api/admin/whitelist', requireAdmin(whitelistHandlers.getRequests));
 router.get('/api/admin/whitelist/permittedlist', requireAdmin(whitelistHandlers.getPermittedList));
+router.get('/api/admin/whitelist/adminlist', requireAdmin(whitelistHandlers.getAdminList));
+router.post('/api/admin/whitelist', requireAdmin(whitelistHandlers.postEntry));
 router.patch('/api/admin/whitelist/:id', requireAdmin(whitelistHandlers.decide));
+
+// Admin rights inside the game are handed out by a superadmin only: whoever can
+// grant them can grant them to themselves, and they carry spawning, banning and
+// kicking. A plain site admin answering whitelist requests does not need that.
+const requireSuperadmin = admin.requireRole('superadmin');
+router.patch('/api/admin/whitelist/:id/server-admin', requireSuperadmin(whitelistHandlers.patchServerAdmin));
 
 const server = http.createServer((req, res) => {
   // Everything here runs synchronously inside the listener, so a single throw
