@@ -1,6 +1,5 @@
 #!/bin/bash
-# Обновление портала на VPS: подтянуть код, накатить схему, перезапустить.
-# Запускать под root.
+# Portal update on the VPS: pull the code, apply the schema, restart. Run as root.
 set -euo pipefail
 
 BRANCH=${BRANCH:-valheim-mod}
@@ -12,53 +11,33 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-# Схему накатить обязательно: свежий код может опираться на колонки, которых в базе
-# ещё нет. Поэтому способ выясняем ДО того, как что-то менять — иначе останется
-# полусостояние: файлы новые, сервис на старом коде, база без колонок.
-compose_postgres_up() {
-  command -v docker >/dev/null 2>&1 \
-    && docker info >/dev/null 2>&1 \
-    && docker compose -f "$DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres
-}
-
-if compose_postgres_up; then
-  SCHEMA_VIA=docker
-elif command -v psql >/dev/null 2>&1; then
-  SCHEMA_VIA=psql
-else
-  echo "Нечем накатить схему: контейнер postgres не запущен и psql не установлен." >&2
-  echo "Ничего не менял. Подними базу (docker compose -f $DIR/docker-compose.yml up -d)" >&2
-  echo "или поставь postgresql-client, и запусти снова." >&2
-  exit 1
-fi
-echo "== Схему накатываю через: $SCHEMA_VIA"
-
-apply_schema() {
-  if [ "$SCHEMA_VIA" = docker ]; then
-    docker compose -f "$DIR/docker-compose.yml" exec -T postgres \
-      psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$DIR/db/schema.sql" >/dev/null
-  else
-    PGPASSWORD="$POSTGRES_PASSWORD" PGOPTIONS="-c client_min_messages=warning" \
-      psql -v ON_ERROR_STOP=1 \
-      -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-      -f "$DIR/db/schema.sql" >/dev/null
-  fi
-}
-
-# Креды лежат в том же .env, что читает бэкенд, — второго списка значений нет.
+# Credentials live in the same .env the backend reads — there is no second list of
+# values to drift.
 if [ ! -f "$DIR/.env" ]; then
   echo "Нет $DIR/.env — сначала install-site.sh." >&2
   exit 1
 fi
 set -a
-# shellcheck disable=SC1091  # файл появляется при установке, не в репозитории
+# shellcheck disable=SC1091  # created by install-site.sh, never in the repository
 . "$DIR/.env"
 set +a
+# shellcheck source=deploy/db.sh
+. "$DIR/deploy/db.sh"
+
+# The schema has to be applied: new code may rely on columns the database does not
+# have yet. So the way to apply it is worked out BEFORE anything changes — otherwise
+# a failure leaves new files, the service on old code and a database without columns.
+SCHEMA_VIA=$(db_mode)
+if [ -z "$SCHEMA_VIA" ]; then
+  echo "Нечем накатить схему: ни контейнера ${POSTGRES_CONTAINER:-postgres из compose}, ни psql." >&2
+  echo "Ничего не менял. Подними базу и запусти снова." >&2
+  exit 1
+fi
+echo "== Схему накатываю через: $SCHEMA_VIA"
 
 echo "== Код"
-# git отказывается работать в чужом каталоге ("dubious ownership"): владелец
-# репозитория — $SITE_USER, а скрипт под root. Без этой строки повторная установка
-# и каждое обновление падают на первом же fetch.
+# git refuses to work in a directory owned by someone else ("dubious ownership"):
+# the checkout belongs to $SITE_USER while this runs as root.
 git config --global --add safe.directory "$DIR"
 git -C "$DIR" fetch origin "$BRANCH"
 BEFORE=$(git -C "$DIR" rev-parse HEAD)
@@ -73,17 +52,17 @@ if ! sudo -u "$SITE_USER" npm ci --omit=dev --prefix "$DIR/backend" 2>/dev/null;
   sudo -u "$SITE_USER" npm install --omit=dev --prefix "$DIR/backend"
 fi
 
-# Схема идемпотентна и рассчитана на накат поверх живой базы — см. CLAUDE.md.
+# The schema is idempotent and meant to be applied over a live database — see CLAUDE.md.
 echo "== Схема"
-apply_schema
+db_apply_schema
 echo "   накатана"
 
 echo "== Перезапуск"
 systemctl restart astvard-backend
 sleep 3
 
-# Проверяем живым запросом, а не тем, что процесс есть: бэкенд поднимается и с
-# мёртвой базой, отдавая 500 на /api/health.
+# A live request rather than "the process exists": the backend starts happily
+# against a dead database and answers 500 on /api/health.
 echo "== Проверка"
 if curl -fsS --max-time 5 http://127.0.0.1:3001/api/health; then
   echo
