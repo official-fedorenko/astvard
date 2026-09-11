@@ -1,22 +1,22 @@
 const { pool } = require('./db');
 const { USER_FIELDS } = require('./users');
 
-// Any new id starts the request over, even for a player already approved. Without
-// the reset an approved player could swap their own Steam id for someone else's
-// and carry the approval across to them.
-function requestWhitelist(userId, steamId) {
+// The id is not an argument any more: it reaches the row through Steam OpenID,
+// where Steam signed for it, and typing one by hand is no longer a way in. What is
+// left here is the request itself. Re-binding a different Steam account resets the
+// answer in attachSteamId, so nothing carries an old approval forward.
+function requestWhitelist(userId) {
   return pool
     .query(
       `UPDATE users
-       SET steam_id = $2,
-           whitelist_status = 'pending',
+       SET whitelist_status = 'pending',
            whitelist_requested_at = now(),
            whitelist_decided_at = NULL,
            whitelist_decided_by = NULL,
            whitelist_note = NULL
-       WHERE id = $1
+       WHERE id = $1 AND steam_id IS NOT NULL AND whitelist_status <> 'approved'
        RETURNING ${USER_FIELDS}`,
-      [userId, steamId]
+      [userId]
     )
     .then((r) => r.rows[0]);
 }

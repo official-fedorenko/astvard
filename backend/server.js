@@ -8,6 +8,7 @@ const { Router } = require('./router');
 const authHandlers = require('./handlers/auth');
 const admin = require('./handlers/admin');
 const whitelistHandlers = require('./handlers/whitelist');
+const steamHandlers = require('./handlers/steam');
 const { listServers, refreshAllServers } = require('./servers');
 
 const PORT = process.env.PORT || 3001;
@@ -85,6 +86,12 @@ router.get('/api/me', authHandlers.me);
 // into a 500. Without the return a database failure answered nothing at all.
 router.get('/api/servers', (req, res) =>
   listServers().then((servers) => sendJson(res, 200, { servers })));
+
+// Both are plain browser navigations, not API calls: the first sends the player to
+// Steam, the second is where Steam sends them back. The return route has to work
+// for a guest — that is the sign-up case.
+router.get('/api/auth/steam', steamHandlers.start);
+router.get('/api/auth/steam/return', steamHandlers.complete);
 
 router.post('/api/whitelist/request', whitelistHandlers.requestAccess);
 

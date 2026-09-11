@@ -1,8 +1,11 @@
 CREATE TABLE IF NOT EXISTS users (
   id            SERIAL PRIMARY KEY,
   nickname      TEXT NOT NULL UNIQUE,
-  email         TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
+  -- Both are empty for an account that arrived through Steam: OpenID hands over a
+  -- SteamID64 and nothing else, and inventing an address to satisfy a constraint
+  -- would put a lie in the column. The check below is what keeps a row reachable.
+  email         TEXT UNIQUE,
+  password_hash TEXT,
   role          TEXT NOT NULL DEFAULT 'player' CHECK (role IN ('player', 'admin', 'superadmin')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -15,7 +18,13 @@ CREATE TABLE IF NOT EXISTS users (
   whitelist_requested_at TIMESTAMPTZ,
   whitelist_decided_at   TIMESTAMPTZ,
   whitelist_decided_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  whitelist_note         TEXT
+  whitelist_note         TEXT,
+
+  -- Every row must keep at least one way in. Dropping NOT NULL from both columns
+  -- without this would allow a row nobody — not even its owner — could log into.
+  CONSTRAINT users_has_a_way_in CHECK (
+    (email IS NOT NULL AND password_hash IS NOT NULL) OR steam_id IS NOT NULL
+  )
 );
 
 CREATE TABLE IF NOT EXISTS servers (
@@ -42,3 +51,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_requested_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_decided_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_note TEXT;
+
+-- Steam accounts have neither of these; see the comment on the columns above.
+-- DROP NOT NULL on a column that is already nullable does nothing, so this is
+-- safe to re-run.
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+-- ADD CONSTRAINT has no IF NOT EXISTS, hence the lookup.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_has_a_way_in') THEN
+    ALTER TABLE users ADD CONSTRAINT users_has_a_way_in CHECK (
+      (email IS NOT NULL AND password_hash IS NOT NULL) OR steam_id IS NOT NULL
+    );
+  END IF;
+END $$;

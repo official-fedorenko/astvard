@@ -1,3 +1,5 @@
+showSteamError('error');
+
 document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target;

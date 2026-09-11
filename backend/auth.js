@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { serializeCookie } = require('./util/cookies');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -36,4 +37,17 @@ function verifyToken(token) {
   }
 }
 
-module.exports = { hashPassword, verifyPassword, signToken, verifyToken, TOKEN_MAX_AGE_SECONDS };
+// Signing a token and setting the cookie always go together. Registration, the
+// password login and the Steam return all land here, so the flags — httpOnly, and
+// secure outside development — are decided once.
+function issueSession(res, user) {
+  res.setHeader('Set-Cookie', serializeCookie('token', signToken(user), {
+    maxAgeSeconds: TOKEN_MAX_AGE_SECONDS,
+    httpOnly: true,
+    secure: process.env.APP_ENV === 'production',
+  }));
+}
+
+module.exports = {
+  hashPassword, verifyPassword, signToken, verifyToken, issueSession, TOKEN_MAX_AGE_SECONDS,
+};

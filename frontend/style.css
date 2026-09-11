@@ -181,3 +181,32 @@ pre {
   border: 1px solid #201f2b;
   color: #a8a5b8;
 }
+
+/* Steam's own blue, so the button reads as "leave the site and come back" rather
+   than as another form control. */
+.steam-button {
+  display: inline-block;
+  padding: 10px 18px;
+  background: #1b2838;
+  border: 1px solid #66c0f4;
+  border-radius: 6px;
+  color: #66c0f4;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.steam-button:hover {
+  background: #22384f;
+}
+
+.or-divider {
+  color: #6b6880;
+  font-size: 13px;
+  margin: 20px 0 4px;
+}
+
+.wl-verified {
+  color: #4ade80;
+  font-size: 12px;
+  white-space: nowrap;
+}

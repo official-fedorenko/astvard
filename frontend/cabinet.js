@@ -1,61 +1,63 @@
-// Status line shown to the player, plus the wording of the button that submits a
-// new id. The four statuses come from the users table.
-const WHITELIST_VIEW = {
-  none: { title: 'Steam не привязан', submit: 'Отправить заявку' },
-  pending: { title: 'Заявка на рассмотрении', submit: 'Исправить номер' },
-  approved: { title: 'Доступ открыт', submit: 'Привязать другой Steam' },
-  rejected: { title: 'Заявка отклонена', submit: 'Подать заново' },
+// 'none' means two different things now — no Steam bound yet, or bound and not
+// asked about — so the unbound case gets its own line instead of sharing one.
+const WHITELIST_TITLES = {
+  none: 'Доступ не запрошен',
+  pending: 'Заявка на рассмотрении',
+  approved: 'Доступ открыт',
+  rejected: 'Заявка отклонена',
 };
+const TITLE_UNBOUND = 'Steam не привязан';
 
 function renderWhitelist(user) {
-  const view = WHITELIST_VIEW[user.whitelist_status] || WHITELIST_VIEW.none;
   const card = document.getElementById('whitelist-card');
+  const status = user.steam_id ? user.whitelist_status : 'none';
+  const title = user.steam_id ? (WHITELIST_TITLES[status] || status) : TITLE_UNBOUND;
+  const lines = [`<p class="wl-status wl-${escapeHtml(status)}">${escapeHtml(title)}</p>`];
 
-  const lines = [`<p class="wl-status wl-${escapeHtml(user.whitelist_status)}">${escapeHtml(view.title)}</p>`];
-
-  if (user.steam_id) {
-    lines.push(`<p>Steam ID: <code>${escapeHtml(user.steam_id)}</code></p>`);
-  }
-  if (user.whitelist_status === 'none') {
-    lines.push('<p class="muted">Вход на сервер — по списку, пароля нет. Привяжи Steam, и админ откроет доступ.</p>');
-  }
-  if (user.whitelist_status === 'pending') {
-    lines.push('<p class="muted">Админ ещё не решил. Если ошибся в номере — пришли правильный.</p>');
-  }
-  if (user.whitelist_status === 'approved') {
-    lines.push('<p class="muted">Заходи на сервер — адрес в списке ниже. Новый номер придётся одобрять заново, так что меняй только если правда сменил аккаунт.</p>');
-  }
-  if (user.whitelist_status === 'rejected' && user.whitelist_note) {
-    lines.push(`<p class="muted">Причина: ${escapeHtml(user.whitelist_note)}</p>`);
+  if (!user.steam_id) {
+    lines.push('<p class="muted">Вход на сервер — по списку, пароля нет. Войди через Steam: номер подтвердит сам Steam, и его не придётся вводить руками.</p>');
+    lines.push('<a class="steam-button" href="/api/auth/steam">Привязать Steam</a>');
+    card.innerHTML = lines.join('');
+    return;
   }
 
-  lines.push(`
-    <form id="whitelist-form">
-      <label>SteamID64 или ссылка на профиль
-        <input type="text" name="steam_id" placeholder="76561198000000000" required>
-      </label>
-      <button type="submit">${escapeHtml(view.submit)}</button>
-      <p class="error" id="whitelist-error"></p>
-    </form>
-    <p class="muted">Где взять номер: Steam → свой профиль → «Изменить профиль». Номер стоит в адресе страницы.</p>
-  `);
+  lines.push(`<p>Steam ID: <code>${escapeHtml(user.steam_id)}</code> <span class="wl-verified">подтверждён Steam</span></p>`);
+
+  if (status === 'none') {
+    lines.push('<p class="muted">Steam привязан. Осталось попросить доступ — админ увидит заявку.</p>');
+    lines.push('<button id="wl-request">Запросить доступ</button>');
+  }
+  if (status === 'pending') {
+    lines.push('<p class="muted">Админ ещё не решил.</p>');
+  }
+  if (status === 'approved') {
+    lines.push('<p class="muted">Заходи на сервер — адрес в списке ниже.</p>');
+  }
+  if (status === 'rejected') {
+    if (user.whitelist_note) {
+      lines.push(`<p class="muted">Причина: ${escapeHtml(user.whitelist_note)}</p>`);
+    }
+    lines.push('<button id="wl-request">Подать заново</button>');
+  }
+
+  lines.push('<p class="error" id="whitelist-error"></p>');
+  lines.push('<p class="muted">Сменил аккаунт Steam? <a href="/api/auth/steam">Привязать другой</a> — доступ придётся запросить заново.</p>');
 
   card.innerHTML = lines.join('');
 
-  document.getElementById('whitelist-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const error = document.getElementById('whitelist-error');
-    error.textContent = '';
-    try {
-      const { user: updated } = await apiFetch('/api/whitelist/request', {
-        method: 'POST',
-        body: JSON.stringify({ steam_id: e.target.steam_id.value }),
-      });
-      renderWhitelist(updated);
-    } catch (err) {
-      error.textContent = err.message;
-    }
-  });
+  const requestBtn = document.getElementById('wl-request');
+  if (requestBtn) {
+    requestBtn.addEventListener('click', async () => {
+      const error = document.getElementById('whitelist-error');
+      error.textContent = '';
+      try {
+        const { user: updated } = await apiFetch('/api/whitelist/request', { method: 'POST' });
+        renderWhitelist(updated);
+      } catch (err) {
+        error.textContent = err.message;
+      }
+    });
+  }
 }
 
 (async function init() {
@@ -78,13 +80,16 @@ function renderWhitelist(user) {
     window.location.href = '/';
   });
 
+  // An account that came through Steam has no email, and an empty "Email:" line
+  // reads as a page that failed to load something.
   document.getElementById('profile-card').innerHTML = `
     <h2>${escapeHtml(user.nickname)}</h2>
-    <p>Email: ${escapeHtml(user.email)}</p>
+    ${user.email ? `<p>Email: ${escapeHtml(user.email)}</p>` : '<p class="muted">Вход через Steam</p>'}
     <p>Роль: ${escapeHtml(user.role)}</p>
   `;
 
   renderWhitelist(user);
+  showSteamError('whitelist-error');
 
   const { servers } = await apiFetch('/api/servers');
   const list = document.getElementById('servers-list');
