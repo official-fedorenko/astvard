@@ -243,6 +243,7 @@ namespace AstvardServerMod
                     $"+1 руна за час в игре. Всего: {_myRunes}");
 
             UpdateCurrencyLabel();
+            UpdateRuneHud();
             RefreshMenu();
         }
 
@@ -255,14 +256,75 @@ namespace AstvardServerMod
                                    + (minutes > 0 ? $"следующая через {minutes} мин" : "следующая вот-вот"));
         }
 
-        /// <summary>Keeps the minutes to the next rune going while the panel's first page is open.</summary>
+        /// <summary>
+        /// Keeps the minutes to the next rune going while the panel's first page is open, and
+        /// hangs the count under the hotbar once there is a HUD to hang it on.
+        /// </summary>
         internal static void TickCurrencyLabel()
         {
-            if (_myRunes < 0 || MenuState != StateRoot || Panel == null || !Panel.activeInHierarchy) return;
             if (Time.realtimeSinceStartup < _currencyLabelTickAt) return;
+            _currencyLabelTickAt = Time.realtimeSinceStartup + 1f;
 
-            _currencyLabelTickAt = Time.realtimeSinceStartup + 5f;
-            UpdateCurrencyLabel();
+            // Asked as soon as the player is in the world, not at the first opening of the
+            // panel: the count under the hotbar should be there from the start.
+            if (Player.m_localPlayer != null && !GUIManager.IsHeadless()) AskSharedListOnce();
+
+            if (_myRunes < 0) return;
+            if (_runeHud == null) UpdateRuneHud();
+            if (MenuState == StateRoot && Panel != null && Panel.activeInHierarchy) UpdateCurrencyLabel();
+        }
+
+        private static UnityEngine.UI.Text _runeHud;
+
+        /// <summary>
+        /// «Руны: N» under the hotbar, where it is always in sight. Made the first time the HUD
+        /// is there, and made again after the main menu takes the HUD, and it, away.
+        /// </summary>
+        private static void UpdateRuneHud()
+        {
+            if (GUIManager.IsHeadless()) return;
+
+            if (_runeHud == null)
+            {
+                if (_myRunes < 0 || Hud.instance == null) return;
+
+                var bar = Hud.instance.GetComponentInChildren<HotkeyBar>(true);
+                if (bar == null) return;
+
+                _runeHud = MakeRuneHud(bar);
+                if (_runeHud == null) return;
+            }
+
+            var shown = _myRunes >= 0;
+            if (_runeHud.gameObject.activeSelf != shown) _runeHud.gameObject.SetActive(shown);
+            if (shown) _runeHud.text = $"Руны: {_myRunes}";
+        }
+
+        private static UnityEngine.UI.Text MakeRuneHud(HotkeyBar bar)
+        {
+            var gui = GUIManager.Instance;
+            if (gui == null) return null;
+
+            // A child of the bar, so it keeps to it at any UI scale. The bar lays its slots
+            // out from its own origin, each at its pivot, so the first slot's lower left
+            // corner comes from the slot prefab's rect.
+            var slot = bar.m_elementPrefab != null ? bar.m_elementPrefab.GetComponent<RectTransform>() : null;
+            var size = slot != null ? slot.rect.size : new Vector2(64f, 64f);
+            var pivot = slot != null ? slot.pivot : new Vector2(0.5f, 0.5f);
+
+            var go = gui.CreateText("", bar.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
+                gui.AveriaSerifBold, 18, gui.ValheimBeige, true, Color.black,
+                240f, 28f, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.pivot = new Vector2(0f, 1f);
+            rect.localPosition = new Vector3(-pivot.x * size.x, -pivot.y * size.y - 6f, 0f);
+
+            var text = go.GetComponent<UnityEngine.UI.Text>();
+            text.alignment = TextAnchor.UpperLeft;
+            text.raycastTarget = false;
+            return text;
         }
     }
 }

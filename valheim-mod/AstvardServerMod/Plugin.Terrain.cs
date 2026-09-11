@@ -995,6 +995,20 @@ namespace AstvardServerMod
             return centre;
         }
 
+        /// <summary>
+        /// Tells a player their radius was cut to the admins' limit. Cut without a word, a pad
+        /// smaller than the number typed reads as the tool being broken; and the log line is
+        /// what shows afterwards that the limit held.
+        /// </summary>
+        private static void SayHeldToLimit(string what, float typed, float used)
+        {
+            if (IsAdminUnlocked || typed <= used + 0.01f) return;
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.TopLeft,
+                $"{what}: радиус урезан до {used:0} м — больше игрокам нельзя");
+            Log.LogInfo($"[AstvardServerMod] {what}: radius {typed:0.#} held to the players' limit {used:0.#}.");
+        }
+
         private static void StartAreaPreview()
         {
             var player = Player.m_localPlayer;
@@ -1393,6 +1407,7 @@ namespace AstvardServerMod
 
             var area = AreaRadius();
             var scale = PaintGridScale(centre);
+            SayHeldToLimit("Площадка", ParseField(RoadAreaInput, 8f), area);
 
             RoadPath.Clear();
             RoadPath.Add(centre);
@@ -1635,9 +1650,10 @@ namespace AstvardServerMod
                 return;
             }
 
-            var radius = ParseField(RadiusInput, 8f);
+            var typed = ParseField(RadiusInput, 8f);
             var asked = ParseField(HeightInput, 0f);
-            radius = Mathf.Clamp(radius, 1f, RuleLimit("level", MaxLevelRadius));
+            var radius = Mathf.Clamp(typed, 1f, RuleLimit("level", MaxLevelRadius));
+            SayHeldToLimit("Выравнивание", typed, radius);
 
             var playerPos = player.transform.position;
 
