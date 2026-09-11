@@ -1,150 +1,140 @@
 # Развёртывание на VPS
 
-Всё здесь рассчитано на Ubuntu 24.04 (на VPS сейчас nginx/1.24.0 Ubuntu) и
-запускается под root. Скрипты идемпотентные: повторный запуск не ломает
-установленное и не перезаписывает ни `.env`, ни `server.env`.
+Всё здесь рассчитано на Ubuntu 24.04 и запускается под root. Скрипты идемпотентные:
+повторный запуск не ломает установленное и не перезаписывает ни `.env`, ни
+`server.env`.
 
-**Проверено локально, не на VPS.** `nginx -t` и поведение прокси прогнаны на том же
-nginx 1.24.0, юниты — через `systemd-analyze verify`, скрипты — через `shellcheck`.
-Самого VPS у агента нет, так что первый запуск — твой.
-
-## Сначала: ветка
-
-Код портала (вайтлист, вход через Steam, серверная админка) лежит в
-`claude/website-status-010dn6`. Скрипты по умолчанию берут `valheim-mod`, потому что
-работа в репозитории идёт там. Либо влей ветку, либо укажи её явно:
-
-```bash
-BRANCH=claude/website-status-010dn6 ./deploy/install-site.sh
-```
+**Машина общая.** На VPS живут чужие проекты: PM2-приложения `electro-modus` и
+`meliowar-space`, сайты `electro-modus` и `tgassistant` в том же nginx, n8n с traefik
+и общий Postgres `postgres-shared`. Поэтому скрипты системный Node не ставят и не
+меняют, базу кладут в общий Postgres, а конфиг nginx перед заменой сохраняют и при
+ошибке возвращают.
 
 ## Сайт
 
 ```bash
-git clone https://github.com/official-fedorenko/astvard.git /srv/astvard
-cd /srv/astvard && git checkout valheim-mod
-./deploy/install-site.sh
+git clone --branch valheim-mod https://github.com/official-fedorenko/astvard.git /srv/astvard
+cd /srv/astvard
+POSTGRES_CONTAINER=postgres-shared ./deploy/install-site.sh
 ```
 
-Скрипт: Node, пользователь `astvard`, `.env` со свежими секретами, Postgres через
-`docker compose`, схема, systemd-юнит, nginx. В конце — живой запрос к
-`/api/health`; если он не ответил, скрипт падает и печатает журнал.
+Скрипт проверяет Node (нужен 20.6+: бэкенд запускается с `--env-file`), заводит
+пользователя `astvard` и `.env` со свежими секретами, создаёт роль и базу `astvard`
+внутри `postgres-shared`, накатывает схему, ставит systemd-юнит и меняет nginx. В
+конце делает живой запрос к `/api/health`; если ответа нет, скрипт падает и печатает
+журнал.
 
-Что изменится в nginx: заглушка уступает место проксированию на `:3001`. Заодно
-уходит ловушка прежнего конфига — `try_files $uri $uri/ /index.html` отвечал на
-**каждый** `/api/...` HTML-страницей с кодом 200, то есть фронтенд получал «успех»
-с HTML вместо JSON. Проверено после правки: `/api/health` → JSON, неизвестная
-ручка → JSON 404.
+**Почему общий Postgres, а не свой.** Так решили 1 сентября: один экземпляр на машину,
+у каждого проекта своя роль и база. `postgres-shared` уже занимает `127.0.0.1:5432`, и
+свой compose-Postgres на этом порту просто не встал бы. Без `POSTGRES_CONTAINER`
+скрипт работает по-старому, через `docker-compose.yml` из репозитория, как на машине
+разработчика. Какой способ выбран, записано в `.env`, и `update-site.sh` читает его
+оттуда.
 
-Сертификат уже есть и certbot-строки сохранены дословно, обновление не ломается.
+**Что меняется в nginx.** Заглушка уступает место проксированию на `:3001`, статика
+тоже идёт через бэкенд. Прежние файлы сохраняются в `/root/nginx-astvard-backup-<время>`.
+Если новый конфиг не проходит `nginx -t`, скрипт возвращает старые файлы и nginx не
+перезагружает: сломанный конфиг на диске положил бы и чужие сайты при следующей
+перезагрузке. Сертификат уже есть, строки certbot сохранены дословно.
 
-Первый суперадмин назначается руками — зарегистрируйся на сайте, потом:
+**Первый суперадмин** назначается руками, после первого входа на сайт:
 
 ```bash
-docker compose -f /srv/astvard/docker-compose.yml exec -T postgres \
-  psql -U astvard -d astvard -c "UPDATE users SET role='superadmin' WHERE email='ТВОЙ_EMAIL';"
+docker exec postgres-shared psql -U astvard -d astvard \
+  -c "UPDATE users SET role='superadmin' WHERE nickname='НИК';"
 ```
 
-Обновление потом: `./deploy/update-site.sh` — подтянет код, накатит схему,
-перезапустит и **сам откатится** на прежний коммит, если `/api/health` не ответил.
+**Обновление:** `./deploy/update-site.sh`. Он подтягивает код, накатывает схему и
+перезапускает бэкенд. Если после этого `/api/health` не ответил, скрипт **сам
+откатывается** на прежний коммит.
 
-## Игровой сервер
+## Игровой сервер — Docker
 
 ```bash
-./deploy/install-valheim.sh
+./deploy/valheim/install.sh
 ```
 
-Ставит ванильный сервер через SteamCMD, создаёт `/srv/valheim/{server,saves,logs}`,
-кладёт юнит и открывает `2456:2458/udp`. **Сервер не запускается** — сначала мир.
+Собирает образ `astvard-valheim:local` (Ubuntu 24.04 + SteamCMD) и ставит игру через
+SteamCMD в `/srv/valheim/server`. **Сервер не запускается**: без мира игра создала
+бы новый пустой.
 
-Скрипт предупредит, если на машине меньше 3 ГБ памяти: Valheim держит мир целиком в
-памяти и на живом мире просит 2-4 ГБ только под себя, а рядом уже Postgres и Node.
+| Где | Что |
+|---|---|
+| `/srv/valheim/server` | игра, а при `BEPINEX=yes` ещё BepInEx и мод |
+| `/srv/valheim/saves` | `worlds_local/<мир>`, `permittedlist.txt`, `adminlist.txt`, `bannedlist.txt` |
+| `/srv/valheim/logs/server.log` | лог игры (`-logFile`) |
+| `/srv/valheim/server/BepInEx/LogOutput.log` | лог BepInEx и мода — это другой файл |
+| `/srv/valheim/server.env` | имя мира, имя сервера, `BEPINEX` |
 
-### Перенос карты
+Игра в образ не зашита намеренно. Обновить её — это решение, а не побочный эффект
+перезапуска: версии клиента, сервера и DLL мода должны совпадать, и перезапуск, сам
+подтянувший новую сборку, развалил бы это молча.
 
-Карта на твоей машине, у агента к ней доступа нет. Порядок важен — на каждом шаге
-теряется либо мир, либо часть игры.
-
-**1. Остановить сервер правильно.** Только Ctrl+C: тогда игра пишет мир на выходе.
-Убитый процесс теряет всё после последнего автосохранения — до 15 минут. Из корня
-репозитория:
-
-```powershell
-$server = (Get-Process valheim_server).Id
-Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"$PWD\valheim-mod\server\send_ctrl_c.ps1",'-TargetPid',$server -WindowStyle Hidden -Wait
+```bash
+cd /srv/astvard
+docker compose -f deploy/valheim/compose.yml up -d        # запуск
+docker compose -f deploy/valheim/compose.yml stop         # остановка с сохранением мира
+docker compose -f deploy/valheim/compose.yml logs -f      # вывод контейнера (игра пишет в server.log)
+./deploy/valheim/install.sh                               # обновление игры — только остановленной
 ```
 
-Дождись в логе `World save (5/5) done` и исчезновения процесса, потом добей
-оставшийся `cmd.exe`. Без этой строки в логе копировать нечего — свежих данных в
-файлах ещё нет.
+**Останавливать только `stop` (или `down`).** В compose стоит `stop_signal: SIGINT`,
+то есть тот же Ctrl+C, и игра пишет мир на выходе. `docker kill` и `docker rm -f`
+теряют всё после последнего автосохранения, до 15 минут игры. При перезагрузке VPS
+Docker, по его коду, останавливает каждый контейнер его собственным сигналом и ждёт его
+`stop_grace_period`. Живьём перезагрузкой это не проверялось: на машине чужие проекты.
 
-**2. Узнать точное имя мира.** Имя папки — это и есть личность мира:
-`SaveSystem.GetChunkedSaveName` буквально возвращает имя директории.
+Порты — `2456-2457/udp`. Сколько портов на самом деле нужно, проверено на
+Windows-сервере 1.0.12: занят 2456 (игра) и 2457 (ответы Steam на запросы). Порт
+2458, о котором пишут все инструкции и сам скрипт BepInEx, не занят вовсе. ufw на
+VPS выключен, Docker открывает опубликованные порты сам.
+
+### Перенос мира
+
+Порядок важен: на каждом шаге можно потерять либо мир, либо часть игры.
+
+**1. Остановить Windows-сервер правильно**, Ctrl+C: так игра пишет мир на выходе.
+Как именно — в корневом `CLAUDE.md`. Копировать можно только после строки
+`World save (5/5) done` в логе: до неё свежих данных в файлах ещё нет.
+
+**2. Имя мира — это имя папки**, символ в символ: `AstwardWorld`, через `w`. Ошибка на
+один символ не роняет сервер, а даёт новый пустой мир. `server.sh` поэтому
+отказывается стартовать, если папки нет или в ней нет законченного сохранения
+(`_main.N.ok`).
+
+**3. Скопировать папку целиком**, ничего внутри не переименовывать:
 
 ```powershell
-ls "C:\Games\valheim-servers\astvard\worlds_local"
-```
-
-В CLAUDE.md записано `AstwardWorld` — через `w`, не `v`. Сверь: ошибёшься на символ,
-и сервер **не упадёт**, а молча создаст новый пустой мир. Обёртка запуска это
-проверяет и отказывается стартовать, но проверить ей нужно верное имя.
-
-**3. Скопировать папку мира** целиком, файлы внутри не переименовывать:
-
-```powershell
-scp -r "C:\Games\valheim-servers\astvard\worlds_local\AstwardWorld" `
-    root@astvard.online:/srv/valheim/saves/worlds_local/
+scp -r "C:\Games\valheim-servers\astvard\worlds_local\AstwardWorld" astvard-vps:/srv/valheim/saves/worlds_local/
+ssh astvard-vps chown -R valheim:valheim /srv/valheim/saves
 ```
 
 **Кэш биомов не тащить.** `cache\<Мир>_biomedatacache.bin` привязан к имени мира, и
-чужой кэш под тем же именем будет принят как свой. На новом месте он построится
+чужой кэш под тем же именем был бы принят как свой. На новом месте он построится
 заново.
 
-**4. Права и имя:**
+**4. Списки доступа** кладутся в `/srv/valheim/saves/`. Их можно собрать на сайте
+(«Собрать permittedlist.txt» и «Собрать adminlist.txt» в админке) или взять со
+старого сервера. Пустой `permittedlist.txt` означает «пускать всех», поэтому сайт
+отказывается выгружать его без записей. Игра перечитывает списки на ходу, примерно
+раз в десять секунд.
 
-```bash
-chown -R valheim:valheim /srv/valheim/saves
-grep WORLD_NAME /srv/valheim/server.env      # должно совпасть с именем папки
-```
+**5. Запуск** — `up -d`, потом `tail -f /srv/valheim/logs/server.log`. Ждём
+`Game server connected`.
 
-**5. Списки доступа не копировать — собрать с сайта.** Этим теперь занимается
-админка: кнопки «Собрать permittedlist.txt» и «Собрать adminlist.txt». Файлы
-кладутся в `/srv/valheim/saves/`. Помни, что пустой `permittedlist.txt` означает
-«пускать всех» — сайт поэтому отказывается выгружать файл без записей.
+### Мод
 
-**6. Запуск:**
+Мод включается строкой `BEPINEX=yes` в `server.env` и перезапуском (`up -d`). Файлы
+кладутся в `/srv/valheim/server` рядом с игрой:
 
-```bash
-systemctl enable --now astvard-valheim
-tail -f /srv/valheim/logs/server.log        # ждём Game server connected
-```
+- `BepInEx/core/*` и `doorstop_libs/libdoorstop_x64.so` — из
+  `C:\Games\steamapps\common\Valheim dedicated server`. BepInExPack_Valheim кладёт
+  Linux-запускалку туда же, где Windows-версию, так что с Thunderstore ничего качать
+  не нужно.
+- `BepInEx/plugins/Jotunn.dll` и `BepInEx/plugins/AstvardServerMod.dll`.
+  **`AstvardServerMod.dll` должен совпадать байт в байт с клиентским** — сверять
+  md5, как в корневом `CLAUDE.md`. Это уже третье место, куда кладётся DLL.
 
-Остановка — только `systemctl stop astvard-valheim`: в юните стоит
-`KillSignal=SIGINT`, то есть тот же Ctrl+C, и мир пишется. Стоковый юнит послал бы
-SIGTERM и съедал бы часть игры при каждой перезагрузке машины.
-
-### Мод на Linux — не проверено
-
-`install-valheim.sh` ставит **ваниль**. Сначала стоит убедиться, что мир поднялся и
-игроки заходят, и только потом трогать мод. Что известно:
-
-- Windows-специфики в коде мода нет — проверено поиском по `valheim-mod/`.
-- Мод собран под `net472` и ссылается на BepInEx, Jötunn и `assembly_valheim`;
-  Linux-сервер Valheim — это тоже Mono, так что managed-сборка в принципе
-  загрузится.
-- BepInEx под Linux ставится иначе: не `winhttp`-doorstop, а `run_bepinex.sh` с
-  `libdoorstop`. Значит и запуск пойдёт через него, а не напрямую через бинарник —
-  обёртку придётся править.
-- Jötunn 2.29.2 официального релиза под Valheim 1.0 не имеет и уже на Windows даёт
-  `MissingFieldException` на каждом входе игрока. На Linux это лучше не станет.
-- Собирать мод надо там, где есть Valheim и BepInEx (в `.csproj` стоят `HintPath` на
-  них), то есть по-прежнему на твоей машине, а на VPS копировать готовую DLL.
-
-### Устаревший bat в репозитории
-
-`valheim-mod/server/start_astvard.bat` не соответствует тому, что описано в
-CLAUDE.md как актуальное: в нём `-world "Astvard"` и `-savedir "%~dp0saves"`, нет
-`-logFile`, и в шапке упомянут `ServerDevcommands`, который из обеих установок
-убран. Актуальный bat — на машине, в git его нет. Флаги в `start-valheim.sh`
-собраны по CLAUDE.md, а не по этому файлу; **сверь их с настоящим bat** перед
-запуском, и заодно закоммить его — иначе расхождение будет расти.
+`server.sh` запускает игру через doorstop теми же четырьмя переменными, что и
+`start_server_bepinex.sh` из пакета. Если `BEPINEX=yes`, а файлов нет, сервер не
+запускается: ванильный старт там, где ждут мод, выглядел бы как «кнопки не работают».

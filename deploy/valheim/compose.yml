@@ -1,0 +1,46 @@
+# Valheim dedicated server for astvard.online. From the checkout on the VPS:
+#
+#   docker compose -f deploy/valheim/compose.yml up -d                     # start
+#   docker compose -f deploy/valheim/compose.yml stop                      # stop, saving the world
+#   docker compose -f deploy/valheim/compose.yml run --rm valheim update   # update the game (stopped!)
+#
+# Host paths are the same inside the container, so a path in the log is a path on
+# the VPS. VALHEIM_UID/VALHEIM_GID come from .env next to this file, which
+# install.sh writes from the host's valheim user.
+name: astvard-valheim
+
+services:
+  valheim:
+    build:
+      context: .
+      args:
+        VALHEIM_UID: ${VALHEIM_UID:-1000}
+        VALHEIM_GID: ${VALHEIM_GID:-1000}
+    image: astvard-valheim:local
+    container_name: astvard-valheim
+    env_file: /srv/valheim/server.env
+
+    # THE important lines. The game writes the world only on Ctrl+C, which is SIGINT.
+    # Docker's default is SIGTERM and then SIGKILL after ten seconds, which loses
+    # everything since the last autosave — up to fifteen minutes at -saveinterval
+    # 900 — on every restart and on every reboot of the VPS.
+    stop_signal: SIGINT
+    # A clean exit took 2.6 and 4.4 s on the Windows server; two minutes is room for a
+    # much bigger world, and Docker only waits as long as it has to.
+    stop_grace_period: 2m
+    # tini as PID 1 hands that SIGINT on to its child, and server.sh ends in exec,
+    # so the child is the game itself.
+    init: true
+
+    restart: unless-stopped
+
+    # Measured on the Windows server (Get-NetUDPEndpoint, 1.0.12): 2456 is the game,
+    # 2457 answers Steam's queries. 2458, which every guide and the BepInEx script
+    # mention, is not bound at all.
+    ports:
+      - "2456-2457:2456-2457/udp"
+
+    volumes:
+      - /srv/valheim/server:/srv/valheim/server
+      - /srv/valheim/saves:/srv/valheim/saves
+      - /srv/valheim/logs:/srv/valheim/logs
