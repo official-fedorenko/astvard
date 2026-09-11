@@ -33,8 +33,23 @@ SERVER_PORT=2456
 update() {
   # 896660 is the dedicated server. 892970, the game itself, is what the server has
   # to present as SteamAppId when it runs — see start().
-  /opt/steamcmd/steamcmd.sh +force_install_dir "$SERVER_DIR" +login anonymous \
-    +app_update 896660 validate +quit
+  #
+  # SteamCMD can fail an app_update in a fresh container with "Missing
+  # configuration" (exit 8): the very first install on the VPS did, and the same
+  # command in the next container went through. So a few tries before giving up.
+  local attempt
+  for attempt in 1 2 3; do
+    if /opt/steamcmd/steamcmd.sh +force_install_dir "$SERVER_DIR" +login anonymous \
+         +app_update 896660 validate +quit; then
+      break
+    fi
+    if [ "$attempt" -eq 3 ]; then
+      echo "SteamCMD не поставил игру с трёх попыток." >&2
+      exit 1
+    fi
+    echo "SteamCMD: попытка $attempt не удалась, пробую снова" >&2
+    sleep 5
+  done
   if [ ! -x "$SERVER_DIR/valheim_server.x86_64" ]; then
     echo "valheim_server.x86_64 не появился — смотри вывод SteamCMD выше." >&2
     exit 1

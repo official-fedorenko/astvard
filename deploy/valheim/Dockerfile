@@ -8,12 +8,12 @@
 # break that with nobody watching.
 FROM ubuntu:24.04
 
-# lib32gcc-s1 (it brings libc6-i386) is for SteamCMD, a 32-bit program. libatomic1
-# is for the server itself: ldd on valheim_server.x86_64 1.0.12 finds everything else
-# in the base image.
+# lib32gcc-s1 (it brings libc6-i386) is for SteamCMD, a 32-bit program. The server
+# itself needs nothing beyond the base image: ldd on valheim_server.x86_64 1.0.12 and
+# on every library it ships in the install finds all of their dependencies.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ca-certificates curl lib32gcc-s1 libatomic1 \
+      ca-certificates curl lib32gcc-s1 \
  && rm -rf /var/lib/apt/lists/*
 
 # The files under /srv/valheim belong to the host's valheim user, and the container
