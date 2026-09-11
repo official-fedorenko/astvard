@@ -1,6 +1,6 @@
 const { readJsonBody } = require('../util/body');
 const { serializeCookie } = require('../util/cookies');
-const { hashPassword, verifyPassword, signToken, TOKEN_MAX_AGE_SECONDS } = require('../auth');
+const { hashPassword, verifyPassword, issueSession } = require('../auth');
 const { createUser, findUserByEmail, findUserById } = require('../users');
 
 const NICKNAME_RE = /^[a-zA-Zа-яА-Я0-9_ -]{2,32}$/;
@@ -9,15 +9,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
-}
-
-function setAuthCookie(res, token) {
-  const cookie = serializeCookie('token', token, {
-    maxAgeSeconds: TOKEN_MAX_AGE_SECONDS,
-    httpOnly: true,
-    secure: process.env.APP_ENV === 'production',
-  });
-  res.setHeader('Set-Cookie', cookie);
 }
 
 async function register(req, res) {
@@ -55,8 +46,7 @@ async function register(req, res) {
     throw err;
   }
 
-  const token = signToken(user);
-  setAuthCookie(res, token);
+  issueSession(res, user);
   sendJson(res, 201, { user });
 }
 
@@ -77,8 +67,7 @@ async function login(req, res) {
     return sendJson(res, 401, { error: 'Неверный email или пароль' });
   }
 
-  const token = signToken(user);
-  setAuthCookie(res, token);
+  issueSession(res, user);
   sendJson(res, 200, {
     user: { id: user.id, nickname: user.nickname, email: user.email, role: user.role, created_at: user.created_at },
   });

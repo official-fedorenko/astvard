@@ -1,3 +1,5 @@
+showSteamError('error');
+
 document.getElementById('register-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.target;

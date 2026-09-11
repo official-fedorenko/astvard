@@ -1,5 +1,6 @@
 const { readJsonBody } = require('../util/body');
-const { parseSteamId64, toPermittedListId } = require('../steamid');
+const { toPermittedListId } = require('../steamid');
+const { findUserById } = require('../users');
 const {
   requestWhitelist,
   listWhitelistRequests,
@@ -19,32 +20,23 @@ async function requestAccess(req, res) {
   if (!req.user) {
     return sendJson(res, 401, { error: 'Не авторизован' });
   }
-  let body;
-  try {
-    body = await readJsonBody(req);
-  } catch {
-    return sendJson(res, 400, { error: 'Некорректный запрос' });
-  }
 
-  const parsed = parseSteamId64(body.steam_id);
-  if (parsed.error) {
-    return sendJson(res, 400, { error: parsed.error });
-  }
-
-  let user;
-  try {
-    user = await requestWhitelist(req.user.sub, parsed.id);
-  } catch (err) {
-    // One Steam account is one seat on the server, so the column is unique. The
-    // collision is a normal thing for a player to hit — a typo in someone's id —
-    // not a server fault.
-    if (err.code === '23505') {
-      return sendJson(res, 409, { error: 'Этот Steam ID уже привязан к другому аккаунту' });
-    }
-    throw err;
-  }
-  if (!user) {
+  // Read the row rather than the token: the Steam id is what this request is
+  // about, and the token was signed before it was ever bound.
+  const actor = await findUserById(req.user.sub);
+  if (!actor) {
     return sendJson(res, 401, { error: 'Не авторизован' });
+  }
+  if (!actor.steam_id) {
+    return sendJson(res, 400, { error: 'Сначала войди через Steam — номер должен подтвердить сам Steam' });
+  }
+  if (actor.whitelist_status === 'approved') {
+    return sendJson(res, 409, { error: 'Доступ уже открыт' });
+  }
+
+  const user = await requestWhitelist(actor.id);
+  if (!user) {
+    return sendJson(res, 409, { error: 'Заявку сейчас не принять' });
   }
   sendJson(res, 200, { user });
 }

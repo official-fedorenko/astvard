@@ -28,3 +28,13 @@ async function getCurrentUser() {
     return null;
   }
 }
+
+// The Steam return lands as a browser redirect, so its failures arrive in the URL
+// rather than in a response body. Printed with textContent: the wording is ours,
+// but it has been through the address bar and anyone can retype it.
+function showSteamError(elementId) {
+  const message = new URLSearchParams(window.location.search).get('steam_error');
+  if (!message) return;
+  const el = document.getElementById(elementId);
+  if (el) el.textContent = message;
+}
