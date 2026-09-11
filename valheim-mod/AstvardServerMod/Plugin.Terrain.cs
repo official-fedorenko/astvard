@@ -1056,6 +1056,7 @@ namespace AstvardServerMod
             _areaPreviewing = false;
             _areaPinned = false;
             if (_areaPreview != null) _areaPreview.SetActive(false);
+            HideTorchMarks("area");
             UpdateRoadHint();
         }
 
@@ -1118,6 +1119,7 @@ namespace AstvardServerMod
             if (!_areaPreviewing || player == null || _roadPreviewFailed)
             {
                 if (_areaPreview != null) _areaPreview.SetActive(false);
+                HideTorchMarks("area");
                 return;
             }
 
@@ -1133,6 +1135,12 @@ namespace AstvardServerMod
             var blend = RoadSmoothingActive ? SmoothBlend(radius) : 0f;
             _areaBlendLine.enabled = blend > 0f;
             if (blend > 0f) DrawGroundRing(_areaBlendLine, centre, radius + blend);
+
+            // Round the rim, where LineWithTorches will stand them.
+            if (RoadTorchesActive)
+                ShowTorchMarks("area", Geometry.RingPosts(new Vec2(centre.x, centre.z), radius + TorchMargin, TorchSpacing()));
+            else
+                HideTorchMarks("area");
         }
 
         private static void DrawGroundRing(LineRenderer line, Vector3 centre, float radius)
@@ -1152,51 +1160,63 @@ namespace AstvardServerMod
 
         private static bool CreateAreaPreview()
         {
-            var shader = Shader.Find("Sprites/Default")
-                         ?? Shader.Find("Particles/Standard Unlit")
-                         ?? Shader.Find("Unlit/Color");
-            if (shader == null)
-            {
-                // Better a pad with no ring than one that throws every frame.
-                _roadPreviewFailed = true;
-                Log.LogWarning("[AstvardServerMod] No shader for the pad preview.");
-                return false;
-            }
+            if (PreviewMaterial() == null) return false;
 
             _areaPreview = new GameObject("AstvardAreaPreview");
-            _areaLine = MakeGroundRing(_areaPreview.transform, shader, new Color(1f, 0.8f, 0.27f, 0.7f), 0.5f);
-            _areaBlendLine = MakeGroundRing(_areaPreview.transform, shader, new Color(1f, 0.8f, 0.27f, 0.3f), 0.25f);
+            _areaLine = MakeGroundLine(_areaPreview.transform, "Ring", true);
+            _areaLine.widthMultiplier = 0.5f;
+            _areaLine.startColor = Faded(PreviewGood, 0.8f);
+            _areaLine.endColor = _areaLine.startColor;
+            _areaBlendLine = MakeGroundLine(_areaPreview.transform, "BlendRing", true);
+            _areaBlendLine.widthMultiplier = 0.25f;
+            _areaBlendLine.startColor = Faded(PreviewGood, 0.35f);
+            _areaBlendLine.endColor = _areaBlendLine.startColor;
             return true;
-        }
-
-        private static LineRenderer MakeGroundRing(Transform parent, Shader shader, Color colour, float width)
-        {
-            // One LineRenderer to an object, so each ring gets its own.
-            var go = new GameObject("Ring");
-            go.transform.SetParent(parent, false);
-            // Lying flat, as the road's band does: TransformZ faces it along the object's
-            // forward, and that points up here.
-            go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-
-            var line = go.AddComponent<LineRenderer>();
-            line.material = new Material(shader);
-            line.startColor = colour;
-            line.endColor = colour;
-            line.widthMultiplier = width;
-            line.useWorldSpace = true;
-            line.loop = true;
-            line.alignment = LineAlignment.TransformZ;
-            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            line.receiveShadows = false;
-            return line;
         }
 
         internal static void DestroyAreaPreview()
         {
             if (_areaPreview != null) Destroy(_areaPreview);
+            if (_torchMarkRoot != null) Destroy(_torchMarkRoot);
         }
 
         // ---------------- preview ----------------
+
+        // The road about to be laid, drawn on the ground: a faint band for the paint, firm
+        // lines along its edges, fainter ones for how far smoothing reaches, a post where
+        // each torch will stand - and all of it red while the road is longer than it may be.
+        private static LineRenderer _roadLeftEdge;
+
+        private static LineRenderer _roadRightEdge;
+
+        private static LineRenderer _roadLeftBlend;
+
+        private static LineRenderer _roadRightBlend;
+
+        private static string _roadPreviewKey;
+
+        private static Material _previewMaterial;
+
+        private static GameObject _torchMarkRoot;
+
+        private static readonly List<LineRenderer> TorchMarks = new List<LineRenderer>();
+
+        // Whose the torch posts are: the road's or the paving's, one at a time.
+        private static string _torchMarksFor;
+
+        private static readonly List<Vec2> PreviewFlat = new List<Vec2>();
+
+        private static readonly Color PreviewGood = new Color(1f, 0.8f, 0.27f);
+
+        private static readonly Color PreviewTooLong = new Color(1f, 0.3f, 0.25f);
+
+        private static readonly Color TorchMarkColour = new Color(1f, 0.55f, 0.15f, 0.95f);
+
+        private static Color Faded(Color colour, float alpha)
+        {
+            colour.a = alpha;
+            return colour;
+        }
 
         private static void UpdateRoadPreview()
         {
@@ -1204,6 +1224,8 @@ namespace AstvardServerMod
             if (!_roadStarted || player == null || _roadPreviewFailed)
             {
                 if (_roadPreview != null) _roadPreview.SetActive(false);
+                HideTorchMarks("road");
+                _roadPreviewKey = null;
                 return;
             }
 
@@ -1212,54 +1234,188 @@ namespace AstvardServerMod
             var to = RoadEnd(player);
             var length = new Vector3(to.x - _roadStart.x, 0f, to.z - _roadStart.z).magnitude;
             var width = RoadWidth();
+            // The paint's own half-width, as BuildRoad works it out.
+            var half = Mathf.Max(width * 0.5f, PaintGridScale(_roadStart) * 0.75f);
+            var blend = RoadSmoothingActive ? SmoothBlend(half) : 0f;
+            var torches = RoadTorchesActive;
+            var tooLong = length > RuleLimit("road", MaxRoadLength);
+            var sagitta = RoadSagitta(length);
 
-            RoadPoints(_roadStart, to, RoadSagitta(length), Mathf.Max(width * 0.5f, 1f), PreviewStamps);
+            // Drawn again only when something that shapes it has moved: every point is a look
+            // at the ground, and a road standing still needs none of them.
+            var key = $"{_roadStart}|{Mathf.Round(to.x * 10f)}|{Mathf.Round(to.z * 10f)}|{half}|{sagitta:F2}"
+                      + $"|{blend}|{torches}|{TorchSpacing()}|{tooLong}";
+            if (key == _roadPreviewKey && _roadPreview.activeSelf) return;
+            _roadPreviewKey = key;
+
+            // Half a metre apart, so the band keeps to the ground over every bump.
+            RoadPoints(_roadStart, to, sagitta, 0.5f, PreviewStamps);
             if (PreviewStamps.Count < 2)
             {
                 _roadPreview.SetActive(false);
+                HideTorchMarks("road");
                 return;
             }
 
             _roadPreview.SetActive(true);
-            _roadLine.widthMultiplier = width;
-            _roadLine.positionCount = PreviewStamps.Count;
+            var colour = tooLong ? PreviewTooLong : PreviewGood;
+            DrawAlongGround(_roadLine, PreviewStamps, 0f, half * 2f, 0.15f, Faded(colour, 0.3f));
+            DrawAlongGround(_roadLeftEdge, PreviewStamps, half, 0.25f, 0.2f, Faded(colour, 0.95f));
+            DrawAlongGround(_roadRightEdge, PreviewStamps, -half, 0.25f, 0.2f, Faded(colour, 0.95f));
 
-            var system = ZoneSystem.instance;
-            for (var i = 0; i < PreviewStamps.Count; i++)
+            _roadLeftBlend.enabled = blend > 0f;
+            _roadRightBlend.enabled = blend > 0f;
+            if (blend > 0f)
             {
-                var point = PreviewStamps[i];
-                if (system != null && system.GetGroundHeight(point, out var ground)) point.y = ground;
-                point.y += 0.15f;
-                _roadLine.SetPosition(i, point);
+                DrawAlongGround(_roadLeftBlend, PreviewStamps, half + blend, 0.15f, 0.17f, Faded(colour, 0.4f));
+                DrawAlongGround(_roadRightBlend, PreviewStamps, -(half + blend), 0.15f, 0.17f, Faded(colour, 0.4f));
+            }
+
+            if (torches && !tooLong)
+            {
+                PreviewFlat.Clear();
+                foreach (var point in PreviewStamps) PreviewFlat.Add(new Vec2(point.x, point.z));
+                ShowTorchMarks("road", Geometry.EdgePosts(PreviewFlat, TorchSpacing(), half + TorchMargin));
+            }
+            else
+            {
+                HideTorchMarks("road");
             }
         }
 
-        private static bool CreateRoadPreview()
+        /// <summary>
+        /// Lays a line on the ground along the path, shifted sideways by
+        /// <paramref name="offset"/> - to the left of the way it runs when positive.
+        /// </summary>
+        private static void DrawAlongGround(LineRenderer line, List<Vector3> path, float offset, float width,
+                                            float lift, Color colour)
         {
+            var system = ZoneSystem.instance;
+            line.widthMultiplier = width;
+            line.startColor = colour;
+            line.endColor = colour;
+            line.positionCount = path.Count;
+
+            for (var i = 0; i < path.Count; i++)
+            {
+                var point = path[i];
+                if (offset != 0f)
+                {
+                    var before = path[Mathf.Max(0, i - 1)];
+                    var after = path[Mathf.Min(path.Count - 1, i + 1)];
+                    var along = new Vector3(after.x - before.x, 0f, after.z - before.z).normalized;
+                    point += new Vector3(-along.z, 0f, along.x) * offset;
+                }
+
+                if (system != null && system.GetGroundHeight(point, out var ground)) point.y = ground;
+                point.y += lift;
+                line.SetPosition(i, point);
+            }
+        }
+
+        private static Material PreviewMaterial()
+        {
+            if (_previewMaterial != null) return _previewMaterial;
+
             var shader = Shader.Find("Sprites/Default")
                          ?? Shader.Find("Particles/Standard Unlit")
                          ?? Shader.Find("Unlit/Color");
             if (shader == null)
             {
-                // Better a road tool with no preview than one that throws every frame.
+                // Better a tool with no preview than one that throws every frame.
                 _roadPreviewFailed = true;
-                Log.LogWarning("[AstvardServerMod] No shader for the road preview.");
-                return false;
+                Log.LogWarning("[AstvardServerMod] No shader for the previews.");
+                return null;
             }
 
-            _roadPreview = new GameObject("AstvardRoadPreview");
-            _roadPreview.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            _previewMaterial = new Material(shader);
+            return _previewMaterial;
+        }
 
-            _roadLine = _roadPreview.AddComponent<LineRenderer>();
-            _roadLine.material = new Material(shader);
-            _roadLine.startColor = new Color(1f, 0.8f, 0.27f, 0.55f);
-            _roadLine.endColor = _roadLine.startColor;
-            _roadLine.useWorldSpace = true;
-            _roadLine.numCapVertices = 2;
-            _roadLine.alignment = LineAlignment.TransformZ;
-            _roadLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            _roadLine.receiveShadows = false;
+        /// <summary>
+        /// A line lying flat on the ground: TransformZ faces it along its object's forward,
+        /// which points up here. One LineRenderer to an object, so each line gets its own.
+        /// </summary>
+        private static LineRenderer MakeGroundLine(Transform parent, string name, bool loop)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+            var line = go.AddComponent<LineRenderer>();
+            line.material = PreviewMaterial();
+            line.useWorldSpace = true;
+            line.loop = loop;
+            line.numCapVertices = loop ? 0 : 2;
+            line.alignment = LineAlignment.TransformZ;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            return line;
+        }
+
+        private static bool CreateRoadPreview()
+        {
+            if (PreviewMaterial() == null) return false;
+
+            _roadPreview = new GameObject("AstvardRoadPreview");
+            _roadLine = MakeGroundLine(_roadPreview.transform, "Band", false);
+            _roadLeftBlend = MakeGroundLine(_roadPreview.transform, "LeftBlend", false);
+            _roadRightBlend = MakeGroundLine(_roadPreview.transform, "RightBlend", false);
+            _roadLeftEdge = MakeGroundLine(_roadPreview.transform, "LeftEdge", false);
+            _roadRightEdge = MakeGroundLine(_roadPreview.transform, "RightEdge", false);
             return true;
+        }
+
+        /// <summary>
+        /// A post where each torch will stand, from the same placing the torches themselves
+        /// go by. The road and the paving share the posts, one at a time.
+        /// </summary>
+        private static void ShowTorchMarks(string owner, IList<Post> posts)
+        {
+            if (PreviewMaterial() == null) return;
+            if (_torchMarkRoot == null) _torchMarkRoot = new GameObject("AstvardTorchMarks");
+
+            _torchMarksFor = owner;
+            _torchMarkRoot.SetActive(true);
+
+            var system = ZoneSystem.instance;
+            for (var i = 0; i < posts.Count; i++)
+            {
+                if (i == TorchMarks.Count) TorchMarks.Add(MakeTorchMark());
+
+                var mark = TorchMarks[i];
+                var at = new Vector3(posts[i].At.X, 0f, posts[i].At.Z);
+                if (system != null && system.GetGroundHeight(at, out var ground)) at.y = ground;
+                mark.SetPosition(0, at);
+                mark.SetPosition(1, at + Vector3.up * 1.5f);
+                mark.gameObject.SetActive(true);
+            }
+
+            for (var i = posts.Count; i < TorchMarks.Count; i++) TorchMarks[i].gameObject.SetActive(false);
+        }
+
+        private static void HideTorchMarks(string owner)
+        {
+            if (_torchMarkRoot != null && _torchMarksFor == owner) _torchMarkRoot.SetActive(false);
+        }
+
+        private static LineRenderer MakeTorchMark()
+        {
+            var go = new GameObject("TorchMark");
+            go.transform.SetParent(_torchMarkRoot.transform, false);
+
+            // Standing up, and turned to the camera from wherever it is seen, like a stake.
+            var line = go.AddComponent<LineRenderer>();
+            line.material = PreviewMaterial();
+            line.startColor = TorchMarkColour;
+            line.endColor = TorchMarkColour;
+            line.widthMultiplier = 0.15f;
+            line.positionCount = 2;
+            line.useWorldSpace = true;
+            line.alignment = LineAlignment.View;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            return line;
         }
 
         /// <summary>
