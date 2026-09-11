@@ -1,0 +1,49 @@
+[Unit]
+Description=Astvard Valheim dedicated server
+Documentation=https://github.com/official-fedorenko/astvard
+After=network-online.target
+Wants=network-online.target
+
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=valheim
+Group=valheim
+WorkingDirectory=/srv/valheim/server
+
+# The flags live in the wrapper, not here: the world name is quoted, and systemd
+# does not split or quote ${VARIABLES} the way a shell does. The wrapper ends in
+# exec, which matters more than it looks — see KillSignal below.
+ExecStart=/srv/valheim/start-valheim.sh
+
+# THE important line. The game writes the world only on Ctrl+C, which is SIGINT.
+# A SIGTERM or SIGKILL loses everything since the last autosave — up to fifteen
+# minutes at -saveinterval 900. systemd sends SIGTERM by default, so a stock unit
+# would quietly eat an evening of building every time the box reboots.
+KillSignal=SIGINT
+# Measured on the Windows box: a clean exit took 2.6s and wrote save #17. Two
+# minutes is room for a much bigger world, and systemd only waits as long as it
+# has to.
+TimeoutStopSec=120
+# The wrapper exec's into the server, so there is one process and SIGINT reaches
+# it. mixed also signals any stray child at the end, which control leaves behind.
+KillMode=mixed
+
+Restart=on-failure
+RestartSec=10s
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/valheim
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=astvard-valheim
+
+[Install]
+WantedBy=multi-user.target

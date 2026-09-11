@@ -5,7 +5,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: astvard
-      POSTGRES_PASSWORD: astvard_dev
+      # Compose reads ../.env from this directory, the same file the backend gets
+      # through --env-file, so the password is one value in one place. The default
+      # keeps a fresh checkout working without writing an .env first; production
+      # sets a real one and never has it in git.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-astvard_dev}
       POSTGRES_DB: astvard
     ports:
       - "127.0.0.1:5432:5432"

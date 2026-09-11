@@ -1,0 +1,44 @@
+[Unit]
+Description=Astvard portal backend
+Documentation=https://github.com/official-fedorenko/astvard
+After=network-online.target docker.service
+Wants=network-online.target
+
+# The backend exits on purpose when JWT_SECRET is missing. Without a limit systemd
+# would restart that forever and bury the reason in the journal.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=astvard
+Group=astvard
+WorkingDirectory=/srv/astvard/backend
+
+# --env-file rather than EnvironmentFile: this is exactly how npm start reads it
+# locally, and the parsing is then Node's in both places. systemd has its own rules
+# for quotes in an env file, and a JWT_SECRET that survives one and not the other
+# is a bad afternoon.
+ExecStart=/usr/bin/node --env-file=/srv/astvard/.env server.js
+
+Restart=on-failure
+RestartSec=5s
+
+# The site needs its own directory and the network, nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/astvard
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=astvard-backend
+
+[Install]
+WantedBy=multi-user.target
