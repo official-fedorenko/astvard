@@ -70,6 +70,7 @@ namespace AstvardServerMod
 
             BindBuildPause(Config);
             BindPlayerRules(Config);
+            BindCurrency(Config);
 
             _harmony = new Harmony("astvard.servermod");
             _harmony.PatchAll();
@@ -372,6 +373,7 @@ namespace AstvardServerMod
 
             if (_roadPreview != null) Destroy(_roadPreview);
             DestroyAreaPreview();
+            SavePurses();
             _harmony?.UnpatchSelf();
         }
     }

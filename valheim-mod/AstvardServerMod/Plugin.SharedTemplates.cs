@@ -68,6 +68,7 @@ namespace AstvardServerMod
             rpc.Register<string, string, string>(RpcTplSubmit, OnTemplateSubmit);
             RegisterBuildPauseRpcs(rpc);
             RegisterPlayerRuleRpcs(rpc);
+            RegisterCurrencyRpcs(rpc);
         }
 
         // ---------------- server side ----------------
@@ -270,6 +271,7 @@ namespace AstvardServerMod
             ReplySharedList(sender);
             ReplyBuildRules(sender);
             ReplyPlayerRules(sender);
+            ReplyCurrency(sender);
         }
 
         private static void BroadcastSharedList()

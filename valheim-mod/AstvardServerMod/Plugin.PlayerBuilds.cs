@@ -317,6 +317,7 @@ namespace AstvardServerMod
             PlayerTemplates.Clear();
             _nextPlayerBuildAt = 0f;
             _playerRulesKnown = false;
+            _myRunes = -1;
             AskSharedList();
         }
 

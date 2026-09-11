@@ -167,6 +167,9 @@ namespace AstvardServerMod
             fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
+            // First on the first page: what a player has earned, above everything to do.
+            CreateCurrencyWidget(gui);
+
             InfoButton = MakeButton(gui, "Ознакомиться", () =>
             {
                 IsInfoShown = !IsInfoShown;
@@ -1201,6 +1204,7 @@ namespace AstvardServerMod
         {
             var admin = IsAdminUnlocked;
 
+            SetActive(CurrencyText, MenuState == StateRoot && _myRunes >= 0);
             SetActive(InfoButton, MenuState == StateRoot);
             SetActive(InfoText, MenuState == StateRoot && IsInfoShown);
             SetActive(SeedCopyButton, MenuState == StateRoot && IsInfoShown);

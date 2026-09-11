@@ -437,6 +437,9 @@ namespace AstvardServerMod
 
         private void Update()
         {
+            // The server's part first: it has no panel, and everything below is a client's.
+            TickCurrency();
+            TickCurrencyLabel();
             UpdatePanelInputBlocking();
             UpdateRoadPreview();
             UpdateBridgePreview();
