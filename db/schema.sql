@@ -19,6 +19,17 @@ CREATE TABLE IF NOT EXISTS users (
   whitelist_decided_at   TIMESTAMPTZ,
   whitelist_decided_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
   whitelist_note         TEXT,
+  -- What the player wrote when asking; whitelist_note is the admin's answer back.
+  whitelist_request_note TEXT,
+  -- True only when Steam itself signed for this number. An admin typing one in by
+  -- hand leaves it false, and the difference is shown wherever the number is: a
+  -- typo in an admin's entry lands on a real stranger's account.
+  steam_id_verified      BOOLEAN NOT NULL DEFAULT false,
+  -- Admin rights inside the game, written to adminlist.txt. Nothing to do with
+  -- `role`, which is rights on this site: a site admin who never plays has no
+  -- business kicking people, and a trusted player may need to without touching
+  -- the portal.
+  server_admin           BOOLEAN NOT NULL DEFAULT false,
 
   -- Every row must keep at least one way in. Dropping NOT NULL from both columns
   -- without this would allow a row nobody — not even its owner — could log into.
@@ -51,6 +62,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_requested_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_decided_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_note TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_request_note TEXT;
+-- Default false on purpose: a row that already carries a number got it before this
+-- column existed, and claiming Steam vouched for it would be a guess.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS steam_id_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS server_admin BOOLEAN NOT NULL DEFAULT false;
 
 -- Steam accounts have neither of these; see the comment on the columns above.
 -- DROP NOT NULL on a column that is already nullable does nothing, so this is

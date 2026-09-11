@@ -21,23 +21,36 @@ function renderWhitelist(user) {
     return;
   }
 
-  lines.push(`<p>Steam ID: <code>${escapeHtml(user.steam_id)}</code> <span class="wl-verified">подтверждён Steam</span></p>`);
+  // Honest about where the number came from: an admin can type one in, and until
+  // its owner signs in through Steam nobody has proved it is theirs.
+  const mark = user.steam_id_verified
+    ? '<span class="wl-verified">подтверждён Steam</span>'
+    : '<span class="wl-unverified">вписан админом, войди через Steam чтобы подтвердить</span>';
+  lines.push(`<p>Steam ID: <code>${escapeHtml(user.steam_id)}</code> ${mark}</p>`);
 
-  if (status === 'none') {
-    lines.push('<p class="muted">Steam привязан. Осталось попросить доступ — админ увидит заявку.</p>');
-    lines.push('<button id="wl-request">Запросить доступ</button>');
+  if (user.server_admin) {
+    lines.push('<p class="wl-approved">Админка на сервере выдана</p>');
+  }
+
+  if (status === 'rejected' && user.whitelist_note) {
+    lines.push(`<p class="muted">Причина: ${escapeHtml(user.whitelist_note)}</p>`);
+  }
+  if (status === 'none' || status === 'rejected') {
+    if (status === 'none') {
+      lines.push('<p class="muted">Steam привязан. Осталось попросить доступ — админ увидит заявку.</p>');
+    }
+    lines.push(`
+      <label>Пара слов о себе — необязательно, но с ними решают быстрее
+        <textarea id="wl-note" rows="2" maxlength="500" placeholder="Кто пригласил, откуда знаешь ребят"></textarea>
+      </label>
+      <button id="wl-request">${status === 'rejected' ? 'Подать заново' : 'Запросить доступ'}</button>
+    `);
   }
   if (status === 'pending') {
     lines.push('<p class="muted">Админ ещё не решил.</p>');
   }
   if (status === 'approved') {
     lines.push('<p class="muted">Заходи на сервер — адрес в списке ниже.</p>');
-  }
-  if (status === 'rejected') {
-    if (user.whitelist_note) {
-      lines.push(`<p class="muted">Причина: ${escapeHtml(user.whitelist_note)}</p>`);
-    }
-    lines.push('<button id="wl-request">Подать заново</button>');
   }
 
   lines.push('<p class="error" id="whitelist-error"></p>');
@@ -51,7 +64,11 @@ function renderWhitelist(user) {
       const error = document.getElementById('whitelist-error');
       error.textContent = '';
       try {
-        const { user: updated } = await apiFetch('/api/whitelist/request', { method: 'POST' });
+        const noteField = document.getElementById('wl-note');
+        const { user: updated } = await apiFetch('/api/whitelist/request', {
+          method: 'POST',
+          body: JSON.stringify({ note: noteField ? noteField.value : '' }),
+        });
         renderWhitelist(updated);
       } catch (err) {
         error.textContent = err.message;

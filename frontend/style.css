@@ -88,12 +88,17 @@ input, select {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .inline-form input {
   width: auto;
   flex: 1;
   margin-top: 0;
+  /* A flex item will not shrink below its own min-content width, and an input's is
+     wide enough that three of them in a row pushed the whole page sideways on a
+     phone. The table gets its own scroll container; the page must never scroll. */
+  min-width: 0;
 }
 
 button {
@@ -209,4 +214,54 @@ pre {
   color: #4ade80;
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* The whitelist table has seven columns now and will not fit a phone. Only the
+   table scrolls; the page itself must not. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+textarea {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: #0b0b0f;
+  border: 1px solid #201f2b;
+  border-radius: 6px;
+  color: #e8e6f0;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.admin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #a8a5b8;
+  white-space: nowrap;
+}
+
+.admin-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+/* A number an admin typed in is not proof of anything yet, and the difference has
+   to be visible next to the number itself. */
+.wl-unverified {
+  color: #fbbf24;
+  font-size: 12px;
+}
+
+#adminlist-btn {
+  margin-left: 8px;
+}
+
+/* The admin page is dense tables, not prose: at the 720px reading width the
+   whitelist row loses its first columns off the left edge. */
+main.wide {
+  max-width: 1100px;
 }

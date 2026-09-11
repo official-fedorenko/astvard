@@ -2,7 +2,13 @@ const { buildAuthUrl, verifyAssertion } = require('../steam-openid');
 const { parseSteamId64 } = require('../steamid');
 const { fetchPersonaName, fallbackNickname } = require('../steam-profile');
 const { issueSession } = require('../auth');
-const { findUserById, findUserBySteamId, createSteamUser, attachSteamId } = require('../users');
+const {
+  findUserById,
+  findUserBySteamId,
+  createSteamUser,
+  attachSteamId,
+  markSteamIdVerified,
+} = require('../users');
 
 // Steam sends the player back to an absolute address, and that address is signed
 // into the response — so it has to be configured, not guessed from the Host header,
@@ -50,6 +56,12 @@ async function complete(req, res) {
 
   const actor = req.user ? await findUserById(req.user.sub) : null;
   const owner = await findUserBySteamId(steamId);
+
+  // The row may have been typed in by an admin, for an owner who had never been
+  // here. Steam has just signed for the number, so it stops being a guess.
+  if (owner && !owner.steam_id_verified) {
+    await markSteamIdVerified(owner.id);
+  }
 
   // Signed in already: this is a binding, not a login.
   if (actor) {
