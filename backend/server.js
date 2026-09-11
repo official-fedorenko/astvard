@@ -7,6 +7,7 @@ const { parseCookies } = require('./util/cookies');
 const { Router } = require('./router');
 const authHandlers = require('./handlers/auth');
 const admin = require('./handlers/admin');
+const whitelistHandlers = require('./handlers/whitelist');
 const { listServers, refreshAllServers } = require('./servers');
 
 const PORT = process.env.PORT || 3001;
@@ -85,6 +86,8 @@ router.get('/api/me', authHandlers.me);
 router.get('/api/servers', (req, res) =>
   listServers().then((servers) => sendJson(res, 200, { servers })));
 
+router.post('/api/whitelist/request', whitelistHandlers.requestAccess);
+
 const requireAdmin = admin.requireRole('admin', 'superadmin');
 router.get('/api/admin/users', requireAdmin(admin.getUsers));
 router.patch('/api/admin/users/:id/role', requireAdmin(admin.patchUserRole));
@@ -92,6 +95,13 @@ router.get('/api/admin/servers', requireAdmin(admin.getServers));
 router.post('/api/admin/servers', requireAdmin(admin.postServer));
 router.delete('/api/admin/servers/:id', requireAdmin(admin.removeServer));
 router.post('/api/admin/servers/refresh', requireAdmin(admin.refreshServers));
+
+// The permitted-list route is registered before the :id one so it cannot be read
+// as a decision on a player called "permittedlist". They differ by method today,
+// which makes that harmless — but only by accident.
+router.get('/api/admin/whitelist', requireAdmin(whitelistHandlers.getRequests));
+router.get('/api/admin/whitelist/permittedlist', requireAdmin(whitelistHandlers.getPermittedList));
+router.patch('/api/admin/whitelist/:id', requireAdmin(whitelistHandlers.decide));
 
 const server = http.createServer((req, res) => {
   // Everything here runs synchronously inside the listener, so a single throw
