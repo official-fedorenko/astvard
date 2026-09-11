@@ -82,7 +82,7 @@ namespace AstvardServerMod
 
         internal static bool PlacementHoldsInput
         {
-            get { return IsPlacing || IsFencePreviewing || Time.time < _inputHeldUntil; }
+            get { return IsPlacing || IsFencePreviewing || IsAreaPreviewing || Time.time < _inputHeldUntil; }
         }
 
         private static int _escapeUsedFrame = -1;
@@ -104,7 +104,7 @@ namespace AstvardServerMod
             get
             {
                 return RoadInProgress || BridgeInProgress || IsPlacing || IsFencePreviewing
-                       || _escapeUsedFrame == Time.frameCount;
+                       || IsAreaPreviewing || _escapeUsedFrame == Time.frameCount;
             }
         }
 
@@ -373,6 +373,7 @@ namespace AstvardServerMod
         private static void StartPlacement(string label = "постройка")
         {
             _placementLabel = label;
+            CancelAreaPreview();
             // Any placement starts as a plain one: the floor fill and a player's pick from
             // the server each turn themselves on after, and a click still waiting on the
             // server's word belongs to the placement before.
@@ -440,11 +441,13 @@ namespace AstvardServerMod
             UpdateRoadPreview();
             UpdateBridgePreview();
             UpdateFencePreview();
+            UpdateAreaPreview();
             CheckBuildAskTimeout();
             TickPlayerBuildHint();
 
             // The fence's projection answers the same two keys a blueprint's does.
             if (HandleFencePreviewInput()) return;
+            if (HandleAreaPreviewInput()) return;
 
             // Escape gets the road and the bridge out of the way too, and it has to be
             // read before the placement guard below — a marked start is not a placement.

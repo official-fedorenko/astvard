@@ -278,8 +278,9 @@ namespace AstvardServerMod
                     label.text = $"Шаг между факелами, от 4 до 50 м.{NEWLINE}Потом выбери, какие ставить.";
                     break;
                 case StateRoadArea:
-                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до {RuleLimit("area", MaxAreaRadius):0} м. Кладка и всё{NEWLINE}"
-                                 + $"остальное — как у дорожки.{notes}";
+                    label.text = $"Площадка вокруг тебя, радиус{NEWLINE}от 2 до {RuleLimit("area", MaxAreaRadius):0} м. «Поставить» покажет{NEWLINE}"
+                                 + $"её кругом: ЛКМ — сделать,{NEWLINE}Esc — отменить, P — закрепить,{NEWLINE}"
+                                 + $"стрелки — сдвиг. Кладка и всё{NEWLINE}остальное — как у дорожки.{notes}";
                     break;
                 default:
                     label.text = _roadStarted
@@ -954,6 +955,223 @@ namespace AstvardServerMod
             return _roadPaved ? Heightmap.m_paintMaskPaved : Heightmap.m_paintMaskDirt;
         }
 
+        // ---------------- the pad's projection ----------------
+
+        // The pad around the player waits as a projection, like everything else that
+        // builds: «Поставить» shows its ring, LMB lays it, Esc drops it, P pins it where
+        // it stands for the arrows to move.
+        private static bool _areaPreviewing;
+
+        private static bool _areaPinned;
+
+        private static Vector3 _areaPinnedAt;
+
+        private static GameObject _areaPreview;
+
+        private static LineRenderer _areaLine;
+
+        private static LineRenderer _areaBlendLine;
+
+        private const int AreaRingPoints = 72;
+
+        internal static bool IsAreaPreviewing
+        {
+            get { return _areaPreviewing; }
+        }
+
+        private static float AreaRadius()
+        {
+            return Mathf.Clamp(ParseField(RoadAreaInput, 8f), 2f, RuleLimit("area", MaxAreaRadius));
+        }
+
+        /// <summary>Where the pad would go: where it was pinned, or round the player - on the ground either way.</summary>
+        private static Vector3 AreaCentre(Player player)
+        {
+            if (!_areaPinned) return player.transform.position;
+
+            var centre = _areaPinnedAt;
+            var system = ZoneSystem.instance;
+            if (system != null && system.GetGroundHeight(centre, out var ground)) centre.y = ground;
+            return centre;
+        }
+
+        private static void StartAreaPreview()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null) return;
+
+            if (!RuleAllows("area"))
+            {
+                player.Message(MessageHud.MessageType.Center, "Площадки игрокам сейчас закрыты");
+                return;
+            }
+
+            // A marked road start answers the same click, so one of them has to go first.
+            if (RoadAwaitingEnd)
+            {
+                player.Message(MessageHud.MessageType.Center, "Сначала закончи или отмени дорожку");
+                return;
+            }
+
+            // One projection at a time, or one click would answer two of them.
+            if (IsPlacing) CancelPlacement();
+            if (IsFencePreviewing) CancelFencePreview();
+
+            _areaPreviewing = true;
+            _areaPinned = false;
+            NoteToolStart();
+            UpdateRoadHint();
+            InventoryGui.instance?.Hide();
+            player.Message(MessageHud.MessageType.Center, "ЛКМ — сделать площадку, Esc — отменить, P — закрепить");
+        }
+
+        internal static void CancelAreaPreview()
+        {
+            if (!_areaPreviewing) return;
+
+            _areaPreviewing = false;
+            _areaPinned = false;
+            if (_areaPreview != null) _areaPreview.SetActive(false);
+            UpdateRoadHint();
+        }
+
+        /// <summary>LMB, Esc, P and the arrows while the pad is shown. True when the key was the pad's.</summary>
+        internal static bool HandleAreaPreviewInput()
+        {
+            if (!_areaPreviewing) return false;
+
+            var player = Player.m_localPlayer;
+            if (player == null)
+            {
+                CancelAreaPreview();
+                return false;
+            }
+
+            if (InventoryGui.IsVisible() || Chat.instance?.HasFocus() == true) return false;
+
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                NoteEscapeUsed();
+                CancelAreaPreview();
+                player.Message(MessageHud.MessageType.Center, "Отменено");
+                RefreshMenu();
+                return true;
+            }
+
+            if (Input.GetKeyDown(PinKey))
+            {
+                _areaPinned = !_areaPinned;
+                if (_areaPinned) _areaPinnedAt = player.transform.position;
+                SayPinned(_areaPinned);
+                UpdateRoadHint();
+                return true;
+            }
+
+            if (_areaPinned && PinNudgeThisFrame(out var step))
+            {
+                _areaPinnedAt += step;
+                return true;
+            }
+
+            if (Input.GetMouseButtonDown(0) && Time.time - _toolMarkedAt > MarkDeafSeconds)
+            {
+                // The window every projection's click uses: this click must not also be a
+                // swing, and the game's own input can still run later in the same frame.
+                _inputHeldUntil = Time.time + 0.3f;
+
+                // Turned down - a ward, ground still loading - the ring stays up, to be moved.
+                if (BuildArea(AreaCentre(player))) CancelAreaPreview();
+                RefreshMenu();
+                return true;
+            }
+
+            return false;
+        }
+
+        internal static void UpdateAreaPreview()
+        {
+            var player = Player.m_localPlayer;
+            if (!_areaPreviewing || player == null || _roadPreviewFailed)
+            {
+                if (_areaPreview != null) _areaPreview.SetActive(false);
+                return;
+            }
+
+            if (_areaLine == null && !CreateAreaPreview()) return;
+
+            var centre = AreaCentre(player);
+            var radius = AreaRadius();
+            _areaPreview.SetActive(true);
+            DrawGroundRing(_areaLine, centre, radius);
+
+            // Smoothing reaches past the paint; the fainter ring is how far, which is also
+            // what a ward refusal is judged on.
+            var blend = RoadSmoothingActive ? SmoothBlend(radius) : 0f;
+            _areaBlendLine.enabled = blend > 0f;
+            if (blend > 0f) DrawGroundRing(_areaBlendLine, centre, radius + blend);
+        }
+
+        private static void DrawGroundRing(LineRenderer line, Vector3 centre, float radius)
+        {
+            var system = ZoneSystem.instance;
+            line.positionCount = AreaRingPoints;
+            for (var i = 0; i < AreaRingPoints; i++)
+            {
+                var angle = i * Mathf.PI * 2f / AreaRingPoints;
+                var point = new Vector3(centre.x + Mathf.Cos(angle) * radius, centre.y,
+                                        centre.z + Mathf.Sin(angle) * radius);
+                if (system != null && system.GetGroundHeight(point, out var ground)) point.y = ground;
+                point.y += 0.15f;
+                line.SetPosition(i, point);
+            }
+        }
+
+        private static bool CreateAreaPreview()
+        {
+            var shader = Shader.Find("Sprites/Default")
+                         ?? Shader.Find("Particles/Standard Unlit")
+                         ?? Shader.Find("Unlit/Color");
+            if (shader == null)
+            {
+                // Better a pad with no ring than one that throws every frame.
+                _roadPreviewFailed = true;
+                Log.LogWarning("[AstvardServerMod] No shader for the pad preview.");
+                return false;
+            }
+
+            _areaPreview = new GameObject("AstvardAreaPreview");
+            _areaLine = MakeGroundRing(_areaPreview.transform, shader, new Color(1f, 0.8f, 0.27f, 0.7f), 0.5f);
+            _areaBlendLine = MakeGroundRing(_areaPreview.transform, shader, new Color(1f, 0.8f, 0.27f, 0.3f), 0.25f);
+            return true;
+        }
+
+        private static LineRenderer MakeGroundRing(Transform parent, Shader shader, Color colour, float width)
+        {
+            // One LineRenderer to an object, so each ring gets its own.
+            var go = new GameObject("Ring");
+            go.transform.SetParent(parent, false);
+            // Lying flat, as the road's band does: TransformZ faces it along the object's
+            // forward, and that points up here.
+            go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+            var line = go.AddComponent<LineRenderer>();
+            line.material = new Material(shader);
+            line.startColor = colour;
+            line.endColor = colour;
+            line.widthMultiplier = width;
+            line.useWorldSpace = true;
+            line.loop = true;
+            line.alignment = LineAlignment.TransformZ;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            return line;
+        }
+
+        internal static void DestroyAreaPreview()
+        {
+            if (_areaPreview != null) Destroy(_areaPreview);
+        }
+
         // ---------------- preview ----------------
 
         private static void UpdateRoadPreview()
@@ -1157,23 +1375,23 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// A filled circle around the player — a square or a yard rather than a path.
-        /// It is the same painter with a one-point path, so the distance test alone
-        /// fills the disc; no ring of stamps is needed.
+        /// A filled circle — a square or a yard rather than a path — where its projection
+        /// stands. It is the same painter with a one-point path, so the distance test alone
+        /// fills the disc; no ring of stamps is needed. False when it was turned down, and
+        /// the projection stays up to be moved or given another radius.
         /// </summary>
-        private static void BuildArea()
+        private static bool BuildArea(Vector3 centre)
         {
             var player = Player.m_localPlayer;
-            if (player == null) return;
+            if (player == null) return false;
 
             if (!RuleAllows("area"))
             {
                 player.Message(MessageHud.MessageType.Center, "Площадки игрокам сейчас закрыты");
-                return;
+                return false;
             }
 
-            var area = Mathf.Clamp(ParseField(RoadAreaInput, 8f), 2f, RuleLimit("area", MaxAreaRadius));
-            var centre = player.transform.position;
+            var area = AreaRadius();
             var scale = PaintGridScale(centre);
 
             RoadPath.Clear();
@@ -1184,7 +1402,7 @@ namespace AstvardServerMod
             {
                 player.Message(MessageHud.MessageType.Center,
                     "Площадка задевает чужой оберег — уменьши радиус или отойди" + SmoothingNote(area));
-                return;
+                return false;
             }
 
             var comps = CompsForStamps(RoadPath, reach, centre.y, out var unloaded);
@@ -1193,17 +1411,18 @@ namespace AstvardServerMod
                 player.Message(MessageHud.MessageType.Center, unloaded
                     ? "Площадка выходит за прогруженную землю"
                     : "Земля вокруг ещё прогружается — подожди пару секунд и нажми снова");
-                return;
+                return false;
             }
 
             if (comps.Count == 0)
             {
                 Log.LogWarning("[AstvardServerMod] No TerrainComp for the area.");
-                return;
+                return false;
             }
 
             Instance?.StartCoroutine(LayPaint(new List<Vector3>(RoadPath), comps, area,
                 PaintColor(), area, area * 2f, scale, "area"));
+            return true;
         }
 
         /// <summary>

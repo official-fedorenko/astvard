@@ -217,6 +217,7 @@ namespace AstvardServerMod
                 return;
             }
 
+            CancelAreaPreview();
             _bridgeStart = player.transform.position;
             _bridgeStarted = true;
             _bridgePinned = false;

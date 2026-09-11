@@ -371,6 +371,7 @@ namespace AstvardServerMod
             if (_inputBlocked) GUIManager.BlockInput(false);
 
             if (_roadPreview != null) Destroy(_roadPreview);
+            DestroyAreaPreview();
             _harmony?.UnpatchSelf();
         }
     }

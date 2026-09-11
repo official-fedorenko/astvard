@@ -622,6 +622,7 @@ namespace AstvardServerMod
                     return;
                 }
 
+                CancelAreaPreview();
                 _roadStart = player.transform.position;
                 _roadStarted = true;
                 _roadPinned = false;
@@ -699,7 +700,7 @@ namespace AstvardServerMod
                 InputField.ContentType.DecimalNumber, "радиус площадки, напр. 8", 16, 160f, 32f);
             AddFixedSize(RoadAreaInput, 160f, 32f);
 
-            RoadAreaMakeButton = MakeButton(gui, "Сделать", BuildArea);
+            RoadAreaMakeButton = MakeButton(gui, "Поставить", StartAreaPreview);
 
             BridgeButton = MakeButton(gui, "Мост", () =>
             {
