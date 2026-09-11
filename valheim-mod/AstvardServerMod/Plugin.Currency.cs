@@ -8,21 +8,34 @@ namespace AstvardServerMod
     public partial class Plugin
     {
         private const string RpcCurrency = "AstvardCurrency";
+        private const string RpcRuneMinutesSet = "AstvardRuneMinutesSet";
 
-        // Server side: how long in the world one rune takes. A config entry rather than a
-        // constant, so it can be tried out in a minute and not in an hour.
+        // A day: past that a rune is not something anyone would see arrive.
+        private const int MaxMinutesPerRune = 1440;
+
+        // Server side: how long in the world one rune takes. A config entry, so a restart
+        // keeps it; an admin sets it from «Настройки», and it takes at the next count.
         private static BepInEx.Configuration.ConfigEntry<int> _minutesPerRune;
 
         internal static void BindCurrency(BepInEx.Configuration.ConfigFile config)
         {
             _minutesPerRune = config.Bind("Руны", "MinutesPerRune", 60,
-                "Сколько минут в игре даёт одну руну. Читает только сервер.");
+                "Сколько минут в игре даёт одну руну, от 1 до 1440. Читает только сервер; "
+                + "админ меняет это в игре, в «Настройках».");
+        }
+
+        private static int MinutesPerRune
+        {
+            get { return Mathf.Clamp(_minutesPerRune != null ? _minutesPerRune.Value : 60, 1, MaxMinutesPerRune); }
         }
 
         private static int SecondsPerRune
         {
-            get { return Mathf.Max(1, _minutesPerRune != null ? _minutesPerRune.Value : 60) * 60; }
+            get { return MinutesPerRune * 60; }
         }
+
+        // Client side: the rate as the server last said, for the admin's button.
+        private static int _runeMinutes = 60;
 
         // How often the server counts who is on: often enough that leaving costs at most
         // this much of the hour, rarely enough to cost nothing.
@@ -83,7 +96,8 @@ namespace AstvardServerMod
 
         internal static void RegisterCurrencyRpcs(ZRoutedRpc rpc)
         {
-            rpc.Register<int, int, bool>(RpcCurrency, OnCurrency);
+            rpc.Register<int, int, bool, int>(RpcCurrency, OnCurrency);
+            rpc.Register<int>(RpcRuneMinutesSet, OnRuneMinutesSet);
         }
 
         // ---------------- server side ----------------
@@ -156,7 +170,31 @@ namespace AstvardServerMod
         private static void SendPurse(long target, Purse purse, bool earned)
         {
             ZRoutedRpc.instance?.InvokeRoutedRPC(target, RpcCurrency, purse.Balance,
-                Mathf.CeilToInt(SecondsPerRune - purse.Seconds), earned);
+                Mathf.Max(0, Mathf.CeilToInt(SecondsPerRune - purse.Seconds)), earned, MinutesPerRune);
+        }
+
+        /// <summary>
+        /// An admin's new rate. It takes at the next count - the purses keep their seconds, so
+        /// a shorter hour pays out what is already past it - and everyone on hears their own
+        /// purse again, so the minutes they are shown to the next rune are the new ones.
+        /// </summary>
+        private static void OnRuneMinutesSet(long sender, int minutes)
+        {
+            if (!ServerAllows(sender) || _minutesPerRune == null) return;
+
+            _minutesPerRune.Value = Mathf.Clamp(minutes, 1, MaxMinutesPerRune);
+            Log.LogInfo($"[AstvardServerMod] Runes: one per {MinutesPerRune} min, set by {SenderName(sender)}.");
+
+            var net = ZNet.instance;
+            if (net == null) return;
+
+            foreach (var peer in net.GetPeers())
+            {
+                if (peer == null || !peer.IsReady() || peer.m_socket == null) continue;
+
+                var id = peer.m_socket.GetHostName();
+                if (!string.IsNullOrEmpty(id)) SendPurse(peer.m_uid, PurseFor(id, peer.m_playerName), false);
+            }
         }
 
         /// <summary>The asker's own runes; goes out with everything else a panel asks for.</summary>
@@ -233,18 +271,37 @@ namespace AstvardServerMod
 
         // ---------------- client side ----------------
 
-        private static void OnCurrency(long sender, int balance, int secondsToNext, bool earned)
+        private static void OnCurrency(long sender, int balance, int secondsToNext, bool earned, int minutesPerRune)
         {
+            _runeMinutes = Mathf.Clamp(minutesPerRune, 1, MaxMinutesPerRune);
             _myRunes = Mathf.Max(0, balance);
             _myNextRuneAt = Time.realtimeSinceStartup + Mathf.Max(0, secondsToNext);
 
             if (earned)
                 Player.m_localPlayer?.Message(MessageHud.MessageType.TopLeft,
-                    $"+1 руна за час в игре. Всего: {_myRunes}");
+                    $"+1 руна за {RuneTime(_runeMinutes)} в игре. Всего: {_myRunes}");
 
             UpdateCurrencyLabel();
             UpdateRuneHud();
             RefreshMenu();
+        }
+
+        /// <summary>The rate as the message says it: «час», «30 минут», «2 часа».</summary>
+        private static string RuneTime(int minutes)
+        {
+            if (minutes == 60) return "час";
+            if (minutes % 60 == 0) return $"{minutes / 60} ч";
+            return $"{minutes} мин";
+        }
+
+        /// <summary>The admin's «Применить»: the server keeps it and tells everyone on.</summary>
+        private static void SetRuneMinutes(int minutes)
+        {
+            minutes = Mathf.Clamp(minutes, 1, MaxMinutesPerRune);
+            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcRuneMinutesSet, minutes);
+            _runeMinutes = minutes;
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                $"Руна игроку — за {RuneTime(minutes)} в игре");
         }
 
         private static void UpdateCurrencyLabel()

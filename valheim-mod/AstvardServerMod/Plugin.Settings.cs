@@ -14,6 +14,14 @@ namespace AstvardServerMod
 
         internal static GameObject FeatureRulesButton;
 
+        internal static GameObject RuneMinutesButton;
+
+        internal static GameObject RuneMinutesHint;
+
+        internal static GameObject RuneMinutesInput;
+
+        internal static GameObject RuneMinutesApply;
+
         internal static GameObject RulesHint;
 
         internal static GameObject PlayerCooldownButton;
@@ -61,6 +69,12 @@ namespace AstvardServerMod
             TerrainRulesButton = MakeButton(gui, "Рельеф для игроков", () => OpenRulePage(StateTerrainRules));
             FeatureRulesButton = MakeButton(gui, "Функции для игроков", () => OpenRulePage(StateFeatureRules));
 
+            RuneMinutesButton = MakeButton(gui, "", () =>
+            {
+                SetFieldText(RuneMinutesInput, _runeMinutes.ToString());
+                OpenRulePage(StateRuneMinutes);
+            });
+
             RulesHint = MakeText(gui, "");
 
             PlayerCooldownButton = MakeButton(gui, "", () =>
@@ -106,6 +120,21 @@ namespace AstvardServerMod
                                           0, MaxPlayerBuildMinutes);
                 SetPlayerBuildPause(minutes);
                 MenuState = StateBuildRules;
+                RefreshMenu();
+            });
+
+            RuneMinutesHint = MakeText(gui, "Сколько минут в игре даёт\nигроку одну руну, от 1 до 1440.\nМеняется сразу, без перезапуска:\nнабранное к руне время\nне пропадает.");
+
+            RuneMinutesInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                InputField.ContentType.IntegerNumber, "минуты, напр. 60", 16, 160f, 32f);
+            AddFixedSize(RuneMinutesInput, 160f, 32f);
+
+            RuneMinutesApply = MakeButton(gui, "Применить", () =>
+            {
+                SetRuneMinutes(Mathf.RoundToInt(ParseField(RuneMinutesInput, _runeMinutes)));
+                MenuState = StateSettings;
                 RefreshMenu();
             });
 
@@ -186,6 +215,7 @@ namespace AstvardServerMod
                 ? $"Пауза построек: {_playerBuildMinutes} мин"
                 : "Пауза построек: нет");
             SetLabel(AllowedListButton, $"Шаблоны игрокам: {PlayerTemplates.Count}");
+            SetLabel(RuneMinutesButton, $"Руна за {RuneTime(_runeMinutes)}");
 
             for (var i = 0; i < PlayerRules.Length; i++)
                 SetLabel(PlayerRuleButtons[i], RuleLabel(PlayerRules[i]));
@@ -245,6 +275,12 @@ namespace AstvardServerMod
             SetActive(BuildRulesButton, settings);
             SetActive(TerrainRulesButton, settings);
             SetActive(FeatureRulesButton, settings);
+            SetActive(RuneMinutesButton, settings);
+
+            var runes = admin && MenuState == StateRuneMinutes;
+            SetActive(RuneMinutesHint, runes);
+            SetActive(RuneMinutesInput, runes);
+            SetActive(RuneMinutesApply, runes);
 
             var group = MenuState == StateTerrainRules ? RuleGroup.Terrain
                 : MenuState == StateBuildRules ? RuleGroup.Build
