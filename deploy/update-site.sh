@@ -1,5 +1,10 @@
 #!/bin/bash
-# Portal update on the VPS: pull the code, apply the schema, restart. Run as root.
+# Portal update on the VPS: pull the code, reinstall dependencies, restart.
+# Run as root.
+#
+# The schema is not applied here any more: the panel migrates its own SQLite
+# database at startup, and the database lives outside the checkout ($DB_PATH in
+# .env), where `git reset --hard` below cannot reach it.
 set -euo pipefail
 
 BRANCH=${BRANCH:-valheim-mod}
@@ -10,34 +15,13 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "Нужен root." >&2
   exit 1
 fi
-
-# Credentials live in the same .env the backend reads — there is no second list of
-# values to drift.
 if [ ! -f "$DIR/.env" ]; then
   echo "Нет $DIR/.env — сначала install-site.sh." >&2
   exit 1
 fi
-set -a
-# shellcheck disable=SC1091  # created by install-site.sh, never in the repository
-. "$DIR/.env"
-set +a
-# shellcheck source=deploy/db.sh
-. "$DIR/deploy/db.sh"
-
-# The schema has to be applied: new code may rely on columns the database does not
-# have yet. So the way to apply it is worked out BEFORE anything changes — otherwise
-# a failure leaves new files, the service on old code and a database without columns.
-SCHEMA_VIA=$(db_mode)
-if [ -z "$SCHEMA_VIA" ]; then
-  echo "Нечем накатить схему: ни контейнера ${POSTGRES_CONTAINER:-postgres из compose}, ни psql." >&2
-  echo "Ничего не менял. Подними базу и запусти снова." >&2
-  exit 1
-fi
-echo "== Схему накатываю через: $SCHEMA_VIA"
 
 echo "== Код"
-# git refuses to work in a directory owned by someone else ("dubious ownership"):
-# the checkout belongs to $SITE_USER while this runs as root.
+# git refuses to work in a directory owned by someone else ("dubious ownership").
 git config --global --add safe.directory "$DIR"
 git -C "$DIR" fetch origin "$BRANCH"
 BEFORE=$(git -C "$DIR" rev-parse HEAD)
@@ -48,21 +32,21 @@ echo "   ${BEFORE:0:7} → ${AFTER:0:7}"
 chown -R "$SITE_USER:$SITE_USER" "$DIR"
 
 echo "== Зависимости"
-if ! sudo -u "$SITE_USER" npm ci --omit=dev --prefix "$DIR/backend" 2>/dev/null; then
-  sudo -u "$SITE_USER" npm install --omit=dev --prefix "$DIR/backend"
-fi
+sudo -u "$SITE_USER" npm ci --omit=dev --prefix "$DIR" 2>&1 | tail -2
 
-# The schema is idempotent and meant to be applied over a live database — see CLAUDE.md.
-echo "== Схема"
-db_apply_schema
-echo "   накатана"
+# The unit changes rarely, but when it does an update that ignored it would leave
+# the service running yesterday's command line.
+if ! cmp -s "$DIR/deploy/systemd/astvard-backend.service" /etc/systemd/system/astvard-backend.service; then
+  echo "== Юнит systemd изменился — оставляю прежний"
+  echo "   ExecStart и пути правит install-site.sh; запусти его, если дело в них"
+fi
 
 echo "== Перезапуск"
 systemctl restart astvard-backend
-sleep 3
+sleep 4
 
-# A live request rather than "the process exists": the backend starts happily
-# against a dead database and answers 500 on /api/health.
+# A live request rather than "the process exists": the panel starts happily with a
+# database it cannot write and would answer 500 on /api/health.
 echo "== Проверка"
 if curl -fsS --max-time 5 http://127.0.0.1:3001/api/health; then
   echo
@@ -71,7 +55,8 @@ else
   echo "   /api/health не ответил, откатываю на ${BEFORE:0:7}"
   git -C "$DIR" reset --hard "$BEFORE"
   chown -R "$SITE_USER:$SITE_USER" "$DIR"
+  sudo -u "$SITE_USER" npm ci --omit=dev --prefix "$DIR" >/dev/null 2>&1 || true
   systemctl restart astvard-backend
-  journalctl -u astvard-backend -n 20 --no-pager
+  journalctl -u astvard-backend -n 30 --no-pager
   exit 1
 fi

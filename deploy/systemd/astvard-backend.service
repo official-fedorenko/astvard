@@ -1,10 +1,10 @@
 [Unit]
-Description=Astvard portal backend
+Description=Astvard portal
 Documentation=https://github.com/official-fedorenko/astvard
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
 
-# The backend exits on purpose when JWT_SECRET is missing. Without a limit systemd
+# The panel exits on purpose on a broken configuration. Without a limit systemd
 # would restart that forever and bury the reason in the journal.
 StartLimitIntervalSec=60
 StartLimitBurst=5
@@ -13,23 +13,26 @@ StartLimitBurst=5
 Type=simple
 User=astvard
 Group=astvard
-WorkingDirectory=/srv/astvard/backend
+WorkingDirectory=/srv/astvard
 
-# --env-file rather than EnvironmentFile: this is exactly how npm start reads it
-# locally, and the parsing is then Node's in both places. systemd has its own rules
-# for quotes in an env file, and a JWT_SECRET that survives one and not the other
-# is a bad afternoon.
-ExecStart=/usr/bin/node --env-file=/srv/astvard/.env server.js
+# The panel loads .env itself, with dotenv, from its working directory — hence no
+# --env-file and no EnvironmentFile: one reader, Node's, in every environment.
+ExecStart=/usr/bin/node /srv/astvard/server.js
 
 Restart=on-failure
 RestartSec=5s
 
-# The site needs its own directory and the network, nothing else.
+# The site needs its own directory, its data directory and the network.
+# /srv/astvard-data holds db.sqlite: outside the checkout, where `git reset --hard`
+# and a stray `git clean` cannot reach it.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/astvard
+ReadWritePaths=/srv/astvard /srv/astvard-data
+# Reading the Valheim server's log is how a -public 0 server's status is known;
+# it is somebody else's directory, so read-only and nothing more.
+ReadOnlyPaths=/srv/valheim/logs
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

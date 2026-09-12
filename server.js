@@ -192,6 +192,18 @@ const server = http.createServer(async (req, res) => {
     return handlePublic(req, res, parsedUrl, method);
   }
 
+  // Health: the deploy script rolls back when this stops answering, so it asks the
+  // database rather than reporting that the process exists.
+  if (pathname === '/api/health' && method === 'GET') {
+    return db.get('SELECT 1 AS ok', [], (err) => {
+      const body = err
+        ? { status: 'ok', db: 'error', error: err.message }
+        : { status: 'ok', db: 'ok' };
+      res.writeHead(err ? 500 : 200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(body));
+    });
+  }
+
   // Steam sign-in stands before the auth block on purpose: everything under
   // /api/auth/ otherwise ends in handleAuth, which answers 404 to what it does not
   // know. Both of its paths are browser redirects, not JSON calls.
