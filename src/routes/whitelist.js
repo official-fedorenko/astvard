@@ -230,14 +230,21 @@ async function setServerAdmin(req, res, actor, id) {
   if (typeof body.server_admin !== 'boolean') {
     return sendJson(res, 400, { success: false, message: 'server_admin: true или false' });
   }
-  const result = await run(
-    'UPDATE users SET server_admin = ? WHERE id = ? AND steam_id IS NOT NULL',
-    [body.server_admin ? 1 : 0, id]
-  );
-  if (!result.changes) {
+  const target = await get('SELECT id, username, steam_id, whitelist_status FROM users WHERE id = ?', [id]);
+  if (!target || !target.steam_id) {
     return sendJson(res, 404, { success: false, message: 'Игрок не найден или у него не привязан Steam' });
   }
-  logAction(actor.username, `Админка в игре ${body.server_admin ? 'выдана' : 'снята'}: id ${id}`);
+  // Админка тому, кого сервер не пускает, — это право, о котором забудут, и оно
+  // сработает в тот день, когда список доступа опустеет и сервер откроется всем.
+  // Поэтому забрать можно у кого угодно, а дать — только тому, у кого есть доступ.
+  if (body.server_admin && target.whitelist_status !== 'approved') {
+    return sendJson(res, 409, {
+      success: false,
+      message: `У ${target.username} нет доступа на сервер — сначала дай доступ, потом админку`
+    });
+  }
+  await run('UPDATE users SET server_admin = ? WHERE id = ?', [body.server_admin ? 1 : 0, id]);
+  logAction(actor.username, `Админка в игре ${body.server_admin ? 'выдана' : 'снята'}: ${target.username}`);
   // Ради этого всё и делалось: галка в панели сама доезжает до adminlist.txt, и
   // сервер перечитывает его секунд за десять.
   const applied = await applyGameListsQuietly('админка в игре');

@@ -498,3 +498,56 @@ test('автоприём заявки выдаёт доступ сразу и о
       (err) => (err ? reject(err) : resolve()));
   });
 });
+
+// === Админка в игре: явная выдача и снятие ===
+test('админку в игре даёт только суперадмин и только тому, у кого есть доступ', async () => {
+  const path = require('node:path');
+  const insert = (username, steamId, status) => new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO users (username, role, steam_id, steam_id_verified, whitelist_status, whitelist_decided_at)
+       VALUES (?, 'User', ?, 1, ?, now()) RETURNING id`,
+      [username, steamId, status],
+      function (err) { return err ? reject(err) : resolve(this.lastID); }
+    );
+  });
+  const withAccess = await insert('Хельга', '76561198000000910', 'approved');
+  const withoutAccess = await insert('Торстейн', '76561198000000911', 'none');
+
+  const superadmin = await api('/api/auth/login', {
+    method: 'POST', ip: '10.40.1.1', body: { username: 'superadmin', password: '1234qwer' }
+  });
+  assert.strictEqual(superadmin.status, 200);
+
+  // Без доступа на сервер админка не выдаётся: это право, которое сработает в день,
+  // когда список опустеет и сервер откроется всем.
+  const refused = await api(`/api/admin/whitelist/${withoutAccess}/server-admin`, {
+    method: 'PATCH', cookie: superadmin.cookie, body: { server_admin: true }
+  });
+  assert.strictEqual(refused.status, 409);
+
+  const granted = await api(`/api/admin/whitelist/${withAccess}/server-admin`, {
+    method: 'PATCH', cookie: superadmin.cookie, body: { server_admin: true }
+  });
+  assert.strictEqual(granted.status, 200);
+  assert.strictEqual(granted.json.applied, true, 'список на сервер записан сразу');
+  const admins = fsSync.readFileSync(path.join(SAVES_DIR, 'adminlist.txt'), 'utf8');
+  assert.match(admins, /^V_76561198000000910$/m);
+  assert.match(admins, /^Steam_76561198000000910$/m);
+
+  // Обычный админ сайта отвечает на заявки, но админку в игре не выдаёт.
+  const admin = await api('/api/auth/login', {
+    method: 'POST', ip: '10.40.1.2', body: { username: 'admin', password: '1234qwer' }
+  });
+  assert.strictEqual(admin.status, 200);
+  const forbidden = await api(`/api/admin/whitelist/${withAccess}/server-admin`, {
+    method: 'PATCH', cookie: admin.cookie, body: { server_admin: false }
+  });
+  assert.strictEqual(forbidden.status, 403);
+
+  // Забрать можно, и файл это видит.
+  const revoked = await api(`/api/admin/whitelist/${withAccess}/server-admin`, {
+    method: 'PATCH', cookie: superadmin.cookie, body: { server_admin: false }
+  });
+  assert.strictEqual(revoked.status, 200);
+  assert.doesNotMatch(fsSync.readFileSync(path.join(SAVES_DIR, 'adminlist.txt'), 'utf8'), /76561198000000910/);
+});

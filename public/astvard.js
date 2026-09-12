@@ -88,22 +88,32 @@ function whitelistStatusBadge(status) {
     : `<span class="muted">${escapeHtml(label)}</span>`;
 }
 
-// Галочка «админка в игре» — только суперадмину: выдать её значит выдать спавн,
-// бан и кик. Остальные видят, есть она или нет.
+// Колонка «В игре» показывает только состояние. Выдают и забирают админку явные
+// кнопки в строке: галочку в таблице легко не заметить и легко задеть.
 function whitelistAdminCell(p) {
-  return currentUser && currentUser.role === 'Superadmin'
-    ? `<label class="check-chip"><input type="checkbox" class="wl-server-admin" data-id="${p.id}" ${p.server_admin ? 'checked' : ''}><span>в игре</span></label>`
-    : (p.server_admin ? 'да' : '—');
+  return p.server_admin ? '<span class="badge badge-success">админ</span>' : '—';
 }
 
+const isSuperadmin = () => currentUser && currentUser.role === 'Superadmin';
+
 function whitelistButtons(p) {
+  // Админку в игре выдаёт только суперадмин — это спавн, бан и кик, — и только тому,
+  // у кого есть доступ: админ, которого сервер не пускает, это забытое право.
+  // Забрать — у любого, у кого она есть: админ без доступа как раз и есть забытое
+  // право, которое надо уметь снять. Дать — только тому, у кого доступ есть.
+  let adminButton = '';
+  if (isSuperadmin() && p.server_admin) {
+    adminButton = `<button class="btn btn-sm btn-secondary wl-admin-revoke" data-id="${p.id}">Забрать админку</button>`;
+  } else if (isSuperadmin() && p.whitelist_status === 'approved') {
+    adminButton = `<button class="btn btn-sm wl-admin-grant" data-id="${p.id}">Дать админку</button>`;
+  }
   if (p.whitelist_status === 'pending') {
     return `<button class="btn btn-sm wl-approve" data-id="${p.id}">Одобрить</button>
             <button class="btn btn-sm btn-secondary wl-reject" data-id="${p.id}">Отклонить</button>`;
   }
   return p.whitelist_status === 'approved'
-    ? `<button class="btn btn-sm btn-danger wl-revoke" data-id="${p.id}">Забрать доступ</button>`
-    : `<button class="btn btn-sm wl-approve" data-id="${p.id}">Дать доступ</button>`;
+    ? `${adminButton}<button class="btn btn-sm btn-danger wl-revoke" data-id="${p.id}">Забрать доступ</button>`
+    : `${adminButton}<button class="btn btn-sm wl-approve" data-id="${p.id}">Дать доступ</button>`;
 }
 
 function whitelistRow(p, middleCell) {
@@ -178,10 +188,7 @@ function showWhitelistDetail(p) {
   if (p.whitelist_request_note) rows.push(['Сообщение игрока', p.whitelist_request_note, 'block']);
   if (p.whitelist_note) rows.push(['Ответ админа', p.whitelist_note, 'block']);
 
-  const adminToggle = currentUser && currentUser.role === 'Superadmin'
-    ? `<label class="check-chip"><input type="checkbox" class="wl-server-admin" data-id="${p.id}" ${p.server_admin ? 'checked' : ''}><span>админка в игре</span></label>`
-    : '';
-  showRowDetail(p.username, rows, `${adminToggle}${whitelistButtons(p)}`);
+  showRowDetail(p.username, rows, whitelistButtons(p));
 }
 
 async function whitelistDecide(id, status, note) {
@@ -306,6 +313,37 @@ function bindAstvardHandlers() {
       return whitelistDecide(reject.dataset.id, 'rejected', note);
     }
 
+    const adminGrant = e.target.closest('.wl-admin-grant');
+    const adminRevoke = e.target.closest('.wl-admin-revoke');
+    if (adminGrant || adminRevoke) {
+      closeRowDetail();
+      const button = adminGrant || adminRevoke;
+      const giving = !!adminGrant;
+      const person = whitelistPeople.find(p => String(p.id) === String(button.dataset.id));
+      const who = person ? person.username : 'игрока';
+      const yes = await confirmDialog(
+        giving
+          ? `${who} получит в игре админку: спавн, бан и кик. Сервер перечитает список секунд за десять.`
+          : `${who} потеряет админку в игре. Доступ на сервер у него останется.`,
+        { title: giving ? 'Дать админку?' : 'Забрать админку?', okText: giving ? 'Дать' : 'Забрать', danger: !giving }
+      );
+      if (!yes) return;
+      const res = await fetch(`/api/admin/whitelist/${button.dataset.id}/server-admin`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server_admin: giving })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return showToast(data.message || 'Не получилось', 'error');
+      // Файл на сервер пишется сразу после решения; если не записался — решение в
+      // базе всё равно принято, и об этом надо сказать, а не промолчать.
+      showToast(data.applied
+        ? `${who}: админка ${giving ? 'выдана' : 'снята'}, список на сервере обновлён`
+        : `${who}: админка ${giving ? 'выдана' : 'снята'}, но список на сервер не записался — нажми «Применить на сервере»`,
+        data.applied ? 'success' : 'error');
+      return loadWhitelist();
+    }
+
     const revoke = e.target.closest('.wl-revoke');
     if (revoke) {
       closeRowDetail();
@@ -409,26 +447,6 @@ function bindAstvardHandlers() {
       const server = astvardServers.find(s => String(s.id) === row.dataset.id);
       if (server) showServerDetail(server);
     }
-  });
-
-  // Права в игре — отдельным слушателем: это не кнопка, а переключатель, и при
-  // отказе сервера он должен вернуться назад, а не показывать выданное право.
-  document.addEventListener('change', async (e) => {
-    const box = e.target.closest('.wl-server-admin');
-    if (!box) return;
-    const res = await fetch(`/api/admin/whitelist/${box.dataset.id}/server-admin`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ server_admin: box.checked })
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      box.checked = !box.checked;
-      showToast(data.message || 'Не получилось', 'error');
-      return;
-    }
-    // Список перечитывается, чтобы галочка в таблице и в модалке не разошлись.
-    loadWhitelist();
   });
 }
 
