@@ -5,4 +5,4 @@
 #author Skald-Testovyi
 wood_wall;0.0;0.0;0.0;0.0;0.0;0.0;1.0
 wood_floor;1.0;0.0;0.0;0.0;0.0;0.0;1.0
-wood_roof;2.0;1.0;0.0;0.0;0.0;0.0;1.0
+piece_chest_wood;2.0;0.0;1.0;0.0;0.0;0.0;1.0;AQIDBAUGBwgJ

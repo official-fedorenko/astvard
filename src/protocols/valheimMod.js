@@ -190,9 +190,10 @@ async function readSharedTemplates(dirPath) {
           if (header && value) template[header[0]] = trimTo(value, header[1]);
           continue;
         }
-        // Строка детали: имя префаба и семь чисел через «;». Считаем только их,
-        // чтобы случайная строка в файле не выдавалась за деталь.
-        if (line.split(';').length === 8) template.pieces += 1;
+        // Строка детали: имя префаба и семь чисел через «;», а у сундука следом
+        // девятым полем его содержимое. Считаем и то и другое, но только их: случайная
+        // строка в файле деталью быть не должна.
+        if (line.split(';').length >= 8) template.pieces += 1;
       }
 
       if (submitted || !template.name || template.pieces === 0) continue;

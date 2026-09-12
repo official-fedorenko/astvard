@@ -36,6 +36,69 @@ namespace AstvardServerMod
             public string Prefab;
             public Vector3 LocalPos;
             public Quaternion LocalRot;
+
+            /// <summary>
+            /// What was inside, for a chest: the game's own item package, base64 so it
+            /// survives a line in a text file. Empty for everything else.
+            /// </summary>
+            public string Items;
+        }
+
+        // Chests keep their contents in their own ZDO, as the bytes the game itself
+        // writes there (Container.Save -> ZDOVars.s_items). Copying that byte-for-byte
+        // is both exact — stacks, quality, durability, who crafted it — and cheap: no
+        // item-by-item format of ours to keep in step with the game's.
+        //
+        // The ceiling is there because a template is a text file that gets sent over the
+        // wire: a chest of stacks is a few hundred bytes, and anything far past that is
+        // not a chest we should be carrying around.
+        private const int MaxItemsBase64 = 8 * 1024;
+
+        /// <summary>Reads a chest's contents as the game stored them, or null.</summary>
+        private static string ReadContainerItems(Piece piece)
+        {
+            if (piece == null || piece.GetComponent<Container>() == null) return null;
+
+            var view = piece.GetComponent<ZNetView>();
+            if (view == null || !view.IsValid()) return null;
+
+            var bytes = view.GetZDO().GetByteArray(ZDOVars.s_items);
+            if (bytes == null || bytes.Length == 0) return null;
+
+            var packed = System.Convert.ToBase64String(bytes);
+            if (packed.Length > MaxItemsBase64)
+            {
+                Log.LogWarning($"[AstvardServerMod] Chest contents too large ({packed.Length} chars), copied empty.");
+                return null;
+            }
+            return packed;
+        }
+
+        /// <summary>Puts copied contents into a chest that has just been placed.</summary>
+        private static void RestoreContainerItems(GameObject go, string packed)
+        {
+            if (string.IsNullOrEmpty(packed) || go == null) return;
+
+            try
+            {
+                var view = go.GetComponent<ZNetView>();
+                if (view == null || !view.IsValid()) return;
+
+                var bytes = System.Convert.FromBase64String(packed);
+                // Into the ZDO first: that is where the chest reads from, and what the
+                // server and every other client will see.
+                view.GetZDO().Set(ZDOVars.s_items, bytes);
+
+                // And into the component, so the chest is full the moment it appears
+                // rather than at its next revision check.
+                var container = go.GetComponent<Container>();
+                container?.GetInventory()?.Load(new ZPackage(bytes));
+            }
+            catch (System.Exception ex)
+            {
+                // A broken line is worth a warning and an empty chest, not a dead build.
+                Log.LogWarning($"[AstvardServerMod] Could not restore chest contents: {ex.Message}");
+            }
         }
 
         private static readonly List<CopiedPiece> Clipboard = new List<CopiedPiece>();
@@ -195,7 +258,9 @@ namespace AstvardServerMod
             foreach (var line in lines)
             {
                 var parts = line.Split(';');
-                if (parts.Length != 8) continue;
+                // Eight fields is a piece; a ninth is a chest's contents. Templates
+                // written before chests were copied have eight, and go on working.
+                if (parts.Length != 8 && parts.Length != 9) continue;
 
                 if (!float.TryParse(parts[1], System.Globalization.NumberStyles.Float, culture, out var px) ||
                     !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, culture, out var py) ||
@@ -211,6 +276,7 @@ namespace AstvardServerMod
                     Prefab = parts[0],
                     LocalPos = new Vector3(px, py, pz),
                     LocalRot = new Quaternion(rx, ry, rz, rw),
+                    Items = parts.Length == 9 ? parts[8] : null,
                 });
             }
 
@@ -261,6 +327,10 @@ namespace AstvardServerMod
                     Prefab = prefabName,
                     LocalPos = inverse * (piece.transform.position - origin),
                     LocalRot = inverse * piece.transform.rotation,
+                    // Содержимое сундуков переносит только админ: у игрока копия с
+                    // добром внутри — это печать ресурсов, а всё остальное в его
+                    // копировании платное как раз поэтому.
+                    Items = ownOnly ? null : ReadContainerItems(piece),
                 });
             }
 
@@ -950,6 +1020,7 @@ namespace AstvardServerMod
 
                         var view = go.GetComponent<ZNetView>();
                         if (view != null && view.IsValid()) record.Pieces.Add(view.GetZDO().m_uid);
+                        RestoreContainerItems(go, entry.Items);
                         owed?.Add(entry.Prefab, -1);
                     }
                     else

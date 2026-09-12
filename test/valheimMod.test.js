@@ -86,7 +86,8 @@ test('постройки: наружу идёт только то, что адм
 
   write(shared, 'Дом.txt',
     '# astvard shared template\n#name Дом на холме\n#category Дома\n#author Skald\n#players yes\n'
-    + 'wood_wall;0;0;0;0;0;0;1\nwood_floor;1;0;0;0;0;0;1\n');
+    // Вторая деталь — сундук: у него девятым полем едет то, что внутри.
+    + 'wood_wall;0;0;0;0;0;0;1\npiece_chest_wood;1;0;0;0;0;0;1;AQIDBAU=\n');
   // Прислано игроком: мод помечает «#from» и держит закрытым до решения админа.
   write(shared, 'Прислано.txt',
     '# astvard shared template\n#name Реклама\n#category Дома\n#author Bjorn\n#from 76561198000000102\n'

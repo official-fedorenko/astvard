@@ -419,6 +419,9 @@ namespace AstvardServerMod
             var worst = Geometry.WorstYawError(yaws, baseYaw, yawGrid);
 
             var placed = new List<KeyValuePair<string, Vector4>>();
+            // Содержимое сундуков едет рядом, тем же порядком: выравнивание двигает и
+            // поворачивает детали, но не меняет их число и очерёдность.
+            var items = new List<string>();
             var xs = new List<float>();
             var ys = new List<float>();
             var zs = new List<float>();
@@ -431,6 +434,7 @@ namespace AstvardServerMod
 
                 placed.Add(new KeyValuePair<string, Vector4>(piece.Prefab,
                     new Vector4(flat.X, piece.LocalPos.y, flat.Z, yaw)));
+                items.Add(piece.Items);
 
                 xs.Add(flat.X);
                 ys.Add(piece.LocalPos.y);
@@ -471,10 +475,15 @@ namespace AstvardServerMod
                 var v = shifted[i];
                 var half = v.w * Mathf.Deg2Rad * 0.5f;
 
-                lines.Add(string.Format(culture, "{0};{1};{2};{3};{4};{5};{6};{7}",
+                var line = string.Format(culture, "{0};{1};{2};{3};{4};{5};{6};{7}",
                     placed[i].Key,
                     v.x - cx, v.y, v.z - cz,
-                    0f, Mathf.Sin(half), 0f, Mathf.Cos(half)));
+                    0f, Mathf.Sin(half), 0f, Mathf.Cos(half));
+
+                // Девятым полем — то, что лежало в сундуке. Его нет у всего остального,
+                // и старые шаблоны без него читаются как читались.
+                if (!string.IsNullOrEmpty(items[i])) line = line + ";" + items[i];
+                lines.Add(line);
             }
 
             Log.LogInfo($"[AstvardServerMod] Aligned: base {baseYaw:F3} deg, worst piece "

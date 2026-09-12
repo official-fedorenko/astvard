@@ -147,7 +147,29 @@ namespace AstvardServerMod
 
             ZRoutedRpc.instance?.InvokeRoutedRPC(sender, RpcTplBody,
                 template.Name, template.Category, template.Author,
-                string.Join("\n", template.Lines));
+                string.Join("\n", WithoutChestContents(template.Lines)));
+        }
+
+        /// <summary>
+        /// The same template without what was in its chests.
+        ///
+        /// An admin's copy carries the contents of every chest in it, and that is the
+        /// point of it. Handed to a player it would be something else: free items, as
+        /// many as the template has chests, as often as the template may be built. What
+        /// players may build for nothing is counted piece by piece elsewhere; nothing
+        /// counts what is inside them.
+        /// </summary>
+        private static string[] WithoutChestContents(string[] lines)
+        {
+            if (lines == null) return new string[0];
+
+            var clean = new string[lines.Length];
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var parts = lines[i].Split(';');
+                clean[i] = parts.Length > 8 ? string.Join(";", parts, 0, 8) : lines[i];
+            }
+            return clean;
         }
 
         /// <summary>
