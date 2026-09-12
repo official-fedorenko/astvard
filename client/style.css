@@ -794,3 +794,99 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
    пробелу: точки в имени хоста местом переноса не считаются, и длинный адрес
    уезжал за край экрана телефона. */
 .wrap-any { word-break: break-all; }
+
+/* ==== «Наш сервер»: руны и общие постройки ==== */
+/* Два блока в одном разделе: между ними воздух, перед первым его даёт подзаголовок
+   раздела. Отступ классом, а не инлайном, — иначе второй такой раздел придётся
+   верстать заново. */
+.section__block + .section__block { margin-top: 40px; }
+
+.block__title {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.block__hint {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.55;
+    margin-bottom: 18px;
+}
+
+/* Доска рун — список, а не таблица: на телефоне таблица из четырёх колонок
+   всё равно разложилась бы в строки, только сложнее. Здесь то же самое делает
+   flex-wrap: место, имя и счёт в строке, часы переносятся под них. */
+.rune-board {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rune-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 14px 18px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.rune-place {
+    flex: 0 0 auto;
+    min-width: 24px;
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.rune-name {
+    flex: 1 1 140px;
+    min-width: 0;
+    font-weight: 700;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.rune-guest {
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.rune-count {
+    flex: 0 0 auto;
+    color: var(--accent-cyan);
+    font-weight: 700;
+    font-size: 14px;
+}
+
+/* Часы — уточнение к рунам, и на узком экране им место на своей строке. */
+.rune-hours {
+    flex: 1 1 100%;
+    color: var(--text-muted);
+    font-size: 12.5px;
+}
+@media (min-width: 641px) {
+    .rune-hours { flex: 0 0 auto; }
+}
+
+/* Постройка, открытая игрокам: её может поставить не только админ. */
+.build-open {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--accent-purple-dim);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}

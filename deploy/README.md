@@ -43,7 +43,9 @@ systemd-юнит и меняет nginx. В конце — живой запро�
 **Ключи `.env`**, которые дописывает установка: `PORT=3001`, `APP_URL`, `POSTGRES_HOST`,
 `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (случайный, `openssl rand -hex 24`),
 `POSTGRES_DB`, `TRUST_PROXY=true` (nginx терминирует HTTPS, без этого кука сессии не
-получит флаг `Secure`), `VALHEIM_LOG_FILE` и `SUPERADMIN_STEAM_ID`. Уже существующие
+получит флаг `Secure`), `VALHEIM_LOG_FILE`, `VALHEIM_MOD_CONFIG` (папка конфигов мода:
+оттуда берутся руны и общие постройки для раздела «Наш сервер») и
+`SUPERADMIN_STEAM_ID`. Уже существующие
 значения скрипт не трогает: пароль, которым сейчас ходит живая служба, менять на ходу
 нельзя.
 

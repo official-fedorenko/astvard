@@ -132,6 +132,12 @@
             </a>
           </li>
           <li>
+            <a href="#server" class="sidebar__link" onclick="switchSection('server')">
+              <span class="sidebar__link-icon"><i data-lucide="hammer"></i></span>
+              <span>Наш сервер</span>
+            </a>
+          </li>
+          <li>
             <a href="#about" class="sidebar__link" onclick="switchSection('about')">
               <span class="sidebar__link-icon"><i data-lucide="info"></i></span>
               <span>О компании</span>
@@ -185,6 +191,28 @@
         <h2 class="section__title">Игровые серверы</h2>
         <div class="articles-grid" id="serversGrid">
           <p style="color: var(--text-muted, #a0a0ab);">Загрузка...</p>
+        </div>
+      </section>
+
+      <!-- НАШ СЕРВЕР: руны и общие постройки, всё из файлов мода -->
+      <section class="section" id="server">
+        <h2 class="section__title">Наш сервер</h2>
+        <p class="section__subtitle">Руны за время в мире и постройки, которые стоят на сервере общими</p>
+
+        <div class="section__block">
+          <h3 class="block__title">Руны</h3>
+          <p class="block__hint" id="runesHint">Руна начисляется за время в мире. Тратить их пока не на что — это счёт часов.</p>
+          <div id="runesBoard">
+            <p class="server-meta">Загрузка...</p>
+          </div>
+        </div>
+
+        <div class="section__block">
+          <h3 class="block__title">Общие постройки</h3>
+          <p class="block__hint">Шаблоны, которые админ выложил на сервер: их можно поставить в игре через панель мода.</p>
+          <div class="articles-grid" id="buildsGrid">
+            <p class="server-meta">Загрузка...</p>
+          </div>
         </div>
       </section>
 

@@ -69,3 +69,80 @@
     grid.innerHTML = '<p class="server-meta">Состояние серверов сейчас недоступно.</p>';
   }
 })();
+
+// === Наш сервер: руны и общие постройки ===
+//
+// Всё это мод уже записал на диск рядом с игрой, сайт только читает: руны — в
+// своём файле, постройки — по файлу на шаблон. Ни номеров Steam, ни путей сюда
+// не приходит: сервер отдаёт ники и числа.
+(async function loadServerLife() {
+  const runesBox = document.getElementById('runesBoard');
+  const buildsBox = document.getElementById('buildsGrid');
+  if (!runesBox || !buildsBox) return;
+
+  const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+
+  // «1 руна, 2 руны, 5 рун» — иначе подпись читается как машинная.
+  const plural = (n, one, few, many) => {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return one;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+    return many;
+  };
+
+  const hoursLabel = (hours) => {
+    if (hours < 1) return `${Math.round(hours * 60)} мин в мире`;
+    const rounded = Math.round(hours * 10) / 10;
+    // У дробного числа в русском всегда родительный единственного: «14,3 часа»,
+    // а не «14,3 часов». Целое склоняется как обычно.
+    const word = Number.isInteger(rounded) ? plural(rounded, 'час', 'часа', 'часов') : 'часа';
+    return `${rounded.toLocaleString('ru-RU')} ${word} в мире`;
+  };
+
+  try {
+    const res = await fetch('/api/public/game');
+    if (!res.ok) throw new Error(String(res.status));
+    const { runes = {}, builds = [] } = await res.json();
+
+    const players = runes.players || [];
+    runesBox.innerHTML = players.length
+      ? `<ol class="rune-board">${players.map((p, i) => `
+          <li class="rune-row">
+            <span class="rune-place">${i + 1}</span>
+            <span class="rune-name">${escape(p.name)}${p.known ? '' : ' <span class="rune-guest">гость</span>'}</span>
+            <span class="rune-count">${escape(p.runes)} ${plural(p.runes, 'руна', 'руны', 'рун')}</span>
+            <span class="rune-hours">${escape(hoursLabel(p.hours))}</span>
+          </li>`).join('')}</ol>`
+      : '<p class="server-meta">Пока ни одной руны: их начисляют за время в мире.</p>';
+
+    const rate = runes.minutes_per_rune;
+    const hint = document.getElementById('runesHint');
+    if (hint && rate) {
+      hint.textContent = `Руна начисляется за каждые ${rate} ${plural(rate, 'минуту', 'минуты', 'минут')} `
+        + 'в мире. Тратить их пока не на что — это счёт часов.';
+    }
+
+    buildsBox.innerHTML = builds.length
+      ? builds.map((b) => `
+        <article class="article-card">
+          <span class="article-date">${escape(b.category)}</span>
+          <h3 class="article-title">${escape(b.name)}</h3>
+          <div class="article-content">
+            ${b.author ? `Построил ${escape(b.author)}` : 'Автор неизвестен'}
+          </div>
+          <span class="server-meta">
+            ${escape(b.pieces)} ${plural(b.pieces, 'деталь', 'детали', 'деталей')}
+            ${b.for_players ? '<span class="build-open">открыта игрокам</span>' : ''}
+          </span>
+        </article>`).join('')
+      : '<p class="server-meta">Общих построек пока нет.</p>';
+  } catch (err) {
+    // Страница живёт и без этого блока: сервер мог быть остановлен, файлов может
+    // ещё не быть.
+    runesBox.innerHTML = '<p class="server-meta">Руны сейчас недоступны.</p>';
+    buildsBox.innerHTML = '<p class="server-meta">Список построек сейчас недоступен.</p>';
+  }
+})();

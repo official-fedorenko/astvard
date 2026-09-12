@@ -18,6 +18,10 @@ const assert = require('node:assert');
 
 process.env.POSTGRES_DB = process.env.POSTGRES_TEST_DB || 'astvard_test';
 process.env.TRUST_PROXY = 'true';
+// Файлы мода: в тестах вместо настоящих берутся фикстуры того же формата, снятые
+// с боевого сервера. Путь читается при загрузке маршрута, поэтому задаётся до
+// require('../server').
+process.env.VALHEIM_MOD_CONFIG = require('node:path').join(__dirname, 'fixtures', 'valheim-config');
 
 const server = require('../server');
 const { db, pool, dbReady, seedDefaults } = require('../db');
@@ -389,4 +393,48 @@ test('worklogs: user adds own entry, sees it; admin sees summary; user is forbid
   const sum = await api('/api/worklogs/summary', { cookie: alogin.cookie });
   assert.strictEqual(sum.status, 200);
   assert.ok(sum.json.users.some(u => u.username === 'worker_wl' && u.total_hours >= 8));
+});
+
+// === Наш сервер: руны и общие постройки из файлов мода ===
+test('game info: руны и постройки читаются из файлов мода, номера наружу не идут', async () => {
+  // Один из игроков файла — наш: его должно быть видно под ником с сайта.
+  await new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO users (username, email, password_hash, role, steam_id, steam_id_verified)
+       VALUES (?, ?, ?, 'User', ?, 1)`,
+      ['Скальд', 'skald@example.com', 'x', '76561198000000101'],
+      (err) => (err ? reject(err) : resolve())
+    );
+  });
+
+  const res = await api('/api/public/game');
+  assert.strictEqual(res.status, 200);
+
+  // Ставка берётся из конфига мода, а не из значения по умолчанию.
+  assert.strictEqual(res.json.runes.minutes_per_rune, 30);
+
+  const players = res.json.runes.players;
+  assert.strictEqual(players.length, 3, 'строка без табов не считается игроком');
+  // Порядок — по рунам: сначала тот, у кого их больше.
+  assert.deepStrictEqual(players.map(p => p.runes), [12, 5, 0]);
+
+  const ours = players.find(p => p.known);
+  assert.strictEqual(ours.name, 'Скальд', 'свой игрок показывается ником с сайта');
+  // 5 рун по 30 минут плюс 600 секунд остатка = 2,67 часа.
+  assert.strictEqual(ours.hours, 2.7);
+
+  const guest = players.find(p => !p.known);
+  assert.strictEqual(guest.name, 'Gость-Neznakomyi', 'чужой — под именем персонажа');
+
+  const builds = res.json.builds;
+  assert.strictEqual(builds.length, 2, 'папка deleted — корзина мода, её не показываем');
+  const house = builds.find(b => b.name === 'Дом на холме');
+  assert.strictEqual(house.category, 'Дома');
+  assert.strictEqual(house.author, 'Skald-Testovyi');
+  assert.strictEqual(house.pieces, 3);
+  assert.strictEqual(house.for_players, true);
+  assert.strictEqual(builds.find(b => b.name === 'Кузница').for_players, false);
+
+  // Главное: наружу не уходит ни один SteamID — ни из рун, ни из «#from».
+  assert.ok(!JSON.stringify(res.json).includes('76561'), 'номеров Steam в ответе нет');
 });

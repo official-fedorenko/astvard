@@ -39,6 +39,7 @@ const handleAuth = require('./src/routes/auth');
 const handleSteam = require('./src/routes/steam');
 const handleWhitelist = require('./src/routes/whitelist');
 const handleServers = require('./src/routes/servers');
+const handleGameInfo = require('./src/routes/gameInfo');
 const { ensureSuperadmin } = require('./src/bootstrap');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
@@ -185,6 +186,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (pathname.startsWith('/api/admin/whitelist') || pathname === '/api/cabinet/whitelist/request') {
     return handleWhitelist(req, res, user, parsedUrl, method);
+  }
+  // Руны и общие постройки — то, что мод уже записал на диск рядом с игрой.
+  if (pathname === '/api/public/game') {
+    return handleGameInfo(req, res, user, parsedUrl, method);
   }
 
   // Public articles/settings (read-only, no auth)

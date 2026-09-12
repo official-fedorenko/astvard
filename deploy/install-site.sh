@@ -89,6 +89,9 @@ ensure_env POSTGRES_DB astvard_panel
 # cookie never gets the Secure flag.
 ensure_env TRUST_PROXY true
 ensure_env VALHEIM_LOG_FILE /srv/valheim/logs/server.log
+# Файлы мода: руны игроков и общие постройки. Сайт их только читает — пишет туда
+# игровой сервер, и он же им хозяин.
+ensure_env VALHEIM_MOD_CONFIG /srv/valheim/server/BepInEx/config
 ensure_env SUPERADMIN_STEAM_ID "${SUPERADMIN_STEAM_ID:-}"
 chown -R "$SITE_USER:$SITE_USER" "$DIR"
 chmod 600 "$DIR/.env"

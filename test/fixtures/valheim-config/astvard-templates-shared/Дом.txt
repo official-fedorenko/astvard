@@ -1,0 +1,8 @@
+# astvard shared template
+#name Дом на холме
+#players yes
+#category Дома
+#author Skald-Testovyi
+wood_wall;0.0;0.0;0.0;0.0;0.0;0.0;1.0
+wood_floor;1.0;0.0;0.0;0.0;0.0;0.0;1.0
+wood_roof;2.0;1.0;0.0;0.0;0.0;0.0;1.0

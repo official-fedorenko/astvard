@@ -29,9 +29,10 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/srv/astvard
-# Reading the Valheim server's log is how a -public 0 server's status is known;
-# it is somebody else's directory, so read-only and nothing more.
-ReadOnlyPaths=/srv/valheim/logs
+# The Valheim server's own files: its log is how a -public 0 server's status is
+# known, and the mod's config holds the runes and the shared builds the site
+# shows. Somebody else's directory, so read-only and nothing more.
+ReadOnlyPaths=/srv/valheim/logs /srv/valheim/server/BepInEx/config
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

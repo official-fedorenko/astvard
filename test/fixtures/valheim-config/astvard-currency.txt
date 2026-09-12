@@ -1,0 +1,5 @@
+# astvard runes: id, balance, seconds towards the next, name
+76561198000000101	5	600	Skald-Testovyi
+76561198000000102	12	0	Gость-Neznakomyi
+76561198000000103	0	900	Novichok
+мусорная строка без табов
