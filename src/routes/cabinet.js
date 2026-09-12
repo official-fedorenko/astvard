@@ -3,7 +3,7 @@ const { db, verifyPassword, hashPassword } = require('../../db');
 
 function getMe(req, res, user) {
   db.get(
-    `SELECT id, username, email, role, account_type, avatar_url, created_at,
+    `SELECT id, username, email, role, avatar_url, created_at,
             steam_id, steam_id_verified, whitelist_status, whitelist_note
      FROM users WHERE id = ?`,
     [user.id],
@@ -12,165 +12,6 @@ function getMe(req, res, user) {
       sendJson(res, 200, { success: true, user: row });
     }
   );
-}
-
-// Карточка сотрудника, привязанная к текущему аккаунту (read-only для
-// самого сотрудника — редактирование пока только из админки). У клиентов
-// без карточки вернётся card: null.
-function getMyCard(req, res, user) {
-  db.get(
-    `SELECT id, first_name, last_name, position, department, phone, email,
-            hire_date, status, notes, created_at
-     FROM employees WHERE user_id = ?`,
-    [user.id],
-    (err, row) => {
-      if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
-      sendJson(res, 200, { success: true, card: row || null });
-    }
-  );
-}
-
-// Инструмент, закреплённый за сотрудником, привязанным к текущему аккаунту.
-// Клиенты (без карточки в employees) просто получают пустой список.
-function getMyTools(req, res, user) {
-  const sql = `
-    SELECT t.id, t.name, t.category, t.brand, t.model, t.serial_number, t.inventory_number,
-           t.photo_url, a.issued_at
-    FROM employees e
-    JOIN tool_assignments a ON a.employee_id = e.id AND a.returned_at IS NULL
-    JOIN tools t ON t.id = a.tool_id
-    WHERE e.user_id = ?
-    ORDER BY a.issued_at DESC`;
-  db.all(sql, [user.id], (err, tools) => {
-    if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
-    if (!tools || tools.length === 0) {
-      return sendJson(res, 200, { success: true, tools: [] });
-    }
-
-    const toolIds = tools.map(t => t.id);
-    const placeholders = toolIds.map(() => '?').join(',');
-    const photoSql = `SELECT tool_id, photo_url FROM tool_photos WHERE tool_id IN (${placeholders}) ORDER BY created_at ASC`;
-    db.all(photoSql, toolIds, (err2, photos) => {
-      if (err2) return sendJson(res, 500, { success: false, message: 'Ошибка загрузки фото галереи' });
-      
-      const photosByTool = {};
-      (photos || []).forEach(p => {
-        if (!photosByTool[p.tool_id]) photosByTool[p.tool_id] = [];
-        photosByTool[p.tool_id].push(p.photo_url);
-      });
-
-      tools.forEach(t => {
-        t.gallery_photos = photosByTool[t.id] || [];
-      });
-
-      sendJson(res, 200, { success: true, tools: tools });
-    });
-  });
-}
-
-// Сотрудник добавляет фото в галерею ТОЛЬКО у инструмента, который сейчас на нём.
-// Файл заранее загружается через /api/media, сюда приходит уже готовый URL.
-async function setToolPhoto(req, res, user) {
-  try {
-    const body = await getJsonBody(req);
-    const toolId = parseInt(body.tool_id, 10);
-    const rawPhoto = (body.photo_url == null ? '' : String(body.photo_url)).trim();
-    if (!toolId) return sendJson(res, 400, { success: false, message: 'Не указан инструмент' });
-    if (!/^\/uploads\/[A-Za-z0-9._-]+$/.test(rawPhoto)) {
-      return sendJson(res, 400, { success: false, message: 'Некорректный адрес фото' });
-    }
-
-    // Проверяем, что этот инструмент действительно закреплён за сотрудником
-    // текущего пользователя (открытое закрепление).
-    const checkSql = `
-      SELECT a.id FROM tool_assignments a
-      JOIN employees e ON e.id = a.employee_id
-      WHERE a.tool_id = ? AND a.returned_at IS NULL AND e.user_id = ?`;
-    db.get(checkSql, [toolId, user.id], (err, row) => {
-      if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
-      if (!row) return sendJson(res, 403, { success: false, message: 'Этот инструмент сейчас не закреплён за вами' });
-
-      db.run("INSERT INTO tool_photos (tool_id, photo_url, uploaded_by) VALUES (?, ?, ?)", [toolId, rawPhoto, user.id], function (uErr) {
-        if (uErr) return sendJson(res, 500, { success: false, message: 'Не удалось сохранить фото' });
-        logAction(user.username, `Добавил фото к инструменту id=${toolId} в галерею`);
-        // Первое фото инструмента автоматически становится аватаром.
-        db.run("UPDATE tools SET photo_url = ? WHERE id = ? AND (photo_url IS NULL OR photo_url = '')",
-          [rawPhoto, toolId], () => {
-            sendJson(res, 200, { success: true, photo_url: rawPhoto });
-          });
-      });
-    });
-  } catch (e) {
-    sendJson(res, 400, { success: false, message: 'Невалидный запрос' });
-  }
-}
-
-// Авто, закреплённое за сотрудником, привязанным к текущему аккаунту.
-function getMyVehicles(req, res, user) {
-  const sql = `
-    SELECT v.id, v.name, v.category, v.brand, v.model, v.year, v.plate_number, v.vin,
-           v.photo_url, a.issued_at
-    FROM employees e
-    JOIN vehicle_assignments a ON a.employee_id = e.id AND a.returned_at IS NULL
-    JOIN vehicles v ON v.id = a.vehicle_id
-    WHERE e.user_id = ?
-    ORDER BY a.issued_at DESC`;
-  db.all(sql, [user.id], (err, vehicles) => {
-    if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
-    if (!vehicles || vehicles.length === 0) {
-      return sendJson(res, 200, { success: true, vehicles: [] });
-    }
-
-    const ids = vehicles.map(v => v.id);
-    const placeholders = ids.map(() => '?').join(',');
-    const photoSql = `SELECT vehicle_id, photo_url FROM vehicle_photos WHERE vehicle_id IN (${placeholders}) ORDER BY created_at ASC`;
-    db.all(photoSql, ids, (err2, photos) => {
-      if (err2) return sendJson(res, 500, { success: false, message: 'Ошибка загрузки фото галереи' });
-
-      const photosByVehicle = {};
-      (photos || []).forEach(p => {
-        if (!photosByVehicle[p.vehicle_id]) photosByVehicle[p.vehicle_id] = [];
-        photosByVehicle[p.vehicle_id].push(p.photo_url);
-      });
-
-      vehicles.forEach(v => { v.gallery_photos = photosByVehicle[v.id] || []; });
-
-      sendJson(res, 200, { success: true, vehicles });
-    });
-  });
-}
-
-// Сотрудник добавляет фото в галерею ТОЛЬКО у авто, которое сейчас на нём.
-async function setVehiclePhoto(req, res, user) {
-  try {
-    const body = await getJsonBody(req);
-    const vehicleId = parseInt(body.vehicle_id, 10);
-    const rawPhoto = (body.photo_url == null ? '' : String(body.photo_url)).trim();
-    if (!vehicleId) return sendJson(res, 400, { success: false, message: 'Не указано авто' });
-    if (!/^\/uploads\/[A-Za-z0-9._-]+$/.test(rawPhoto)) {
-      return sendJson(res, 400, { success: false, message: 'Некорректный адрес фото' });
-    }
-
-    const checkSql = `
-      SELECT a.id FROM vehicle_assignments a
-      JOIN employees e ON e.id = a.employee_id
-      WHERE a.vehicle_id = ? AND a.returned_at IS NULL AND e.user_id = ?`;
-    db.get(checkSql, [vehicleId, user.id], (err, row) => {
-      if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
-      if (!row) return sendJson(res, 403, { success: false, message: 'Это авто сейчас не закреплено за вами' });
-
-      db.run("INSERT INTO vehicle_photos (vehicle_id, photo_url, uploaded_by) VALUES (?, ?, ?)", [vehicleId, rawPhoto, user.id], function (uErr) {
-        if (uErr) return sendJson(res, 500, { success: false, message: 'Не удалось сохранить фото' });
-        logAction(user.username, `Добавил фото к авто id=${vehicleId} в галерею`);
-        db.run("UPDATE vehicles SET photo_url = ? WHERE id = ? AND (photo_url IS NULL OR photo_url = '')",
-          [rawPhoto, vehicleId], () => {
-            sendJson(res, 200, { success: true, photo_url: rawPhoto });
-          });
-      });
-    });
-  } catch (e) {
-    sendJson(res, 400, { success: false, message: 'Невалидный запрос' });
-  }
 }
 
 // Обновление профиля пользователя (email, пароль, avatar_url)
@@ -248,11 +89,6 @@ module.exports = async function handleCabinet(req, res, user, parsedUrl, method)
 
   if (pathname === '/api/cabinet/me' && method === 'GET') return getMe(req, res, user);
   if (pathname === '/api/cabinet/profile' && method === 'PUT') return updateProfile(req, res, user);
-  if (pathname === '/api/cabinet/my-card' && method === 'GET') return getMyCard(req, res, user);
-  if (pathname === '/api/cabinet/my-tools' && method === 'GET') return getMyTools(req, res, user);
-  if (pathname === '/api/cabinet/tool-photo' && method === 'POST') return setToolPhoto(req, res, user);
-  if (pathname === '/api/cabinet/my-vehicles' && method === 'GET') return getMyVehicles(req, res, user);
-  if (pathname === '/api/cabinet/vehicle-photo' && method === 'POST') return setVehiclePhoto(req, res, user);
 
   return sendJson(res, 404, { success: false, message: 'API endpoint не найден' });
 };

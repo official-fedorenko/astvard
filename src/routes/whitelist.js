@@ -123,8 +123,8 @@ async function add(req, res, actor) {
         // steam_id_verified stays 0: a number typed by a person is a guess until its
         // owner signs in through Steam, and the tables say which is which.
         const inserted = await run(
-          `INSERT INTO users (username, role, account_type, steam_id, steam_id_verified)
-           VALUES (?, 'User', 'client', ?, 0)`,
+          `INSERT INTO users (username, role, steam_id, steam_id_verified)
+           VALUES (?, 'User', ?, 0)`,
           [username, parsed.id]
         );
         user = await get('SELECT * FROM users WHERE id = ?', [inserted.lastID]);

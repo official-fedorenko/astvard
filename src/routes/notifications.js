@@ -135,12 +135,11 @@ function getSentHistory(req, res) {
 
     db.all(
       `SELECT n.id, n.message, n.created_at, n.scheduled_at, n.user_id,
-              u.username AS target_username, ue.first_name AS target_first_name, ue.last_name AS target_last_name,
+              u.username AS target_username,
               cb.username AS created_by_username,
               (SELECT COUNT(*) FROM notification_reads nr WHERE nr.notification_id = n.id) AS read_count
        FROM notifications n
        LEFT JOIN users u ON u.id = n.user_id
-       LEFT JOIN employees ue ON ue.user_id = u.id
        LEFT JOIN users cb ON cb.id = n.created_by
        ORDER BY n.created_at DESC
        LIMIT 50`,
@@ -148,21 +147,18 @@ function getSentHistory(req, res) {
       (err, rows) => {
         if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
         const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-        const notifications = (rows || []).map(r => {
-          const targetFullName = [r.target_first_name, r.target_last_name].filter(Boolean).join(' ').trim();
-          return {
-            id: r.id,
-            message: r.message,
-            created_at: r.created_at,
-            scheduled_at: r.scheduled_at,
-            is_pending: !!(r.scheduled_at && r.scheduled_at > now),
-            user_id: r.user_id,
-            target_name: r.user_id ? (targetFullName || r.target_username) : null,
-            created_by_username: r.created_by_username,
-            read_count: r.read_count || 0,
-            total_recipients: r.user_id ? 1 : totalUsers
-          };
-        });
+        const notifications = (rows || []).map(r => ({
+          id: r.id,
+          message: r.message,
+          created_at: r.created_at,
+          scheduled_at: r.scheduled_at,
+          is_pending: !!(r.scheduled_at && r.scheduled_at > now),
+          user_id: r.user_id,
+          target_name: r.user_id ? r.target_username : null,
+          created_by_username: r.created_by_username,
+          read_count: r.read_count || 0,
+          total_recipients: r.user_id ? 1 : totalUsers
+        }));
         sendJson(res, 200, { success: true, notifications });
       }
     );
@@ -173,19 +169,15 @@ function getReaders(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.searchParams.get('id'), 10);
   if (!Number.isInteger(id) || id <= 0) return sendJson(res, 400, { success: false, message: 'Не указан id' });
   db.all(
-    `SELECT u.id AS user_id, u.username, e.first_name, e.last_name, nr.read_at
+    `SELECT u.id AS user_id, u.username, nr.read_at
      FROM notification_reads nr
      JOIN users u ON u.id = nr.user_id
-     LEFT JOIN employees e ON e.user_id = u.id
      WHERE nr.notification_id = ?
      ORDER BY nr.read_at ASC`,
     [id],
     (err, rows) => {
       if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
-      const readers = (rows || []).map(r => {
-        const fullName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim();
-        return { user_id: r.user_id, name: fullName || r.username, read_at: r.read_at };
-      });
+      const readers = (rows || []).map(r => ({ user_id: r.user_id, name: r.username, read_at: r.read_at }));
       sendJson(res, 200, { success: true, readers });
     }
   );

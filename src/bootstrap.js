@@ -48,8 +48,8 @@ async function ensureSuperadmin() {
       const username = attempt === 1 ? base : `${base} (${attempt})`;
       try {
         const inserted = await run(
-          `INSERT INTO users (username, role, account_type, steam_id, steam_id_verified)
-           VALUES (?, 'Superadmin', 'client', ?, 0)`,
+          `INSERT INTO users (username, role, steam_id, steam_id_verified)
+           VALUES (?, 'Superadmin', ?, 0)`,
           [username, parsed.id]
         );
         user = await get('SELECT * FROM users WHERE id = ?', [inserted.lastID]);

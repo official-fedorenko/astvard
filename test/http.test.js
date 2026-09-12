@@ -20,13 +20,10 @@ process.env.DB_PATH = dbPath;
 process.env.TRUST_PROXY = 'true';
 
 const server = require('../server');
-const { db, dbReady } = require('../db');
+const { dbReady } = require('../db');
 const { totp } = require('../src/totp');
 
 let baseUrl;
-// id инструмента, который тесты публичной карточки создают для себя сами:
-// автосид демо-инструмента отключён, поэтому на свежей БД tools пустая.
-let publicToolId;
 
 before(async () => {
   // Schema creation + default-user/article seeding in db.js is async — wait
@@ -38,18 +35,6 @@ before(async () => {
   });
   const { port } = server.address();
   baseUrl = `http://127.0.0.1:${port}`;
-
-  // Инструмент для тестов публичной карточки (/api/public/tool).
-  publicToolId = await new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO tools (name, category, brand, model, serial_number,
-                          inventory_number, status, purchase_date, notes)
-       VALUES (?, ?, ?, ?, ?, ?, 'available', '2024-01-15', ?)`,
-      ['Тестовый перфоратор', 'Перфоратор', 'Bosch', 'GBH 2-28',
-       'TEST-SN-0001', 'INV-TEST-0001', 'Служебная заметка (не для публичной карточки)'],
-      function (err) { err ? reject(err) : resolve(this.lastID); }
-    );
-  });
 });
 
 after(async () => {
@@ -93,24 +78,6 @@ test('public settings endpoint returns key/value pairs without auth', async () =
   const { status, json } = await api('/api/public/settings');
   assert.strictEqual(status, 200);
   assert.ok(json.some(s => s.key === 'site_name'));
-});
-
-test('public tool card endpoint returns identification fields without auth and hides service data', async () => {
-  const { status, json } = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(status, 200);
-  assert.strictEqual(json.success, true);
-  assert.ok(json.tool);
-  assert.strictEqual(json.tool.id, publicToolId);
-  assert.ok(json.tool.name);
-  // Служебные данные не должны утекать в публичную карточку.
-  assert.strictEqual(json.tool.notes, undefined);
-  assert.strictEqual(json.history, undefined);
-  assert.strictEqual(json.stats, undefined);
-});
-
-test('public tool card endpoint returns 404 for a missing tool', async () => {
-  const { status } = await api('/api/public/tool?id=999999');
-  assert.strictEqual(status, 404);
 });
 
 test('login rejects a wrong password', async () => {
@@ -289,94 +256,3 @@ test('admin static pages redirect to login when there is no session', async () =
   assert.ok(res.headers.get('location').includes('/admin/login.html'));
 });
 
-test('public tool card respects GLOBAL visibility settings and enable switch', async () => {
-  // Свежий логин админа (superadmin-сессию к этому моменту уже разлогинили).
-  const login = await api('/api/auth/login', {
-    method: 'POST', ip: '10.0.9.9',
-    body: { username: 'admin', password: '1234qwer' }
-  });
-  assert.strictEqual(login.status, 200);
-  const cookie = login.cookie;
-
-  // По умолчанию карточка включена и показывает все поля.
-  const def = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(def.status, 200);
-  assert.ok(def.json.tool.serial_number);
-
-  // Глобально прячем серийный/инвентарный номера и статус.
-  const saved = await api('/api/settings', {
-    method: 'POST', cookie,
-    body: {
-      public_card_enabled: 'true',
-      public_card_show_serial: 'false',
-      public_card_show_inventory: 'false',
-      public_card_show_status: 'false'
-    }
-  });
-  assert.strictEqual(saved.status, 200);
-
-  // Публичная карточка больше не отдаёт скрытые поля, но имя/бренд на месте.
-  const pub = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(pub.status, 200);
-  assert.ok(pub.json.tool.name);
-  assert.ok(pub.json.tool.brand);
-  assert.strictEqual(pub.json.tool.serial_number, undefined);
-  assert.strictEqual(pub.json.tool.inventory_number, undefined);
-  assert.strictEqual(pub.json.tool.status, undefined);
-
-  // Глобально выключаем карточку — публичный доступ закрыт (404).
-  const off = await api('/api/settings', {
-    method: 'POST', cookie, body: { public_card_enabled: 'false' }
-  });
-  assert.strictEqual(off.status, 200);
-  const pubOff = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(pubOff.status, 404);
-});
-
-test('worklogs: user adds own entry, sees it; admin sees summary; user is forbidden from summary', async () => {
-  // Регистрируем свежего пользователя (у дефолтного `user` включена 2FA
-  // предыдущим тестом, поэтому берём чистый аккаунт без 2FA).
-  const reg = await api('/api/auth/register', {
-    method: 'POST', ip: '10.20.1.1',
-    body: {
-      username: 'worker_wl', email: 'worker_wl@example.com', password: 'password123',
-      botNum1: 4, botNum2: 3, botOp: '+', botAnswer: 7
-    }
-  });
-  assert.strictEqual(reg.status, 200);
-  const uc = reg.cookie;
-  assert.ok(uc && uc.startsWith('session='));
-
-  // Добавляем запись
-  const add = await api('/api/worklogs', {
-    method: 'POST', cookie: uc,
-    body: { work_date: '2026-08-22', hours: 8, note: 'Тест' }
-  });
-  assert.strictEqual(add.status, 201);
-
-  // Некорректные часы отклоняются
-  const bad = await api('/api/worklogs', {
-    method: 'POST', cookie: uc, body: { work_date: '2026-08-22', hours: 99 }
-  });
-  assert.strictEqual(bad.status, 400);
-
-  // Свои записи + итог
-  const mine = await api('/api/worklogs/mine', { cookie: uc });
-  assert.strictEqual(mine.status, 200);
-  assert.ok(mine.json.entries.length >= 1);
-  assert.ok(mine.json.total >= 8);
-
-  // Пользователю нельзя смотреть сводку по всем
-  const denied = await api('/api/worklogs/summary', { cookie: uc });
-  assert.strictEqual(denied.status, 403);
-
-  // Админ видит сводку с этим пользователем
-  const alogin = await api('/api/auth/login', {
-    method: 'POST', ip: '10.20.2.2',
-    body: { username: 'admin', password: '1234qwer' }
-  });
-  assert.strictEqual(alogin.status, 200);
-  const sum = await api('/api/worklogs/summary', { cookie: alogin.cookie });
-  assert.strictEqual(sum.status, 200);
-  assert.ok(sum.json.users.some(u => u.username === 'worker_wl' && u.total_hours >= 8));
-});

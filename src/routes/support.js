@@ -46,60 +46,24 @@ function isAdmin(user) {
   return user && (user.role === 'Admin' || user.role === 'Superadmin');
 }
 
-// Читает пару настроек чата (имя администрации + показывать ли ФИО) одним
-// запросом. Не кэшируем — чат отвечает редко относительно чтения.
+// Читает отображаемое имя администрации. Не кэшируем — чат отвечает редко
+// относительно чтения.
 function getChatDisplaySettings(cb) {
-  db.all(
-    "SELECT key, value FROM settings WHERE key IN ('support_admin_display_name', 'support_show_employee_name')",
+  db.get(
+    "SELECT value FROM settings WHERE key = 'support_admin_display_name'",
     [],
-    (err, rows) => {
-      const map = {};
-      (rows || []).forEach(r => { map[r.key] = r.value; });
-      cb({
-        adminDisplayName: map.support_admin_display_name || 'Администрация',
-        showEmployeeName: map.support_show_employee_name === 'true'
-      });
-    }
+    (err, row) => cb({ adminDisplayName: (row && row.value) || 'Администрация' })
   );
 }
 
-// Подменяет name у сообщений от админов на отображаемое (настройка +
-// опционально реальное ФИО), не трогая хранимые данные. Сообщения от
-// клиентов/гостей не меняются.
+// Подменяет name у сообщений от админов на отображаемое имя администрации, не
+// трогая хранимые данные. Сообщения от клиентов/гостей не меняются.
 function applyDisplayNames(messages, cb) {
-  getChatDisplaySettings(({ adminDisplayName, showEmployeeName }) => {
-    const adminMsgs = messages.filter(m => m.sender_role === 'Admin' || m.sender_role === 'Superadmin');
-    if (!showEmployeeName || !adminMsgs.length) {
-      messages.forEach(m => {
-        if (m.sender_role === 'Admin' || m.sender_role === 'Superadmin') m.name = adminDisplayName;
-      });
-      return cb(messages);
-    }
-    const userIds = [...new Set(adminMsgs.map(m => m.user_id).filter(Boolean))];
-    if (!userIds.length) {
-      messages.forEach(m => {
-        if (m.sender_role === 'Admin' || m.sender_role === 'Superadmin') m.name = adminDisplayName;
-      });
-      return cb(messages);
-    }
-    const placeholders = userIds.map(() => '?').join(',');
-    db.all(
-      `SELECT user_id, first_name, last_name FROM employees WHERE user_id IN (${placeholders})`,
-      userIds,
-      (err, empRows) => {
-        const namesByUser = {};
-        (empRows || []).forEach(e => {
-          const full = [e.first_name, e.last_name].filter(Boolean).join(' ').trim();
-          if (full) namesByUser[e.user_id] = full;
-        });
-        messages.forEach(m => {
-          if (m.sender_role === 'Admin' || m.sender_role === 'Superadmin') {
-            m.name = namesByUser[m.user_id] || adminDisplayName;
-          }
-        });
-        cb(messages);
-      }
-    );
+  getChatDisplaySettings(({ adminDisplayName }) => {
+    messages.forEach(m => {
+      if (m.sender_role === 'Admin' || m.sender_role === 'Superadmin') m.name = adminDisplayName;
+    });
+    cb(messages);
   });
 }
 
@@ -142,32 +106,11 @@ module.exports = function handleSupport(req, res, user, parsedUrl, method) {
     `;
     db.all(query, [], (err, rows) => {
       if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
-      const ownerIds = [...new Set((rows || []).map(r => r.owner_user_id).filter(Boolean))];
       db.all("SELECT ticket_id, status FROM support_tickets", [], (e1, statusRows) => {
         const statusByTicket = {};
         (statusRows || []).forEach(s => { statusByTicket[s.ticket_id] = s.status; });
-        rows.forEach(r => { r.status = statusByTicket[r.ticket_id] || 'open'; });
-
-        if (!ownerIds.length) return sendJson(res, 200, { success: true, tickets: rows });
-
-        const placeholders = ownerIds.map(() => '?').join(',');
-        db.all(
-          `SELECT user_id, first_name, last_name FROM employees WHERE user_id IN (${placeholders})`,
-          ownerIds,
-          (e2, empRows) => {
-            const namesByUser = {};
-            (empRows || []).forEach(e => {
-              const full = [e.first_name, e.last_name].filter(Boolean).join(' ').trim();
-              if (full) namesByUser[e.user_id] = full;
-            });
-            rows.forEach(r => {
-              const full = namesByUser[r.owner_user_id];
-              if (full) r.name = full;
-              delete r.owner_user_id;
-            });
-            sendJson(res, 200, { success: true, tickets: rows });
-          }
-        );
+        rows.forEach(r => { r.status = statusByTicket[r.ticket_id] || 'open'; delete r.owner_user_id; });
+        sendJson(res, 200, { success: true, tickets: rows });
       });
     });
     return;
@@ -189,8 +132,8 @@ module.exports = function handleSupport(req, res, user, parsedUrl, method) {
       FROM support_messages GROUP BY ticket_id`;
 
     db.all(
-      `SELECT u.id, u.username, u.email, u.avatar_url, e.first_name, e.last_name
-       FROM users u LEFT JOIN employees e ON e.user_id = u.id
+      `SELECT u.id, u.username, u.email, u.avatar_url
+       FROM users u
        ORDER BY u.username COLLATE NOCASE ASC`,
       [], (err, users) => {
       if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });
@@ -208,10 +151,9 @@ module.exports = function handleSupport(req, res, user, parsedUrl, method) {
             const tId = 'user_' + u.id;
             const a = byTicket[tId] || {};
             delete byTicket[tId];
-            const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
             list.push({
               ticket_id: tId,
-              name: fullName || u.username,
+              name: u.username,
               email: u.email,
               avatar_url: u.avatar_url || null,
               unread_count: a.unread_count || 0,

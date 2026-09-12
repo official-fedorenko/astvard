@@ -1,23 +1,6 @@
 const { sendJson, getJsonBody, logAction, parsePagination } = require('../utils');
 const { db, hashPassword } = require('../../db');
 
-// Гарантирует наличие карточки сотрудника, привязанной к аккаунту.
-// Вызывается при account_type='employee'. Если карточки нет — создаёт
-// минимальную (имя = логин) со статусом 'inactive', чтобы человек появился
-// в разделе «Сотрудники», где админ уточнит ФИО. Идемпотентно.
-function ensureEmployeeCard(userId) {
-  db.get("SELECT id FROM employees WHERE user_id = ?", [userId], (err, emp) => {
-    if (err || emp) return;
-    db.get("SELECT username, email FROM users WHERE id = ?", [userId], (e2, u) => {
-      if (e2 || !u) return;
-      db.run(
-        "INSERT INTO employees (first_name, last_name, email, user_id, status) VALUES (?, '', ?, ?, 'inactive')",
-        [u.username, u.email, userId]
-      );
-    });
-  });
-}
-
 module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
   if (!user || user.role !== 'Superadmin') {
     return sendJson(res, 403, { success: false, message: 'Только Superadmin' });
@@ -29,11 +12,8 @@ module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
     // в UI не появится полноценная пагинация.
     const { limit, offset } = parsePagination(parsedUrl);
     db.all(
-      `SELECT u.id, u.username, u.email, u.role, u.account_type, u.avatar_url, u.created_at,
-              e.first_name, e.last_name
-       FROM users u
-       LEFT JOIN employees e ON e.user_id = u.id
-       ORDER BY u.id DESC LIMIT ? OFFSET ?`,
+      `SELECT id, username, email, role, avatar_url, created_at
+       FROM users ORDER BY id DESC LIMIT ? OFFSET ?`,
       [limit, offset], (err, rows) => {
       if (err) return sendJson(res, 500, { message: 'Ошибка базы данных' });
       db.get("SELECT COUNT(*) as count FROM users", [], (err2, countRow) => {
@@ -49,7 +29,6 @@ module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
       try {
         const body = await getJsonBody(req);
         const { username, email, password, role = 'User' } = body;
-        const accountType = body.account_type === 'employee' ? 'employee' : 'client';
 
         if (!username || !email || !password) {
           return sendJson(res, 400, { success: false, message: 'username, email и password обязательны' });
@@ -63,15 +42,14 @@ module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
 
         const password_hash = hashPassword(password);
         db.run(
-          "INSERT INTO users (username, email, password_hash, role, account_type) VALUES (?, ?, ?, ?, ?)",
-          [username, email, password_hash, role, accountType],
+          "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+          [username, email, password_hash, role],
           function (err) {
             if (err) {
               const msg = err.message.includes('UNIQUE') ? 'Пользователь с таким логином или email уже существует' : 'Ошибка создания пользователя';
               return sendJson(res, 400, { success: false, message: msg });
             }
-            if (accountType === 'employee') ensureEmployeeCard(this.lastID);
-            logAction(user.username, `Создан пользователь ${username} (${role}, ${accountType})`);
+            logAction(user.username, `Создан пользователь ${username} (${role})`);
             sendJson(res, 201, { success: true, id: this.lastID });
           }
         );
@@ -87,7 +65,7 @@ module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
       try {
         const id = parsedUrl.searchParams.get('id');
         const body = await getJsonBody(req);
-        const { username, email, password, role, account_type } = body;
+        const { username, email, password, role } = body;
 
         if (!id) return sendJson(res, 400, { success: false, message: 'Не указан id' });
 
@@ -98,10 +76,6 @@ module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
         if (email)    { fields.push('email = ?');    values.push(email); }
         if (role && ['User','Admin','Superadmin'].includes(role)) {
           fields.push('role = ?'); values.push(role);
-        }
-        const willBeEmployee = account_type === 'employee';
-        if (account_type === 'client' || account_type === 'employee') {
-          fields.push('account_type = ?'); values.push(account_type);
         }
         if (password) {
           if (password.length < 8) {
@@ -125,7 +99,6 @@ module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
               const msg = err.message.includes('UNIQUE') ? 'Логин или email уже заняты' : 'Ошибка обновления';
               return sendJson(res, 400, { success: false, message: msg });
             }
-            if (willBeEmployee) ensureEmployeeCard(parseInt(id, 10));
             logAction(user.username, `Обновлён пользователь id=${id}`);
             sendJson(res, 200, { success: true });
           }
