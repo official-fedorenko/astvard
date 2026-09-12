@@ -17,7 +17,8 @@ REPO=${REPO:-https://github.com/official-fedorenko/astvard.git}
 BRANCH=${BRANCH:-valheim-mod}
 DIR=${DIR:-/srv/astvard}
 SITE_USER=${SITE_USER:-astvard}
-# Which container holds Postgres. Empty means "the role and the database are
+# Which container holds Postgres. Taken from the environment here and from .env
+# below, in that order of preference. Empty means "the role and the database are
 # already there" — then this script only writes .env and never touches the server.
 PG_CONTAINER=${POSTGRES_CONTAINER:-}
 # The superuser inside that container. Connecting over its local socket needs no
@@ -98,6 +99,7 @@ set -a
 # shellcheck disable=SC1091  # written just above, never in the repository
 . "$DIR/.env"
 set +a
+PG_CONTAINER=${PG_CONTAINER:-${POSTGRES_CONTAINER:-}}
 
 say "Postgres"
 if [ -n "$PG_CONTAINER" ]; then
