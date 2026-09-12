@@ -2385,6 +2385,7 @@ async function loadSettings() {
   const SITE_GROUPS = {
     'Общие': ['site_name', 'maintenance_mode', 'allow_registration', 'whitelist_auto_approve'],
     'Главная страница': ['hero_title', 'site_description'],
+    'Продвижение в поиске': ['seo_title', 'seo_description', 'yandex_verification', 'google_verification', 'yandex_metrika_id'],
     'О блоге': ['about_title', 'about_subtitle', 'about_card1_title', 'about_card1_text', 'about_card2_title', 'about_card2_text'],
     'Контакты': ['contact_title', 'contact_subtitle', 'contact_email', 'contact_address']
   };
@@ -2397,6 +2398,11 @@ async function loadSettings() {
   // Понятные подписи (не зависят от description в БД, который может теряться
   // при сохранении из-за INSERT OR REPLACE).
   const LABELS = {
+    seo_title: 'Заголовок в поиске и в превью ссылки — до 60–70 знаков, главное слово в начале',
+    seo_description: 'Описание в поиске и в превью ссылки — 120–160 знаков',
+    yandex_verification: 'Код подтверждения Яндекс Вебмастера (можно вставить тег <meta> целиком)',
+    google_verification: 'Код подтверждения Google Search Console (можно вставить тег <meta> целиком)',
+    yandex_metrika_id: 'Номер счётчика Яндекс Метрики (можно вставить код счётчика целиком)',
     public_card_enabled: 'Публичная карточка доступна всем (по QR)',
     public_card_show_photo: 'Показывать фото',
     public_card_show_brand: 'Показывать бренд',
@@ -2426,7 +2432,7 @@ async function loadSettings() {
   // Определяем тип контрола по ключу
   function getFieldType(key) {
     if (['maintenance_mode', 'allow_registration', 'whitelist_auto_approve'].includes(key) || PUBLIC_CARD_KEYS.includes(key)) return 'boolean';
-    if (['site_description', 'about_subtitle', 'about_card1_text', 'about_card2_text', 'contact_subtitle'].includes(key)) return 'textarea';
+    if (['site_description', 'seo_description', 'about_subtitle', 'about_card1_text', 'about_card2_text', 'contact_subtitle'].includes(key)) return 'textarea';
     if (key === 'contact_email') return 'email';
     return 'text';
   }

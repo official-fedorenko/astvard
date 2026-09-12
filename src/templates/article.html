@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Filled by src/seo.js: title, description, canonical, previews, schema.org. -->
+  {{{head}}}
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="blob-bg"></div>
+  <div class="blob-bg blob-2"></div>
+
+  <header class="topbar">
+    <a href="/" class="topbar__brand">
+      <div class="topbar__icon">
+        <img src="/img/astvard-mark.svg" alt="" width="34" height="34">
+      </div>
+      <span class="topbar__name"><strong>{{site_name}}</strong></span>
+    </a>
+    <div class="topbar__right">
+      <a href="/" class="admin-link">На главную</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main class="content">
+      <div class="article-page">
+        <nav class="breadcrumbs" aria-label="Вы здесь">
+          <a href="/">Главная</a>
+          <span aria-hidden="true">›</span>
+          <a href="/#articles-section">Новости</a>
+        </nav>
+
+        <article>
+          <time class="article-date" datetime="{{published_iso}}">{{published_ru}}</time>
+          <h1 class="article-page__title">{{title}}</h1>
+          <div class="article-body">{{{body}}}</div>
+        </article>
+
+        <aside class="article-cta">
+          <h2 class="article-cta__title">Играть с нами на сервере Valheim</h2>
+          <p class="article-cta__text">Вход через Steam, заявка на доступ из кабинета — и адрес сервера в игре.</p>
+          <div class="hero__actions">
+            <a href="/api/auth/steam" rel="nofollow" class="btn btn--primary">Войти через Steam</a>
+            <a href="/#join" class="btn btn--ghost">Как попасть на сервер</a>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <span class="footer__copy">&copy; {{year}} {{site_name}}. Все права защищены.</span>
+    </div>
+  </footer>
+</body>
+</html>

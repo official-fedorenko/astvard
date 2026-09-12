@@ -918,3 +918,95 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     background: rgba(255, 255, 255, 0.06);
     color: var(--text-secondary);
 }
+
+/* ==== A card that is a link as a whole ====
+   One link per article, on the title, stretched over the card by ::after: a crawler
+   sees one link to the article, a person can tap anywhere on the card. */
+.article-card { position: relative; }
+.card-link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.card-link:focus-visible { outline: none; }
+.article-card:focus-within { border-color: var(--accent-cyan); }
+
+/* ==== How to join ==== */
+.join-steps {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+}
+.join-step {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+}
+.join-step__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+    color: #fff;
+    font-weight: 800;
+    font-size: 14px;
+    margin-bottom: 14px;
+}
+.join-step__title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.join-step__text { color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+
+/* ==== Article page (src/templates/article.html) ==== */
+.article-page { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+.breadcrumbs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 28px;
+}
+.breadcrumbs a { color: var(--text-secondary); }
+.breadcrumbs a:hover { color: var(--accent-cyan); }
+.article-page__title {
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.8px;
+    margin-bottom: 28px;
+    overflow-wrap: anywhere;
+}
+.article-body { color: #d6dbe4; font-size: 16px; line-height: 1.75; overflow-wrap: anywhere; }
+.article-body > * + * { margin-top: 1em; }
+.article-body h1, .article-body h2, .article-body h3, .article-body h4 {
+    color: var(--text-primary);
+    line-height: 1.3;
+    margin-top: 1.6em;
+}
+.article-body a { color: var(--accent-cyan); text-decoration: underline; text-underline-offset: 3px; }
+.article-body img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+.article-body ul, .article-body ol { padding-left: 1.4em; }
+.article-body blockquote { border-left: 3px solid var(--accent-purple); padding-left: 16px; color: var(--text-secondary); }
+.article-body pre {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    overflow-x: auto;
+}
+.article-cta {
+    margin-top: 48px;
+    padding: 28px 24px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.article-cta__title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+.article-cta__text { color: var(--text-secondary); font-size: 14.5px; line-height: 1.6; margin-bottom: 20px; }
+.article-cta .hero__actions { margin-bottom: 0; }
+@media (max-width: 640px) {
+    .article-page { padding: 32px 18px 48px; }
+    .article-page__title { font-size: 28px; }
+}

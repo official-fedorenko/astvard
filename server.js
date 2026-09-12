@@ -44,6 +44,7 @@ const handleGameSync = require('./src/routes/gameSync');
 const { ensureSuperadmin } = require('./src/bootstrap');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
+const seo = require('./src/seo');
 
 const PORT = parseInt(process.env.PORT, 10) || 3080;
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
@@ -66,7 +67,10 @@ const MIME_TYPES = {
   '.gif': 'image/gif',
   '.pdf': 'application/pdf',
   '.txt': 'text/plain; charset=utf-8',
-  '.json': 'application/json; charset=utf-8'
+  '.json': 'application/json; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8'
 };
 
 // HTML отдаём без кэша (доступ зависит от сессии: логин/редиректы),
@@ -122,23 +126,43 @@ reloadSettingsCache();
 // подключают Quill/Lucide с CDN, поэтому 'unsafe-inline' для script/style
 // оставлен осознанно — полностью убрать его можно только после рефакторинга
 // фронтенда на addEventListener и внешние стили.
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self' https://unpkg.com https://cdn.quilljs.com 'unsafe-inline'",
-  "style-src 'self' https://cdn.quilljs.com 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'"
-].join('; ');
+//
+// Google Fonts is listed because every page asks it for Inter: without it the
+// stylesheet was refused and the site fell back to the system font without a word.
+// Metrika's hosts go only to public pages and only once a counter number is set in
+// the panel (sendPublicHtml below) — the admin panel has no business talking to Yandex.
+function buildCsp({ metrika = false } = {}) {
+  const yandex = metrika ? ' https://mc.yandex.ru https://mc.yandex.com https://yastatic.net' : '';
+  return [
+    "default-src 'self'",
+    `script-src 'self' https://unpkg.com https://cdn.quilljs.com 'unsafe-inline'${yandex}`,
+    "style-src 'self' https://cdn.quilljs.com https://fonts.googleapis.com 'unsafe-inline'",
+    `img-src 'self' data: blob:${yandex}`,
+    "font-src 'self' data: https://fonts.gstatic.com",
+    `connect-src 'self'${yandex}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'"
+  ].join('; ');
+}
+const CSP = buildCsp();
 
 function applySecurityHeaders(res) {
   res.setHeader('Content-Security-Policy', CSP);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+}
+
+// A page of the site itself on its way out: the Metrika counter when one is set,
+// and fresh asset versions. The rendered pages (src/seo.js) and the plain ones from
+// client/ both leave through here, so a counter set in the panel reaches all of them.
+function sendPublicHtml(res, html, settings, status = 200) {
+  const counter = seo.analyticsTags(settings);
+  if (counter) res.setHeader('Content-Security-Policy', buildCsp({ metrika: true }));
+  const out = counter ? html.replace('</head>', () => `${counter}</head>`) : html;
+  res.writeHead(status, { 'Content-Type': MIME_TYPES['.html'], 'Cache-Control': NO_CACHE_CONTROL });
+  res.end(injectAssetVersions(out, CLIENT_DIR));
 }
 
 function sendHtml404(res) {
@@ -153,12 +177,10 @@ const server = http.createServer(async (req, res) => {
 
   applySecurityHeaders(res);
 
-  // Страницы сами объявляют свою иконку через <link rel="icon" data:...>,
-  // отдельного favicon.ico в проекте нет — отвечаем тихо, без шумных 404 в логах.
-  if (pathname === '/favicon.ico') {
-    res.writeHead(204);
-    res.end();
-    return;
+  // Accounts, the admin's desk and the API stay out of search results. A header
+  // rather than a robots.txt rule: see isPrivatePath in src/seo.js.
+  if (seo.isPrivatePath(pathname)) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   }
 
   // Basic global error boundary for uncaught errors in handlers
@@ -174,7 +196,9 @@ const server = http.createServer(async (req, res) => {
                          pathname !== '/favicon.ico';
 
   if (isMaintenance && !user && isPublicNonApi) {
-    res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+    // Retry-After tells a crawler the outage is planned, so it comes back later
+    // instead of dropping the pages.
+    res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '3600' });
     res.end(`<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>На обслуживании</title><style>body{font-family:Inter,system-ui,sans-serif;background:#050505;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.m{padding:48px 40px;background:rgba(20,20,28,.85);border:1px solid rgba(255,255,255,.08);border-radius:20px;text-align:center;max-width:420px}.icon{font-size:48px;margin-bottom:12px}.title{font-size:22px;font-weight:700;margin-bottom:8px;color:#ff6b6b}.desc{color:#a0a0ab;font-size:14px;line-height:1.5} .admin-link{color:#00d2ff;text-decoration:none} .admin-link:hover{text-decoration:underline}</style></head><body><div class="m"><div class="icon">🛠️</div><div class="title">Технические работы</div><div class="desc">Сайт временно недоступен для посетителей.<br>Администраторы могут войти через панель управления.</div><div style="margin-top:20px"><a class="admin-link" href="/admin/">Перейти в админ-панель →</a></div></div></body></html>`);
     return;
   }
@@ -380,6 +404,45 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 404, { success: false, message: 'API endpoint не найден' });
   }
 
+  // The site's public pages, rendered on the server for search engines and link
+  // previews (src/seo.js). /index.html is the same page as /, and two addresses for
+  // one page split its standing in search between them.
+  if (pathname === '/index.html') {
+    res.writeHead(301, { Location: `/${parsedUrl.search}` });
+    return res.end();
+  }
+  if (pathname === '/') {
+    const { html, settings } = await seo.renderHome();
+    return sendPublicHtml(res, html, settings);
+  }
+  if (pathname === '/robots.txt') {
+    res.writeHead(200, { 'Content-Type': MIME_TYPES['.txt'], 'Cache-Control': 'public, max-age=3600' });
+    return res.end(seo.robotsTxt());
+  }
+  if (pathname === '/sitemap.xml') {
+    const xml = await seo.sitemapXml();
+    res.writeHead(200, { 'Content-Type': MIME_TYPES['.xml'], 'Cache-Control': 'public, max-age=3600' });
+    return res.end(xml);
+  }
+  if (pathname === '/news' || pathname === '/news/') {
+    res.writeHead(301, { Location: '/#articles-section' });
+    return res.end();
+  }
+  if (pathname.startsWith('/news/')) {
+    const match = pathname.match(seo.NEWS_PATH_RE);
+    const article = match ? await seo.publishedArticle(Number(match[1])) : null;
+    if (!article) return sendHtml404(res);
+    // An old title in the address, a trailing slash, no title at all: one address
+    // per article, and an ad campaign's tags in the query survive the hop.
+    const canonical = seo.articlePath(article);
+    if (pathname !== canonical) {
+      res.writeHead(301, { Location: `${canonical}${parsedUrl.search}` });
+      return res.end();
+    }
+    const { html, settings } = await seo.renderArticle(article);
+    return sendPublicHtml(res, html, settings);
+  }
+
   // Serve catalog category images (SVG) from data/tool-catalog/images.
   // Только .svg, имя файла жёстко валидируется (без обхода каталога).
   if (pathname.startsWith('/catalog/images/')) {
@@ -467,8 +530,12 @@ const server = http.createServer(async (req, res) => {
 
     // HTML читаем и подставляем свежие версии ассетов (авто cache-busting).
     if (ext === '.html') {
-      fs.readFile(fullStaticPath, 'utf8', (rErr, html) => {
+      fs.readFile(fullStaticPath, 'utf8', async (rErr, html) => {
         if (rErr) { sendHtml404(res); return; }
+        // The site's own pages carry the counter; the admin panel's do not.
+        if (!pathname.startsWith('/admin')) {
+          return sendPublicHtml(res, html, await seo.loadSettings());
+        }
         const out = injectAssetVersions(html, path.dirname(fullStaticPath));
         res.writeHead(200, {
           'Content-Type': contentType,

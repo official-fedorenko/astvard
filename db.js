@@ -228,6 +228,14 @@ const DEFAULT_SETTINGS = [
   ['contact_subtitle', 'Вопрос по серверу или хочешь к нам — напиши', 'Контакты: Подзаголовок'],
   ['contact_email', 'info@astvard.online', 'Контакты: Электронная почта'],
   ['contact_address', 'astvard.online', 'Контакты: Адрес'],
+  // What search results and link previews show (src/seo.js). Kept apart from the
+  // hero on purpose: a title is read in a list of ten others and has to say
+  // "Valheim" in its first words, a hero is read by someone already here.
+  ['seo_title', 'Русский сервер Valheim с модами — Astvard', 'Заголовок в поиске и в превью ссылки (title), до 60–70 знаков'],
+  ['seo_description', 'Свой сервер Valheim 1.0: постройки по шаблонам, руны за время в мире, онлайн игроков прямо на сайте. Вход через Steam, доступ по заявке.', 'Описание в поиске и в превью ссылки, 120–160 знаков'],
+  ['yandex_verification', '', 'Код подтверждения Яндекс Вебмастера — можно вставить тег <meta> целиком'],
+  ['google_verification', '', 'Код подтверждения Google Search Console — можно вставить тег <meta> целиком'],
+  ['yandex_metrika_id', '', 'Номер счётчика Яндекс Метрики — можно вставить код счётчика целиком'],
   ['public_card_enabled', 'true', 'Публичная карточка: доступна всем по QR'],
   ['public_card_show_photo', 'true', 'Публичная карточка: показывать фото'],
   ['public_card_show_brand', 'true', 'Публичная карточка: показывать бренд'],
@@ -393,6 +401,7 @@ module.exports = {
   pool,
   dbReady,
   seedDefaults,
+  DEFAULT_SETTINGS,
   dumpDatabase,
   TEST_EMPLOYEES,
   TEST_TOOLS,

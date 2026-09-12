@@ -583,3 +583,152 @@ test('списки для мода отдаются только по верно
   const admins = got.slice(adminsAt + 1);
   assert.ok(admins.includes('V_76561198000000920') && admins.includes('Steam_76561198000000920'), 'админ — обеими формами');
 });
+
+// ---------------------------------------------------------------- search and previews
+
+const { DEFAULT_SETTINGS: SEO_DEFAULTS } = require('../db');
+
+async function setSetting(key, value) {
+  await pool.query(
+    'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+    [key, value]
+  );
+}
+
+async function resetSetting(key) {
+  await setSetting(key, SEO_DEFAULTS.find(([k]) => k === key)[1]);
+}
+
+async function seededArticleIds() {
+  const { rows } = await pool.query("SELECT id, status FROM articles ORDER BY id");
+  return {
+    published: rows.find((r) => r.status === 'published').id,
+    draft: rows.find((r) => r.status === 'draft').id
+  };
+}
+
+test('главная уходит с сервера готовой: тексты из настроек, заголовок для поиска, schema.org, ссылки на статьи', async () => {
+  const { published } = await seededArticleIds();
+  await setSetting('hero_title', 'Сервер <b>Valheim</b>');
+  await setSetting('seo_title', 'Тестовый заголовок для поиска');
+  try {
+    const res = await fetch(`${baseUrl}/`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.headers.get('x-robots-tag'), null, 'главная не закрыта от индекса');
+    const html = await res.text();
+
+    assert.ok(html.includes('<title>Тестовый заголовок для поиска</title>'));
+    assert.ok(html.includes('Сервер &lt;b&gt;Valheim&lt;/b&gt;'), 'текст из настроек экранирован');
+    assert.ok(!html.includes('{{'), 'в странице не осталось незаполненных мест');
+    assert.ok(!html.includes('г. Вильнюс'), 'заглушка панели не доезжает до поисковика');
+    assert.match(html, /<link rel="canonical" href="http[^"]+\/">/);
+    assert.match(html, /<meta name="description" content="[^"]{40,}">/);
+
+    const ld = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+    assert.ok(ld['@graph'].some((node) => node['@type'] === 'WebSite'));
+
+    assert.ok(html.includes(`href="/news/${published}-dobro-pozhalovat-v-astvard"`), 'статья — ссылка на свою страницу');
+    // Шаг «Попроси доступ» говорит, что будет с заявкой сейчас.
+    assert.ok(html.includes('Заявку смотрит админ'));
+  } finally {
+    await resetSetting('hero_title');
+    await resetSetting('seo_title');
+  }
+});
+
+test('у статьи один адрес: старые и неполные ведут на него, черновик и мусор — 404', async () => {
+  const { published, draft } = await seededArticleIds();
+  const canonical = `/news/${published}-dobro-pozhalovat-v-astvard`;
+
+  let res = await fetch(`${baseUrl}/index.html?utm_source=vk`, { redirect: 'manual' });
+  assert.strictEqual(res.status, 301);
+  assert.strictEqual(res.headers.get('location'), '/?utm_source=vk');
+
+  res = await fetch(`${baseUrl}/news/${published}?utm_campaign=test`, { redirect: 'manual' });
+  assert.strictEqual(res.status, 301);
+  assert.strictEqual(res.headers.get('location'), `${canonical}?utm_campaign=test`, 'метки кампании не теряются');
+
+  res = await fetch(`${baseUrl}/news/${published}-staroe-nazvanie/`, { redirect: 'manual' });
+  assert.strictEqual(res.status, 301);
+  assert.strictEqual(res.headers.get('location'), canonical);
+
+  res = await fetch(`${baseUrl}${canonical}`);
+  assert.strictEqual(res.status, 200);
+  const html = await res.text();
+  assert.ok(html.includes('<h1 class="article-page__title">Добро пожаловать в Astvard</h1>'));
+  assert.ok(html.includes(`<link rel="canonical" href="${process.env.APP_URL ? process.env.APP_URL.replace(/\/+$/, '') : 'http://localhost:3001'}${canonical}">`));
+  assert.ok(html.includes('<meta property="og:type" content="article">'));
+  assert.ok(!html.includes('{{'));
+  const ld = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+  const posting = ld['@graph'].find((node) => node['@type'] === 'BlogPosting');
+  assert.strictEqual(posting.headline, 'Добро пожаловать в Astvard');
+
+  res = await fetch(`${baseUrl}/news/${draft}-chernovik`);
+  assert.strictEqual(res.status, 404, 'черновик не открывается по адресу');
+  res = await fetch(`${baseUrl}/news/abc`);
+  assert.strictEqual(res.status, 404);
+});
+
+test('robots.txt и sitemap.xml: служебное закрыто, в карте только опубликованное', async () => {
+  const { published, draft } = await seededArticleIds();
+
+  let res = await fetch(`${baseUrl}/robots.txt`);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^text\/plain/);
+  const robots = await res.text();
+  assert.ok(robots.includes('Disallow: /admin'));
+  assert.ok(robots.includes('Allow: /api/public/'));
+  assert.match(robots, /^Sitemap: https?:\/\/.+\/sitemap\.xml$/m);
+
+  res = await fetch(`${baseUrl}/sitemap.xml`);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^application\/xml/);
+  const xml = await res.text();
+  assert.ok(xml.includes(`/news/${published}-dobro-pozhalovat-v-astvard</loc>`));
+  assert.ok(!xml.includes(`/news/${draft}-`), 'черновика в карте нет');
+  assert.match(xml, /<lastmod>\d{4}-\d{2}-\d{2}T/);
+});
+
+test('кабинет, вход, админка и API помечены noindex, публичное — нет', async () => {
+  for (const pagePath of ['/cabinet.html', '/login.html', '/admin/login.html', '/api/public/settings']) {
+    const res = await fetch(`${baseUrl}${pagePath}`, { redirect: 'manual' });
+    assert.strictEqual(res.headers.get('x-robots-tag'), 'noindex, nofollow', pagePath);
+  }
+  for (const pagePath of ['/', '/robots.txt', '/favicon.ico', '/site.webmanifest']) {
+    const res = await fetch(`${baseUrl}${pagePath}`);
+    assert.strictEqual(res.status, 200, pagePath);
+    assert.strictEqual(res.headers.get('x-robots-tag'), null, pagePath);
+  }
+});
+
+test('Метрика и коды подтверждения встают, только когда заданы, и только в своём виде', async () => {
+  // Люди вставляют то, что им показал сервис: код счётчика целиком, тег целиком.
+  await setSetting('yandex_metrika_id', '<script>ym(12345678, "init", { clickmap:true })</script>');
+  await setSetting('yandex_verification', '<meta name="yandex-verification" content="0123abcd4567ef89" />');
+  await setSetting('google_verification', 'x"><script>alert(1)</script>');
+  try {
+    let res = await fetch(`${baseUrl}/`);
+    let html = await res.text();
+    assert.ok(html.includes("ym(12345678, 'init'"), 'счётчик с номером из вставленного кода');
+    assert.ok(html.includes('https://mc.yandex.ru/metrika/tag.js'));
+    assert.ok(res.headers.get('content-security-policy').includes('https://mc.yandex.ru'), 'CSP пускает Метрику');
+    assert.ok(html.includes('<meta name="yandex-verification" content="0123abcd4567ef89">'));
+    assert.ok(!html.includes('google-site-verification'), 'кривой код не вставляется вовсе');
+    assert.ok(!html.includes('alert(1)'));
+
+    res = await fetch(`${baseUrl}/cabinet.html`);
+    assert.ok((await res.text()).includes('mc.yandex.ru/metrika/tag.js'), 'цель заявки считается в кабинете');
+
+    res = await fetch(`${baseUrl}/admin/login.html`);
+    assert.ok(!(await res.text()).includes('mc.yandex.ru'), 'в админке счётчика нет');
+    assert.ok(!res.headers.get('content-security-policy').includes('mc.yandex.ru'));
+  } finally {
+    await resetSetting('yandex_metrika_id');
+    await resetSetting('yandex_verification');
+    await resetSetting('google_verification');
+  }
+
+  const res = await fetch(`${baseUrl}/`);
+  assert.ok(!(await res.text()).includes('mc.yandex.ru'), 'без номера счётчика нет');
+  assert.ok(!res.headers.get('content-security-policy').includes('mc.yandex.ru'));
+});

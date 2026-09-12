@@ -53,7 +53,7 @@ async function handleArticles(req, res, user, parsedUrl, method) {
         return sendJson(res, 400, { message: 'Название статьи обязательно (минимум 3 символа)' });
       }
       const status = ALLOWED_STATUSES.includes(body.status) ? body.status : 'draft';
-      db.run("INSERT INTO articles (title, content, status) VALUES (?, ?, ?)",
+      db.run("INSERT INTO articles (title, content, status, updated_at) VALUES (?, ?, ?, now())",
         [body.title.trim(), sanitizeContent(body.content), status], function(err) {
           if (err) return sendJson(res, 500, { message: 'Ошибка создания' });
           sendJson(res, 201, { id: this.lastID, success: true });
@@ -72,7 +72,7 @@ async function handleArticles(req, res, user, parsedUrl, method) {
       }
       const status = ALLOWED_STATUSES.includes(body.status) ? body.status : 'draft';
 
-      db.run("UPDATE articles SET title = ?, content = ?, status = ? WHERE id = ?",
+      db.run("UPDATE articles SET title = ?, content = ?, status = ?, updated_at = now() WHERE id = ?",
         [body.title.trim(), sanitizeContent(body.content), status, id], function(err) {
           if (err) return sendJson(res, 500, { message: 'Ошибка обновления' });
           if (this.changes === 0) return sendJson(res, 404, { message: 'Статья не найдена' });

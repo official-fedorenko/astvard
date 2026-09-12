@@ -3,31 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Заголовок подменяет app.js из настроек сайта; этот нужен тем, кто
-       разметку только читает и скриптов не выполняет — поисковикам и мессенджерам. -->
-  <title>Astvard — игровые серверы</title>
-  <meta name="description" content="Наши серверы, доступ к ним и всё, что вокруг игры. Вход по списку.">
-
-  <!-- Превью ссылки. Картинка растровая и по абсолютному адресу намеренно:
-       SVG в превью не понимает ни Telegram, ни Discord, а относительный путь
-       часть сборщиков не разворачивает. -->
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Astvard">
-  <meta property="og:title" content="Astvard — игровые серверы">
-  <meta property="og:description" content="Наши серверы, доступ к ним и всё, что вокруг игры. Вход по списку.">
-  <meta property="og:url" content="https://astvard.online/">
-  <meta property="og:image" content="https://astvard.online/img/astvard-og.png">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="Astvard — игровые серверы">
-  <meta name="twitter:card" content="summary_large_image">
+  <!-- Title, description, canonical, link previews, icons and schema.org come from
+       src/seo.js, and so does every double-brace field below: the page leaves the server
+       finished, so a search engine or a messenger that runs no scripts reads the
+       real texts instead of placeholders. -->
+  {{{head}}}
 
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="icon" href="/img/astvard-mark.svg" type="image/svg+xml">
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Pinned: @latest is a redirect on every visit, and a new release may rename an
+       icon overnight. Deferred: it was the one script holding back the first paint. -->
+  <script src="https://unpkg.com/lucide@1.45.0/dist/umd/lucide.min.js" defer></script>
   <style>
     /* На мобильных чип пользователя открывает меню; отдельную кнопку
        «Панель» прячем — админ-панель доступна пунктом меню. */
@@ -91,7 +79,7 @@
       <div class="topbar__icon">
         <img src="/img/astvard-mark.svg" alt="" width="34" height="34">
       </div>
-      <span class="topbar__name"><strong id="siteName">Astvard</strong></span>
+      <span class="topbar__name"><strong id="siteName">{{site_name}}</strong></span>
     </a>
     
     <div class="topbar__right">
@@ -154,6 +142,18 @@
             </a>
           </li>
           <li>
+            <a href="#join" class="sidebar__link" onclick="switchSection('join')">
+              <span class="sidebar__link-icon"><i data-lucide="log-in"></i></span>
+              <span>Как попасть</span>
+            </a>
+          </li>
+          <li>
+            <a href="#articles-section" class="sidebar__link" onclick="switchSection('articles-section')">
+              <span class="sidebar__link-icon"><i data-lucide="newspaper"></i></span>
+              <span>Новости</span>
+            </a>
+          </li>
+          <li>
             <a href="#about" class="sidebar__link" onclick="switchSection('about')">
               <span class="sidebar__link-icon"><i data-lucide="info"></i></span>
               <span>О компании</span>
@@ -171,7 +171,7 @@
           <p class="sidebar__section-label">Активность</p>
           <ul class="sidebar__menu">
             <li>
-              <a href="/api/auth/steam" class="sidebar__link">
+              <a href="/api/auth/steam" rel="nofollow" class="sidebar__link">
                 <span class="sidebar__link-icon"><i data-lucide="log-in"></i></span>
                 <span>Войти через Steam</span>
               </a>
@@ -192,22 +192,46 @@
       <section class="hero" id="home">
         <div class="hero__badge">
           <i data-lucide="sparkles" style="width: 14px; height: 14px; color: var(--accent-cyan);"></i> 
-          Свои серверы, вход по списку
+          Сервер Valheim · вход через Steam
         </div>
-        <h1 class="hero__title" id="heroTitle">Astvard</h1>
-        <p class="hero__subtitle" id="heroSubtitle">Наши серверы, доступ к ним и всё, что вокруг игры.</p>
+        <h1 class="hero__title" id="heroTitle">{{hero_title}}</h1>
+        <p class="hero__subtitle" id="heroSubtitle">{{site_description}}</p>
         <div class="hero__actions">
-          <a href="/api/auth/steam" class="btn btn--primary" id="heroRegisterBtn">Войти через Steam</a>
+          <a href="/api/auth/steam" rel="nofollow" class="btn btn--primary" id="heroRegisterBtn">Войти через Steam</a>
           <a href="#servers-section" class="btn btn--ghost">Наши серверы</a>
         </div>
       </section>
 
-      <!-- ARTICLES SECTION -->
+      <!-- SERVERS -->
       <section class="section" id="servers-section">
         <h2 class="section__title">Игровые серверы</h2>
         <div class="articles-grid" id="serversGrid">
           <p style="color: var(--text-muted, #a0a0ab);">Загрузка...</p>
         </div>
+      </section>
+
+      <!-- HOW TO JOIN: what a search for "сервер Valheim" should land on. The menu
+           names are the game's own Russian strings, found in its resources.assets. -->
+      <section class="section" id="join">
+        <h2 class="section__title">Как попасть на сервер Valheim</h2>
+        <p class="section__subtitle">Три шага и никаких паролей: сервер пускает по списку Steam-аккаунтов</p>
+        <ol class="join-steps">
+          <li class="join-step">
+            <span class="join-step__num" aria-hidden="true">1</span>
+            <h3 class="join-step__title">Войди через Steam</h3>
+            <p class="join-step__text">Аккаунт на сайте заведётся сам — ни почты, ни пароля придумывать не нужно.</p>
+          </li>
+          <li class="join-step">
+            <span class="join-step__num" aria-hidden="true">2</span>
+            <h3 class="join-step__title">Попроси доступ</h3>
+            <p class="join-step__text">В личном кабинете — кнопка «Запросить доступ». {{join_access}}</p>
+          </li>
+          <li class="join-step">
+            <span class="join-step__num" aria-hidden="true">3</span>
+            <h3 class="join-step__title">Добавь сервер в игре</h3>
+            <p class="join-step__text">В Valheim: «Начать игру» → «Присоединиться к игре» → «Добавить сервер», и адрес из карточки сервера выше.</p>
+          </li>
+        </ol>
       </section>
 
       <!-- НАШ СЕРВЕР: руны и общие постройки, всё из файлов мода -->
@@ -233,54 +257,35 @@
       </section>
 
       <section class="section" id="articles-section">
-        <h2 class="section__title">Последние статьи</h2>
-        <p class="section__subtitle">Самые свежие мысли и полезные материалы</p>
-        
-        <div class="articles-grid" id="articlesGrid">
-          <!-- Skeleton loader -->
-          <div class="article-card skeleton"></div>
-          <div class="article-card skeleton"></div>
-          <div class="article-card skeleton"></div>
+        <h2 class="section__title">Новости</h2>
+        <p class="section__subtitle">Что меняется на серверах и вокруг игры</p>
+        <div class="articles-grid" id="articlesGrid">{{{articles}}}
         </div>
       </section>
 
-      <!-- Article modal (for better public reading experience) -->
-      <div id="articleModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:9999; align-items:center; justify-content:center; padding:20px;">
-        <div style="background:#111; max-width:820px; width:100%; border-radius:20px; border:1px solid var(--border-color); max-height:92vh; overflow:hidden; display:flex; flex-direction:column;">
-          <div style="padding:20px 24px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,.02);">
-            <h2 id="articleModalTitle" style="margin:0; font-size:22px; font-weight:700;"></h2>
-            <button onclick="closeArticleModal()" style="background:none; border:none; color:#fff; font-size:28px; cursor:pointer; line-height:1; padding:0 8px;">&times;</button>
-          </div>
-          <div id="articleModalContent" style="padding:24px 28px; overflow:auto; flex:1; line-height:1.7; font-size:15px; color:#ddd;"></div>
-          <div style="padding:16px 24px; border-top:1px solid var(--border-color); text-align:right; background:rgba(0,0,0,.2);">
-            <button onclick="closeArticleModal()" class="btn" style="background:#222; border:1px solid var(--border-color);">Закрыть</button>
-          </div>
-        </div>
-      </div>
-
       <!-- ABOUT SECTION -->
       <section class="section section--alt" id="about">
-        <h2 class="section__title" id="aboutTitle">О нашем блоге</h2>
-        <p class="section__subtitle" id="aboutSubtitle">Кто мы и для чего создали эту платформу</p>
+        <h2 class="section__title" id="aboutTitle">{{about_title}}</h2>
+        <p class="section__subtitle" id="aboutSubtitle">{{about_subtitle}}</p>
         
         <div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;">
           <div class="card" style="border-top: 4px solid var(--accent-purple);">
             <div class="card__icon"><i data-lucide="edit-3"></i></div>
-            <h3 class="card__title" id="aboutCard1Title">Пишем о главном</h3>
-            <p class="card__text" id="aboutCard1Text">Публикуем материалы о веб-разработке, дизайне интерфейсов, системном администрировании и автоматизации процессов.</p>
+            <h3 class="card__title" id="aboutCard1Title">{{about_card1_title}}</h3>
+            <p class="card__text" id="aboutCard1Text">{{about_card1_text}}</p>
           </div>
           <div class="card" style="border-top: 4px solid var(--accent-cyan);">
             <div class="card__icon"><i data-lucide="shield-check"></i></div>
-            <h3 class="card__title" id="aboutCard2Title">Проверенный контент</h3>
-            <p class="card__text" id="aboutCard2Text">Все публикации проходят модерацию экспертами, чтобы вы получали только качественную и актуальную информацию.</p>
+            <h3 class="card__title" id="aboutCard2Title">{{about_card2_title}}</h3>
+            <p class="card__text" id="aboutCard2Text">{{about_card2_text}}</p>
           </div>
         </div>
       </section>
 
       <!-- CONTACT SECTION -->
       <section class="section" id="contact">
-        <h2 class="section__title" id="contactTitle">Обратная связь</h2>
-        <p class="section__subtitle" id="contactSubtitle">Остались вопросы или хотите предложить сотрудничество?</p>
+        <h2 class="section__title" id="contactTitle">{{contact_title}}</h2>
+        <p class="section__subtitle" id="contactSubtitle">{{contact_subtitle}}</p>
         
         <div class="contact-grid">
           <div class="contact-info">
@@ -288,14 +293,14 @@
               <span class="contact-item__icon"><i data-lucide="mail" style="color: var(--accent-cyan)"></i></span>
               <div>
                 <strong>Электронная почта</strong>
-                <p id="contactEmail">info@example.com</p>
+                <p id="contactEmail">{{contact_email}}</p>
               </div>
             </div>
             <div class="contact-item">
               <span class="contact-item__icon"><i data-lucide="map-pin" style="color: var(--accent-purple)"></i></span>
               <div>
                 <strong>Наш офис</strong>
-                <p id="contactAddress">г. Вильнюс, ул. Разработчиков, д. 42</p>
+                <p id="contactAddress">{{contact_address}}</p>
               </div>
             </div>
           </div>
@@ -310,7 +315,7 @@
                 Чтобы написать в службу поддержки или оставить обратную связь, пожалуйста, авторизуйтесь в вашем личном кабинете.
               </p>
               <div id="supportActionButtons" style="display: flex; gap: 12px; justify-content: center;">
-                <a href="/api/auth/steam" class="btn btn--primary" style="text-decoration: none; padding: 12px 24px;">Войти через Steam</a>
+                <a href="/api/auth/steam" rel="nofollow" class="btn btn--primary" style="text-decoration: none; padding: 12px 24px;">Войти через Steam</a>
               </div>
             </div>
           </div>
@@ -322,7 +327,7 @@
   <!-- FOOTER -->
   <footer class="footer">
     <div class="footer__inner">
-      <span class="footer__copy">&copy; <span id="currentYear"></span> <span id="footerSiteName">Astvard</span>. Все права защищены.</span>
+      <span class="footer__copy">&copy; <span id="currentYear">{{year}}</span> <span id="footerSiteName">{{site_name}}</span>. Все права защищены.</span>
     </div>
   </footer>
 

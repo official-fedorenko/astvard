@@ -1162,6 +1162,8 @@
               return;
             }
             showToast('Заявка отправлена — админ её увидит');
+            // Metrika goal for ad campaigns (src/seo.js); absent when no counter is set.
+            if (window.astvardGoal) window.astvardGoal('whitelist_request');
             loadProfile();
           } catch (e) {
             showToast('Не получилось', 'error');

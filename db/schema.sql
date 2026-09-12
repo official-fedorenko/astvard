@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS articles (
       title TEXT NOT NULL,
       content TEXT,
       status TEXT NOT NULL DEFAULT 'draft',
-      created_at TIMESTAMPTZ DEFAULT now()
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ
     );
 
 CREATE TABLE IF NOT EXISTS catalog_models (
@@ -323,3 +324,6 @@ ALTER TABLE tools ADD COLUMN IF NOT EXISTS specs TEXT;
 ALTER TABLE catalog_models ADD COLUMN IF NOT EXISTS specs TEXT;
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS read_by_user INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+-- When an article last changed, for sitemap.xml and dateModified. NULL on rows
+-- written before the column: those fall back to created_at.
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;

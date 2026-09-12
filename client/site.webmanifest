@@ -1,0 +1,13 @@
+{
+  "name": "Astvard — сервер Valheim",
+  "short_name": "Astvard",
+  "lang": "ru",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#030307",
+  "theme_color": "#030307",
+  "icons": [
+    { "src": "/img/astvard-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/img/astvard-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
