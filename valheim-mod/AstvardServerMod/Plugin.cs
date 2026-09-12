@@ -122,6 +122,8 @@ namespace AstvardServerMod
 
         private const string RpcAdminGrant = "AstvardAdminGrant";
 
+        private const string RpcAdminSeen = "AstvardAdminSeen";
+
         /// <summary>
         /// The one outstanding unlock request, or 0. A client cannot authenticate an
         /// incoming routed RPC at all: ZRoutedRpc.RPC_RoutedRPC relays on the target id
@@ -153,7 +155,21 @@ namespace AstvardServerMod
         {
             _adminNonce = 0;
             IsAdminUnlocked = false;
+            MayAskAdmin = false;
         }
+
+        /// <summary>
+        /// Client side: whether this server counts this player as an admin at all. Until it
+        /// says so, «Админка» is not drawn - there is nothing behind it for a player, and a
+        /// button that answers every press with silence is worse than no button.
+        ///
+        /// Only the drawing hangs on this. The grant itself is decided on the server, by the
+        /// socket the request came in on, and a client saying otherwise changes nothing. The
+        /// console command `astvardadmin` also still asks, whatever the panel shows: a real
+        /// admin whose id in the list is written in another form gets no button, and that
+        /// refusal - with the id the socket reported - is what the server's log needs to say.
+        /// </summary>
+        internal static bool MayAskAdmin;
 
         internal static void RegisterAdminRpcs()
         {
@@ -162,6 +178,7 @@ namespace AstvardServerMod
 
             rpc.Register<long>(RpcAdminAsk, OnAdminAsk);
             rpc.Register<long>(RpcAdminGrant, OnAdminGrant);
+            rpc.Register<bool>(RpcAdminSeen, OnAdminSeen);
         }
 
         /// <summary>Client side: ask the server whether we may have the admin buttons.</summary>
@@ -348,6 +365,27 @@ namespace AstvardServerMod
 
             var peer = MPeerByRpc.Invoke(ZNet.instance, new object[] { rpc }) as ZNetPeer;
             return peer != null ? peer.m_uid : sender;
+        }
+
+        /// <summary>
+        /// Server side. Says whether this player is in the admin list, by the same two gates
+        /// the grant itself uses, so the button is drawn exactly where pressing it would work.
+        /// Sent with the panel's usual query - see OnTemplateQuery - because the socket is
+        /// only knowable while its own call is being handled.
+        /// </summary>
+        internal static void ReplyMayAdmin(long sender)
+        {
+            var may = ServerAllows(sender) || AdminFileAllows(sender);
+            ZRoutedRpc.instance?.InvokeRoutedRPC(ReplyTarget(sender), RpcAdminSeen, may);
+        }
+
+        /// <summary>Client side: the server's word on whether to draw «Админка».</summary>
+        private static void OnAdminSeen(long sender, bool may)
+        {
+            if (MayAskAdmin == may) return;
+
+            MayAskAdmin = may;
+            RefreshMenu();
         }
 
         /// <summary>Client side: an answer arrived. Only ours counts.</summary>

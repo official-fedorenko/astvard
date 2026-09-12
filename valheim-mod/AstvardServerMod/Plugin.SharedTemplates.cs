@@ -272,6 +272,7 @@ namespace AstvardServerMod
             ReplyBuildRules(sender);
             ReplyPlayerRules(sender);
             ReplyCurrency(sender);
+            ReplyMayAdmin(sender);
         }
 
         private static void BroadcastSharedList()
@@ -447,7 +448,21 @@ namespace AstvardServerMod
         /// <summary>Asks for the list without emptying the one shown in the meantime.</summary>
         internal static void AskSharedList()
         {
+            _sharedListAskedAt = Time.time;
             ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplQuery);
+        }
+
+        private static float _sharedListAskedAt = float.NegativeInfinity;
+
+        /// <summary>
+        /// Asks again, but not often: opening the panel is the moment to catch what changed
+        /// on the server since - a template opened to players, a rule, a name added to
+        /// adminlist.txt, which is what decides whether «Админка» is drawn at all.
+        /// </summary>
+        internal static void AskSharedListAgain()
+        {
+            if (Time.time - _sharedListAskedAt < 20f) return;
+            AskSharedList();
         }
 
         internal static void PushTemplate(BlueprintTemplate template, bool say = true)

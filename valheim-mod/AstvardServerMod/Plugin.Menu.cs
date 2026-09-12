@@ -1225,7 +1225,7 @@ namespace AstvardServerMod
             SetActive(InfoText, MenuState == StateRoot && IsInfoShown);
             SetActive(SeedCopyButton, MenuState == StateRoot && IsInfoShown);
             SetActive(ActivateButton, admin && MenuState == StateRoot);
-            SetActive(AdminAskButton, !admin && MenuState == StateRoot);
+            SetActive(AdminAskButton, !admin && MayAskAdmin && MenuState == StateRoot);
 
             // Everything below is open to every player, not just admins.
             SetActive(FeaturesButton, MenuState == StateRoot);

@@ -387,6 +387,9 @@ namespace AstvardServerMod
             // A player's panel needs the server's word on what they may build before it
             // can offer «Постройки»; once per connection, broadcasts carry the rest.
             Plugin.AskSharedListOnce();
+            // And again on later openings, seldom: the admin list and the rules can have
+            // changed since the connection, and the panel is drawn from what the server said.
+            Plugin.AskSharedListAgain();
             Plugin.RefreshMenu();
         }
     }

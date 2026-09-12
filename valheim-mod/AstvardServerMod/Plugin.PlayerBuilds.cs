@@ -84,7 +84,7 @@ namespace AstvardServerMod
                 OpenCopyForm();
             });
 
-            PlayerMyTemplatesButton = MakeButton(gui, "Мои шаблоны", () =>
+            PlayerMyTemplatesButton = MakeButton(gui, "Шаблоны", () =>
             {
                 MenuState = StateTemplates;
                 ReloadTemplates();
@@ -315,6 +315,7 @@ namespace AstvardServerMod
             _nextPlayerBuildAt = 0f;
             _playerRulesKnown = false;
             _myRunes = -1;
+            MayAskAdmin = false;
             AskSharedList();
         }
 
