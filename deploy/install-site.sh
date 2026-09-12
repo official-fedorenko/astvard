@@ -95,6 +95,9 @@ ensure_env VALHEIM_MOD_CONFIG /srv/valheim/server/BepInEx/config
 # The game server's save folder: the two access lists live there, and the panel
 # writes them itself so that a grant in the browser reaches the game.
 ensure_env VALHEIM_SAVES_DIR /srv/valheim/saves
+# The token the game server's mod fetches the access lists with. Random on a fresh
+# install; the same value goes into the mod's config, [Сайт] ListsToken.
+ensure_env GAME_LISTS_TOKEN "$(openssl rand -hex 32)"
 ensure_env SUPERADMIN_STEAM_ID "${SUPERADMIN_STEAM_ID:-}"
 chown -R "$SITE_USER:$SITE_USER" "$DIR"
 chmod 600 "$DIR/.env"
@@ -236,6 +239,10 @@ if grep -q '^SUPERADMIN_STEAM_ID=.\+' "$DIR/.env"; then
   echo "Суперадмин заводится при старте по SUPERADMIN_STEAM_ID — смотри"
   echo "  journalctl -u astvard-backend -n 30 --no-pager"
   echo "Вход на сайт — «Войти через Steam» этим аккаунтом."
+  echo "Чтобы игровой сервер сам забирал списки доступа, впиши моду в"
+  echo "  /srv/valheim/server/BepInEx/config/astvard.servermod.cfg, секция [Сайт]:"
+  echo "  ListsUrl = https://astvard.online/api/game/lists"
+  echo "  ListsToken = значение GAME_LISTS_TOKEN из $DIR/.env"
 else
   echo "SUPERADMIN_STEAM_ID пуст: панель завела аккаунты superadmin/admin/user"
   echo "с паролем 1234qwer. Смени их немедленно или впиши SteamID в $DIR/.env,"
