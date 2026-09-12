@@ -36,7 +36,8 @@ header h1 a {
   text-decoration: none;
 }
 
-header nav a {
+header nav a,
+header nav .link-button {
   margin-left: 12px;
 }
 
@@ -101,22 +102,118 @@ input, select {
   min-width: 0;
 }
 
-button {
+/* ── Кнопки и ссылки ──────────────────────────────────────────────────────
+   Everything clickable is described here and nowhere else. The same action is a
+   <button> on one page and an <a> on another — «Войти через Steam» is a link,
+   «Запросить доступ» is a button — and the player must not be able to tell.
+
+   .btn          the shape; on <button> and on <a class="btn"> alike
+   .btn-primary  what the block is for; one per block, not three
+   .btn-ghost    stands next to a primary one and must not compete with it
+   .btn-danger   takes something away: delete, reject
+   .btn-steam    leaves for Steam and comes back — Steam's own colours
+   .btn-sm       inside a table row
+   .link-button  an action that has to read as a link, like «Выйти» in the header
+   .btn-row      a line of buttons with the spacing between them
+
+   A new control takes these classes. Needing another colour or another padding
+   means the system is missing a variant — add the variant here rather than a rule
+   for one button; that is how #refresh-btn, #adminlist-btn, .steam-button and
+   .wl-reject appeared before, four private looks for four buttons. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 8px 16px;
-  background: #8b7cf6;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 6px;
-  color: #0b0b0f;
+  font-family: inherit;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
-button:hover {
-  opacity: 0.9;
+/* The browser's own focus ring disappears once a button gets its own colours, and
+   with it the only sign of where the keyboard is. */
+.btn:focus-visible,
+.link-button:focus-visible {
+  outline: 2px solid #8b7cf6;
+  outline-offset: 2px;
 }
 
-#refresh-btn {
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #8b7cf6;
+  color: #0b0b0f;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #9d90f8;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: #2b2a3a;
+  color: #a8a5b8;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  border-color: #3a3850;
+  color: #e8e6f0;
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: #452a33;
+  color: #f87171;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #2a1a1f;
+}
+
+.btn-steam {
+  background: #1b2838;
+  border-color: #66c0f4;
+  color: #66c0f4;
+}
+
+.btn-steam:hover:not(:disabled) {
+  background: #22384f;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
+}
+
+/* Same handler, a link's looks: a button that pretends to be a link still has to
+   be a <button> for the keyboard and for screen readers. */
+.link-button {
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: #8b7cf6;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .error {
@@ -179,31 +276,6 @@ pre {
 .wl-rejected { color: #f87171; }
 .wl-none     { color: #6b6880; }
 
-/* The reject button sits next to the approve one and must not read as the default
-   action — the accent fill is the site's "yes". */
-.wl-reject {
-  background: transparent;
-  border: 1px solid #201f2b;
-  color: #a8a5b8;
-}
-
-/* Steam's own blue, so the button reads as "leave the site and come back" rather
-   than as another form control. */
-.steam-button {
-  display: inline-block;
-  padding: 10px 18px;
-  background: #1b2838;
-  border: 1px solid #66c0f4;
-  border-radius: 6px;
-  color: #66c0f4;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.steam-button:hover {
-  background: #22384f;
-}
-
 .or-divider {
   color: #6b6880;
   font-size: 13px;
@@ -254,10 +326,6 @@ textarea {
 .wl-unverified {
   color: #fbbf24;
   font-size: 12px;
-}
-
-#adminlist-btn {
-  margin-left: 8px;
 }
 
 /* The admin page is dense tables, not prose: at the 720px reading width the

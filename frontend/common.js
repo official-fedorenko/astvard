@@ -29,6 +29,52 @@ async function getCurrentUser() {
   }
 }
 
+// Whether anyone is signed in is something only the server knows, so the header has
+// to ask instead of being written into the page: a hard-coded "Вход / Регистрация" on
+// the home page told a signed-in player they had been logged out.
+function renderNav(el, user) {
+  if (!el) return;
+  const links = [];
+  if (user) {
+    if (window.location.pathname !== '/cabinet.html') {
+      links.push('<a href="/cabinet.html">Кабинет</a>');
+    }
+    if (user.role === 'admin' || user.role === 'superadmin') {
+      links.push('<a href="/admin.html">Админка</a>');
+    }
+    links.push('<button type="button" class="link-button" id="logout">Выйти</button>');
+  } else {
+    links.push('<a href="/login.html">Вход</a>', '<a href="/register.html">Регистрация</a>');
+  }
+  el.innerHTML = links.join(' · ');
+
+  const logout = document.getElementById('logout');
+  if (logout) {
+    logout.addEventListener('click', async () => {
+      await apiFetch('/api/logout', { method: 'POST' });
+      window.location.href = '/';
+    });
+  }
+}
+
+// The address is what a player types into "Подключиться по IP", so it is the game
+// port that is shown, whatever the status is read from.
+function renderServers(el, servers) {
+  if (!el) return;
+  if (!servers || servers.length === 0) {
+    el.textContent = 'Пока нет серверов.';
+    return;
+  }
+  el.innerHTML = servers.map((s) => `
+    <div class="card server-row">
+      <strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(s.host)}:${escapeHtml(s.port)}
+      <span class="status ${s.is_online ? 'online' : 'offline'}">
+        ${s.is_online ? `● online (${s.players}/${s.max_players})` : '○ offline'}
+      </span>
+    </div>
+  `).join('');
+}
+
 // The Steam return lands as a browser redirect, so its failures arrive in the URL
 // rather than in a response body. Printed with textContent: the wording is ours,
 // but it has been through the address bar and anyone can retype it.

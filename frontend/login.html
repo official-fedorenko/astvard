@@ -13,12 +13,12 @@
   <main>
     <form class="card" id="login-form">
       <h2>Вход</h2>
-      <a class="steam-button" href="/api/auth/steam">Войти через Steam</a>
+      <a class="btn btn-steam" href="/api/auth/steam">Войти через Steam</a>
       <p class="muted">Быстрее и надёжнее: номер Steam подтверждает сам Steam, вводить его руками не нужно.</p>
       <p class="or-divider">или по email</p>
       <label>Email<input type="email" name="email" required></label>
       <label>Пароль<input type="password" name="password" required></label>
-      <button type="submit">Войти</button>
+      <button type="submit" class="btn btn-primary">Войти</button>
       <p class="error" id="error"></p>
       <p>Нет аккаунта? <a href="/register.html">Зарегистрироваться</a></p>
     </form>

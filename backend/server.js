@@ -64,7 +64,13 @@ function serveStatic(req, res) {
       return;
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': CONTENT_TYPES[ext] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': CONTENT_TYPES[ext] || 'application/octet-stream',
+      // "no-cache" is not "do not store": the browser may keep the file but has to
+      // ask every time. Without it a deployed page and its old stylesheet live on
+      // in the cache for hours, and the fix looks like it never happened.
+      'Cache-Control': 'no-cache',
+    });
     res.end(data);
   });
 }
