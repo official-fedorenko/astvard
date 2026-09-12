@@ -20,6 +20,8 @@
     /* Accents */
     --accent-purple: #8a2be2;
     --accent-cyan: #00d2ff;
+    /* Онлайн сервера и всё «живое»: у публичной стороны своего зелёного не было. */
+    --accent-green: #22c55e;
     
     --accent-purple-dim: rgba(138, 43, 226, 0.12);
     --accent-cyan-dim: rgba(0, 210, 255, 0.12);
@@ -764,3 +766,31 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     font-size: 16px !important;
   }
 }
+
+/* ==== Состояние игрового сервера на главной ====
+   Карточка сервера живёт в той же сетке, что и статьи, и сделана их классами.
+   Здесь только то, чего у статьи нет: строка состояния (она же .article-date —
+   та самая мелкая надпись сверху), список играющих и подпись про мир. */
+.server-state { letter-spacing: 0.6px; }
+.server-state--on { color: var(--accent-green); }
+.server-state--off { color: var(--text-muted); }
+
+.server-players {
+    margin-top: 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.server-meta {
+    margin-top: auto;
+    padding-top: 14px;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* Адрес сервера — единственная строка на странице, которую нельзя перенести по
+   пробелу: точки в имени хоста местом переноса не считаются, и длинный адрес
+   уезжал за край экрана телефона. */
+.wrap-any { word-break: break-all; }

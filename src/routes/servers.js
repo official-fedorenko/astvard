@@ -11,6 +11,27 @@ const VALHEIM_LOG_FILE = process.env.VALHEIM_LOG_FILE || '/srv/valheim/logs/serv
 
 const PROBES = ['a2s', 'valheim-log'];
 
+// Кто сейчас в игре, по номерам из лога, разложенным на людей нашей базы.
+// Держится в памяти, а не в строке сервера: это снимок момента, живущий до
+// следующего опроса (полминуты), и хранить его в базе значило бы возить туда-сюда
+// то, что устаревает быстрее, чем читается. После перезапуска сайта список пуст
+// ровно до первого опроса.
+const onlineNow = new Map();
+
+// Игру мы спрашиваем номерами, а показывать надо людей. Никого, кроме наших, в
+// ответе нет: незнакомый номер остаётся числом и в публичный ответ не попадает —
+// SteamID64 это личный идентификатор, и на открытой странице ему не место.
+async function playersBySteamId(steamIds) {
+  if (!steamIds || !steamIds.length) return [];
+  const placeholders = steamIds.map(() => '?').join(', ');
+  const rows = await all(
+    `SELECT steam_id, username FROM users WHERE steam_id IN (${placeholders})`,
+    steamIds
+  );
+  const byId = new Map(rows.map((r) => [String(r.steam_id), r.username]));
+  return steamIds.map((id) => ({ steam_id: id, username: byId.get(String(id)) || null }));
+}
+
 const all = (sql, params = []) => new Promise((resolve, reject) => {
   db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
 });
@@ -38,6 +59,18 @@ async function refreshServer(server) {
      WHERE id = ?`,
     [info.online ? 1 : 0, info.players ?? null, info.maxPlayers ?? null, server.id]
   );
+
+  onlineNow.set(server.id, {
+    players: info.online ? await playersBySteamId(info.steamIds) : [],
+    saveNumber: info.saveNumber ?? null,
+    gameVersion: info.gameVersion ?? null
+  });
+}
+
+// Пустая заготовка, чтобы читающим не приходилось помнить про undefined у сервера,
+// который ещё ни разу не опрашивали.
+function gameInfo(id) {
+  return onlineNow.get(id) || { players: [], saveNumber: null, gameVersion: null };
 }
 
 async function refreshAllServers() {
@@ -53,21 +86,35 @@ async function publicList(req, res) {
   const servers = await listServers();
   sendJson(res, 200, {
     success: true,
-    servers: servers.map((s) => ({
-      id: s.id,
-      name: s.name,
-      host: s.host,
-      port: s.port,
-      is_online: !!s.is_online,
-      players: s.players,
-      max_players: s.max_players,
-      last_checked_at: s.last_checked_at
-    }))
+    servers: servers.map((s) => {
+      const game = gameInfo(s.id);
+      return {
+        id: s.id,
+        name: s.name,
+        host: s.host,
+        port: s.port,
+        is_online: !!s.is_online,
+        players: s.players,
+        max_players: s.max_players,
+        last_checked_at: s.last_checked_at,
+        // Только имена и только наших: по номеру из лога человек узнаётся, но на
+        // открытой странице ему полагается ник, а не Steam ID.
+        players_online: game.players.filter((p) => p.username).map((p) => p.username),
+        save_number: game.saveNumber,
+        game_version: game.gameVersion
+      };
+    })
   });
 }
 
 async function adminList(req, res) {
-  sendJson(res, 200, { success: true, servers: await listServers() });
+  const servers = await listServers();
+  sendJson(res, 200, {
+    success: true,
+    // Админу — то же самое, но с номерами: незнакомый номер в списке онлайна это
+    // ровно тот, кого стоит завести в вайтлисте, и по нему он и заводится.
+    servers: servers.map((s) => ({ ...s, game: gameInfo(s.id) }))
+  });
 }
 
 async function add(req, res, actor) {

@@ -19,9 +19,30 @@ const STARTED_RE = /Game server connected/g;
 // After a clean shutdown the log is history, not a heartbeat that merely went quiet.
 const SHUTDOWN_RE = /(OnApplicationQuit|ZNet Shutdown)/g;
 
-// Enough for many minutes of log at the end of the file; the whole file is tens of
-// megabytes after a long run and is read every 30 seconds.
-const TAIL_BYTES = 64 * 1024;
+// Who is on the server right now, and this is the thing the heartbeat cannot say.
+// The game prints an arrival and a departure at the moment they happen, with the
+// bare SteamID64 — the same number our users carry (users.steam_id), so a number
+// becomes a person without asking Steam anything.
+//
+// The count from the heartbeat is ten minutes stale at worst; these two lines are
+// exact. Someone who came and left between heartbeats never showed up on the site
+// at all before this.
+const JOINED_RE = /Got connection SteamID (\d+)/g;
+const LEFT_RE = /Closing socket (\d+)/g;
+
+// The world's own numbers, for the page: which save the world is on and which build
+// the server runs. Both are printed by the game, both are free to read.
+const SAVE_RE = /=> Save number (\d+)/g;
+// The Linux build prefixes its own letter: "Valheim version: l-1.0.12 (network
+// version 40)". The number is what we show, so everything before it is skipped.
+const VERSION_RE = /Valheim version: \D*(\d[\d.]*)/g;
+
+// The game truncates this file at every start (-logFile in deploy/valheim/server.sh),
+// so after hours of play it is still tens of kilobytes and reading it whole is the
+// honest way to know who is on: the arrivals we would cut off are exactly the people
+// who have been playing longest. The cap is there only so a log that somehow grew
+// (a crash loop printing stack traces) cannot be read into memory in full.
+const MAX_READ_BYTES = 8 * 1024 * 1024;
 
 // The heartbeat comes every ten minutes, so fifteen still means alive. Anything
 // longer would keep a dead server "online" for a quarter of an hour.
@@ -39,6 +60,34 @@ function lastMatch(text, re) {
   return found;
 }
 
+/**
+ * Who is on the server, by walking arrivals and departures in the order the game
+ * wrote them. A Set rather than a count: the same player reconnecting must not
+ * count twice, and a departure must remove the right person.
+ *
+ * The list is only as complete as the part of the file we read; when the log was
+ * cut short, the caller still has the heartbeat count to fall back on.
+ */
+function playersOnline(text) {
+  const events = [];
+  let m;
+
+  JOINED_RE.lastIndex = 0;
+  while ((m = JOINED_RE.exec(text)) !== null) events.push({ at: m.index, id: m[1], joined: true });
+
+  LEFT_RE.lastIndex = 0;
+  while ((m = LEFT_RE.exec(text)) !== null) events.push({ at: m.index, id: m[1], joined: false });
+
+  events.sort((a, b) => a.at - b.at);
+
+  const online = new Set();
+  for (const e of events) {
+    if (e.joined) online.add(e.id);
+    else online.delete(e.id);
+  }
+  return { ids: [...online], sawEvents: events.length > 0 };
+}
+
 // Freshness is judged by the file's own modification time rather than by the
 // timestamps inside it: those are written in whatever timezone the container runs
 // in, and a timezone that changes under us would quietly turn a live server off.
@@ -47,7 +96,7 @@ async function readValheimLogStatus(logPath) {
   try {
     handle = await fs.open(logPath, 'r');
     const { size, mtimeMs } = await handle.stat();
-    const length = Math.min(TAIL_BYTES, size);
+    const length = Math.min(MAX_READ_BYTES, size);
     const buffer = Buffer.alloc(length);
     await handle.read(buffer, 0, length, size - length);
     const tail = buffer.toString('utf8');
@@ -69,10 +118,26 @@ async function readValheimLogStatus(logPath) {
       return { online: false };
     }
 
-    // Between the start and the first heartbeat the count is genuinely unknown, and
-    // saying "0 players" then would be a number nobody measured.
-    const players = alive === heartbeat ? Number(heartbeat[1]) : null;
-    return { online: true, players, maxPlayers: MAX_PLAYERS };
+    const { ids, sawEvents } = playersOnline(tail);
+    const save = lastMatch(tail, SAVE_RE);
+    const version = lastMatch(tail, VERSION_RE);
+
+    // Arrivals and departures are exact, so they answer first. Without a single one
+    // of them in the file (a log we only saw the end of) the ten-minute heartbeat is
+    // all there is, and between the start and the first heartbeat the count is
+    // genuinely unknown — saying "0 players" then would be a number nobody measured.
+    const players = sawEvents
+      ? ids.length
+      : (alive === heartbeat ? Number(heartbeat[1]) : null);
+
+    return {
+      online: true,
+      players,
+      maxPlayers: MAX_PLAYERS,
+      steamIds: ids,
+      saveNumber: save ? Number(save[1]) : null,
+      gameVersion: version ? version[1] : null
+    };
   } catch {
     // No log, no permission, a directory in its place: all of them mean the same
     // thing to a player looking at the page.
