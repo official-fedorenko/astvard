@@ -85,6 +85,10 @@ async function complete(req, res) {
   const created = await createSteamUser({
     nickname: persona || fallbackNickname(steamId),
     steamId,
+    // Steam has just signed for this id — verifyAssertion went back to Steam with
+    // check_authentication and got is_valid:true. Left false, the very first visit
+    // tells the owner an admin typed their number in, which nobody did.
+    verified: true,
   });
   if (!created) {
     return redirectWithError(res, '/login.html', 'Не удалось создать аккаунт, попробуй ещё раз');
