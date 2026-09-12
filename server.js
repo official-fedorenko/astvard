@@ -6,7 +6,7 @@ require('dotenv').config({ quiet: true });
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { db } = require('./db');
+const { db, dbReady } = require('./db');
 const logger = require('./src/logger');
 
 // === Modular route handlers (light split from monolithic server.js) ===
@@ -39,6 +39,7 @@ const handleAuth = require('./src/routes/auth');
 const handleSteam = require('./src/routes/steam');
 const handleWhitelist = require('./src/routes/whitelist');
 const handleServers = require('./src/routes/servers');
+const { ensureSuperadmin } = require('./src/bootstrap');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
 
@@ -472,6 +473,11 @@ const server = http.createServer(async (req, res) => {
 // required from a test file, require.main !== module, so tests can bind
 // their own ephemeral port via server.listen(0) instead.
 if (require.main === module) {
+  // Кто-то должен уметь отвечать на заявки, иначе сайт бесполезен. Ждём готовности
+  // базы: на свежей она в этот момент ещё создаётся.
+  dbReady.then(ensureSuperadmin)
+    .catch((err) => logger.error('Суперадмин не создан:', err.message));
+
   // Раз в 30 секунд спрашиваем серверы об их состоянии. Первый опрос — сразу,
   // чтобы страница не ждала полминуты после перезапуска.
   const STATUS_POLL_INTERVAL_MS = 30_000;

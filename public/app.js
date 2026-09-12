@@ -161,7 +161,7 @@ function setupNavigation() {
   }
 
   const handleHashChange = () => {
-    const hash = window.location.hash.replace('#', '') || 'employees';
+    const hash = window.location.hash.replace('#', '') || 'whitelist';
     let targetSection = document.getElementById(`section-${hash}`);
 
     if (!targetSection) {
@@ -197,7 +197,7 @@ function setupNavigation() {
   if (window.location.hash) {
     handleHashChange();
   } else {
-    window.location.hash = '#employees';
+    window.location.hash = '#whitelist';
   }
 }
 

@@ -129,7 +129,7 @@ async function loadSettings() {
     const settingsMap = {};
     settings.forEach(s => { settingsMap[s.key] = s.value; });
 
-    const siteName = settingsMap['site_name'] || 'Мой Блог';
+    const siteName = settingsMap['site_name'] || 'Astvard';
     
     document.title = siteName;
     document.getElementById('siteName').textContent = siteName;
