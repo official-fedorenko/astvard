@@ -951,11 +951,30 @@ namespace AstvardServerMod
                 return;
             }
 
+            // «Ресурсы»: an admin building at their own cost pays for the whole bridge
+            // before it goes up, and what did not go up comes back at the end.
+            Bill owed = null;
+            if (AdminPaysForBuilds)
+            {
+                var bill = new Bill();
+                foreach (var piece in BridgePlanned) bill.Add(piece.Prefab);
+
+                var shortfall = BillShortfall(player, bill);
+                if (shortfall != null)
+                {
+                    player.Message(MessageHud.MessageType.Center, shortfall);
+                    return;
+                }
+
+                if (PayBill(player, bill)) owed = bill;
+            }
+
             _bridgeStarted = false;
             _bridgePinned = false;
             UpdateBridgeHint();
 
-            var placed = Raise(BridgePlanned, survey.Facing, player.GetPlayerID());
+            var placed = Raise(BridgePlanned, survey.Facing, player.GetPlayerID(), owed);
+            RefundBill(owed);
             ClearBridgeGhost();
 
             player.Message(MessageHud.MessageType.Center,
@@ -974,7 +993,7 @@ namespace AstvardServerMod
         /// middle before the far end existed. One long frame is the price, and the length
         /// cap is what keeps it to one.
         /// </summary>
-        private static int Raise(List<CopiedPiece> pieces, Quaternion facing, long creator)
+        private static int Raise(List<CopiedPiece> pieces, Quaternion facing, long creator, Bill owed = null)
         {
             var scene = ZNetScene.instance;
             var placed = 0;
@@ -998,6 +1017,7 @@ namespace AstvardServerMod
                                      facing * piece.LocalRot);
                 var built = go.GetComponent<Piece>();
                 if (built != null) built.SetCreator(creator, creatorPlatform);
+                owed?.Add(piece.Prefab, -1);
                 placed++;
             }
 

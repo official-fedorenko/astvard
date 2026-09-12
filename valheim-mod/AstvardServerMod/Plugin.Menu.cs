@@ -783,6 +783,8 @@ namespace AstvardServerMod
 
             CreateBuildClearWidget(gui);
 
+            CreateBuildResourcesWidget(gui);
+
             PlacementDistanceInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),

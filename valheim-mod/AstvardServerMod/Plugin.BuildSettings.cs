@@ -17,6 +17,8 @@ namespace AstvardServerMod
 
         internal static GameObject BuildClearButton;
 
+        internal static GameObject BuildResourcesButton;
+
         internal static GameObject PlayerSettingsButton;
 
         /// <summary>
@@ -34,6 +36,26 @@ namespace AstvardServerMod
         private static bool BuildClearingActive
         {
             get { return IsBuildClearing && (IsAdminUnlocked || RuleAllows("clear")); }
+        }
+
+        /// <summary>
+        /// Whether an admin's own builds come out of their bag, as a player's paid ones do.
+        /// Off out of the box - an admin's tools have always been free - and meant for an
+        /// admin playing the game as a player. It tells a player nothing: they pay, or not,
+        /// by the rules the admins set them.
+        /// </summary>
+        internal static bool IsBuildResources;
+
+        /// <summary>An admin building at their own cost.</summary>
+        private static bool AdminPaysForBuilds
+        {
+            get { return IsAdminUnlocked && IsBuildResources; }
+        }
+
+        /// <summary>Whether what goes up here is paid for: a player by their rule, an admin by «Ресурсы».</summary>
+        private static bool PaysHere(string rule)
+        {
+            return IsAdminUnlocked ? IsBuildResources : RulePaid(rule);
         }
 
         private void CreateBuildSettingsWidgets(GUIManager gui)
@@ -55,6 +77,18 @@ namespace AstvardServerMod
             UpdateBuildClearButtonLabel();
         }
 
+        private void CreateBuildResourcesWidget(GUIManager gui)
+        {
+            BuildResourcesButton = MakeButton(gui, "", () =>
+            {
+                IsBuildResources = !IsBuildResources;
+                UpdateBuildResourcesButtonLabel();
+                UpdateBuildSettingsHint();
+                Log.LogInfo($"[AstvardServerMod] Admin builds from the bag: {IsBuildResources}");
+            });
+            UpdateBuildResourcesButtonLabel();
+        }
+
         private static void OpenBuildSettings()
         {
             MenuState = StateBuildSettings;
@@ -64,6 +98,11 @@ namespace AstvardServerMod
         private static void UpdateBuildClearButtonLabel()
         {
             SetLabel(BuildClearButton, IsBuildClearing ? "Разрушать: вкл" : "Разрушать: выкл");
+        }
+
+        private static void UpdateBuildResourcesButtonLabel()
+        {
+            SetLabel(BuildResourcesButton, IsBuildResources ? "Ресурсы: вкл" : "Ресурсы: выкл");
         }
 
         /// <summary>A line for each switch the page shows, and nothing about the ones it does not.</summary>
@@ -76,30 +115,41 @@ namespace AstvardServerMod
             var text = "Как ставятся постройки.";
             if (admin || RuleAllows("snap"))
                 text += $"{NEWLINE}Прилипание — к деталям рядом.";
-            if (admin)
+            if (admin || RuleAllows("level"))
                 text += $"{NEWLINE}Выравнивание — земля под ней.";
             if (admin || RuleAllows("clear"))
                 text += $"{NEWLINE}Разрушать — деревья и камни{NEWLINE}под ней; «Отменить постройку»{NEWLINE}их не вернёт.";
             if (admin)
-                text += $"{NEWLINE}Поле — как далеко висит{NEWLINE}проекция, м.";
+                text += $"{NEWLINE}Ресурсы — строить из своей сумки,{NEWLINE}как игрок; выкл — даром.";
+            text += $"{NEWLINE}Поле — как далеко висит{NEWLINE}проекция, м.";
             label.text = text;
         }
 
         private static void RefreshBuildSettingsVisibility(bool admin)
         {
             var page = MenuState == StateBuildSettings;
+            // Each switch by its own rule: levelling under a build is the levelling tool's,
+            // clearing is the road's. The page itself is everybody's - how far ahead the
+            // projection floats is nobody's to allow.
             var snap = admin || RuleAllows("snap");
+            var level = admin || RuleAllows("level");
             var clear = admin || RuleAllows("clear");
 
             SetActive(BuildSettingsButton, admin && MenuState == StateBuild);
-            SetActive(PlayerSettingsButton, !admin && MenuState == StatePlayerBuild && (snap || clear));
+            SetActive(PlayerSettingsButton, !admin && MenuState == StatePlayerBuild);
 
-            if (page) UpdateBuildSettingsHint();
-            SetActive(BuildSettingsHint, page && (admin || snap || clear));
+            if (page)
+            {
+                UpdateBuildSettingsHint();
+                UpdateBuildResourcesButtonLabel();
+            }
+
+            SetActive(BuildSettingsHint, page);
             SetActive(SnapButton, page && snap);
-            SetActive(LevelGroundButton, admin && page);
+            SetActive(LevelGroundButton, page && level);
             SetActive(BuildClearButton, page && clear);
-            SetActive(PlacementDistanceInput, admin && page);
+            SetActive(BuildResourcesButton, page && admin);
+            SetActive(PlacementDistanceInput, page);
         }
 
         /// <summary>

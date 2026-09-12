@@ -514,7 +514,8 @@ namespace AstvardServerMod
             }
 
             // Paid, the fuel comes out of the player's bag, as far as it goes.
-            var payer = RulePaid("repair") && !player.NoCostCheat() ? player : null;
+            // An admin pays for the fuel only while building at their own cost.
+            var payer = PaysHere("repair") && !player.NoCostCheat() ? player : null;
             var lacking = new HashSet<string>();
             var filled = RefuelAround(origin, radius, !admin, payer, lacking);
 

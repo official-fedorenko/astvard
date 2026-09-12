@@ -357,7 +357,8 @@ namespace AstvardServerMod
         {
             get
             {
-                if (IsAdminUnlocked) return false;
+                // An admin pays for them only while building at their own cost.
+                if (IsAdminUnlocked) return IsBuildResources;
 
                 var rule = FindRule("torchpay");
                 return rule == null || rule.PlayersValue != 0;

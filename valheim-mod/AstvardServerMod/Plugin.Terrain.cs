@@ -1839,7 +1839,13 @@ namespace AstvardServerMod
             var spanX = maxX - minX;
             var spanZ = maxZ - minZ;
             var half = Mathf.Sqrt(spanX * spanX + spanZ * spanZ) * 0.5f;
-            var radius = Mathf.Clamp(half + 1.5f, 2f, 64f);
+            // A player's pad is held to the radius the admins allow their levelling; a build
+            // wider than that keeps its corners off the pad rather than going without one.
+            var most = IsAdminUnlocked
+                ? MaxLevelRadius
+                : Mathf.Min(MaxLevelRadius, RuleLimit("level", MaxLevelRadius));
+            var radius = Mathf.Clamp(half + 1.5f, 2f, most);
+            SayHeldToLimit("Площадка под постройкой", half + 1.5f, radius);
             var target = new Vector3(origin.x + (minX + maxX) * 0.5f,
                                      origin.y,
                                      origin.z + (minZ + maxZ) * 0.5f);

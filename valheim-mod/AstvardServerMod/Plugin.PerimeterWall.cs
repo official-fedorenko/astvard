@@ -652,6 +652,20 @@ namespace AstvardServerMod
                 return;
             }
 
+            // «Ресурсы»: an admin building at their own cost pays like a player.
+            if (AdminPaysForBuilds)
+            {
+                var shortfall = BillShortfall(player, PlacementBill(placements));
+                if (shortfall != null)
+                {
+                    player.Message(MessageHud.MessageType.Center, shortfall);
+                    return;
+                }
+
+                LayWallsNow(placements, true);
+                return;
+            }
+
             LayWallsNow(placements, false);
         }
 

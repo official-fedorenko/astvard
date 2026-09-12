@@ -194,7 +194,7 @@ namespace AstvardServerMod
                          + (RuleAllows("clear")
                              ? $"{NEWLINE}Деревья и камни на линии снесёт —{NEWLINE}их уже не вернуть."
                              : "")
-                         + (RulePaid("fence") ? $"{NEWLINE}Из твоих материалов." : "");
+                         + (PaysHere("fence") ? $"{NEWLINE}Из твоих материалов." : "");
         }
 
         // ---------------- projection ----------------
@@ -529,7 +529,7 @@ namespace AstvardServerMod
 
             // Paid for whole before anything is cleared or levelled, as the plan has it with
             // every place standing; what the ring could not put up comes back at the end.
-            var bill = RulePaid("fence") ? FenceBill(plan, kit, panels, posts) : null;
+            var bill = PaysHere("fence") ? FenceBill(plan, kit, panels, posts) : null;
             if (bill != null)
             {
                 var shortfall = BillShortfall(player, bill);

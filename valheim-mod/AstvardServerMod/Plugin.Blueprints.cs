@@ -589,8 +589,9 @@ namespace AstvardServerMod
                     return;
                 }
 
-                // A player's own copy or template is paid for, whole, before it goes up.
-                if (_playerPaidPlacement)
+                // A player's own copy or template is paid for, whole, before it goes up -
+                // and an admin's too, while «Ресурсы» is on.
+                if (_playerPaidPlacement || AdminPaysForBuilds)
                 {
                     var shortfall = BillShortfall(player, ClipboardBill());
                     if (shortfall != null)
@@ -883,7 +884,10 @@ namespace AstvardServerMod
 
                 // Before the pieces, not after: a floor dropped onto a slope and then
                 // levelled underneath would already have decided what it was resting on.
-                if (IsLevelGroundEnabled && ClipboardHasBuildPieces())
+                // Asked here as well as where the switch is drawn: a page open since before
+                // the admins closed levelling would otherwise still level.
+                if (IsLevelGroundEnabled && (IsAdminUnlocked || RuleAllows("level"))
+                    && ClipboardHasBuildPieces())
                 {
                     // Its pieces join the step, so undoing that pad takes the build with it.
                     record.Ground = LevelUnderBuild(origin, rotation);
