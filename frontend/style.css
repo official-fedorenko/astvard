@@ -76,6 +76,8 @@ header {
   padding: 24px 32px;
   border-bottom: 1px solid #201f2b;
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: space-between;
   align-items: center;
 }
@@ -86,9 +88,13 @@ header h1 {
   letter-spacing: 0.02em;
 }
 
-header nav a,
-header nav .link-button {
-  margin-left: 12px;
+/* A row of buttons rather than a line of links: they keep their own spacing, and on
+   a narrow screen they wrap instead of pushing the page sideways. */
+header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 main {

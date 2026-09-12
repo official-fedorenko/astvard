@@ -32,24 +32,27 @@ async function getCurrentUser() {
 // Whether anyone is signed in is something only the server knows, so the header has
 // to ask instead of being written into the page: a hard-coded "Вход / Регистрация" on
 // the home page told a signed-in player they had been logged out.
+// Everything in the header is a button: these are the few things a player comes to
+// the site to do, and by the owner's call they should look like it. «Выйти» stays a
+// <button> even among the links, because it acts instead of going somewhere.
 function renderNav(el, user) {
   if (!el) return;
   const links = [];
   if (user) {
     if (window.location.pathname !== '/cabinet.html') {
-      links.push('<a href="/cabinet.html">Кабинет</a>');
+      links.push('<a class="btn btn-sm btn-ghost" href="/cabinet.html">Кабинет</a>');
     }
     if (user.role === 'admin' || user.role === 'superadmin') {
-      links.push('<a href="/admin.html">Админка</a>');
+      links.push('<a class="btn btn-sm btn-ghost" href="/admin.html">Админка</a>');
     }
-    links.push('<button type="button" class="link-button" id="logout">Выйти</button>');
+    links.push('<button type="button" class="btn btn-sm btn-ghost" id="logout">Выйти</button>');
   } else {
     links.push(
-      '<a href="/login.html">Вход</a>',
+      '<a class="btn btn-sm btn-ghost" href="/login.html">Вход</a>',
       '<a class="btn btn-sm btn-primary" href="/register.html">Регистрация</a>'
     );
   }
-  el.innerHTML = links.join(' · ');
+  el.innerHTML = links.join('');
 
   const logout = document.getElementById('logout');
   if (logout) {
