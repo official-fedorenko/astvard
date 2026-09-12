@@ -821,9 +821,10 @@
         <div class="page-header">
           <div class="page-title">
             <h2>Вайтлист сервера</h2>
-            <p>Кто может зайти на игровой сервер. Списки перечитываются сервером на ходу</p>
+            <p>Кто может зайти на игровой сервер. Списки перечитываются сервером на ходу.
+               Поле ниже — для тех, кто на сайт не заходил: впиши SteamID64 или ссылку на профиль</p>
           </div>
-          <div class="page-header-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+          <div class="page-header-actions">
             <button class="btn btn-secondary" id="permittedListBtn">
               <i data-lucide="download"></i>
               <span>permittedlist.txt</span>
@@ -837,13 +838,21 @@
 
         <div class="table-container">
           <div class="table-toolbar">
-            <div class="table-search" style="display:flex; gap:8px; flex-wrap:wrap;">
-              <input type="text" id="whitelistSteamId" class="form-control"
-                     placeholder="SteamID64 или ссылка на профиль — для тех, кто не заходил на сайт">
-              <button class="btn btn-primary" id="whitelistAddBtn">
+            <div class="toolbar-form">
+              <input type="text" id="whitelistSteamId" class="form-control form-control-wide"
+                     placeholder="SteamID64 или ссылка на профиль">
+              <button class="btn" id="whitelistAddBtn">
                 <i data-lucide="user-plus"></i>
                 <span>Дать доступ</span>
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <div class="table-toolbar">
+            <div class="table-search">
+              <input type="text" id="whitelistSearch" class="form-control" placeholder="Поиск по нику или SteamID...">
             </div>
           </div>
         </div>
@@ -883,23 +892,25 @@
             <h2>Игровые серверы</h2>
             <p>Адрес для входа и состояние. Закрытый сервер Valheim на сетевой запрос не отвечает — его статус читается из лога</p>
           </div>
-          <button class="btn btn-secondary" id="serversRefreshBtn">
-            <i data-lucide="refresh-cw"></i>
-            <span>Обновить статус</span>
-          </button>
+          <div class="page-header-actions">
+            <button class="btn btn-secondary" id="serversRefreshBtn">
+              <i data-lucide="refresh-cw"></i>
+              <span>Обновить статус</span>
+            </button>
+          </div>
         </div>
 
         <div class="table-container">
           <div class="table-toolbar">
-            <div class="table-search" style="display:flex; gap:8px; flex-wrap:wrap;">
-              <input type="text" id="serverName" class="form-control" placeholder="Название" style="max-width:220px;">
-              <input type="text" id="serverHost" class="form-control" placeholder="Адрес или IP" style="max-width:200px;">
-              <input type="number" id="serverPort" class="form-control" placeholder="Порт" style="max-width:120px;">
-              <select id="serverProbe" class="form-control" style="max-width:260px;">
+            <div class="toolbar-form">
+              <input type="text" id="serverName" class="form-control" placeholder="Название">
+              <input type="text" id="serverHost" class="form-control" placeholder="Адрес или IP">
+              <input type="number" id="serverPort" class="form-control form-control-narrow" placeholder="Порт">
+              <select id="serverProbe" class="form-control form-control-wide">
                 <option value="a2s">Статус: запрос к серверу</option>
                 <option value="valheim-log">Статус: лог Valheim на этой машине</option>
               </select>
-              <button class="btn btn-primary" id="serverAddBtn">
+              <button class="btn" id="serverAddBtn">
                 <i data-lucide="plus"></i>
                 <span>Добавить</span>
               </button>

@@ -461,6 +461,10 @@
     .btn-save:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 8px 20px rgba(138,43,226,0.3); }
     .btn-save:active { transform: translateY(0); }
     .btn-save:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    /* Тот же вид, но ссылкой: у <a> нет браузерного центрирования текста. */
+    .btn-save-link { display: block; text-align: center; text-decoration: none; }
+    /* Длинный SteamID64 не должен растягивать карточку вбок. */
+    .wrap-any { word-break: break-all; }
 
     /* Articles */
     .articles-list { display: flex; flex-direction: column; gap: 16px; }
@@ -1096,7 +1100,7 @@
       if (!user.steam_id) {
         box.innerHTML = `
           <p style="margin:0 0 12px;">Чтобы попасть на игровой сервер, нужен Steam: сервер пускает по номеру, а не по имени.</p>
-          <a class="btn-save" style="display:inline-block; text-decoration:none;" href="/api/auth/steam">Войти через Steam</a>`;
+          <a class="btn-save btn-save-link" href="/api/auth/steam">Войти через Steam</a>`;
         return;
       }
 
@@ -1111,8 +1115,8 @@
       const canAsk = user.whitelist_status === 'none' || user.whitelist_status === 'rejected';
       const form = canAsk
         ? `<div style="margin-top:12px;">
-             <textarea id="wlRequestNote" rows="2" placeholder="Пара слов о себе — необязательно, но с ними решают быстрее"
-                       style="width:100%; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary); font-family:inherit; font-size:13px;"></textarea>
+             <textarea id="wlRequestNote" class="form-input" rows="3"
+                       placeholder="Пара слов о себе — необязательно, но с ними решают быстрее"></textarea>
              <button type="button" class="btn-save" id="wlRequestBtn" style="margin-top:8px;">
                ${user.whitelist_status === 'rejected' ? 'Подать заново' : 'Запросить доступ'}
              </button>
@@ -1120,7 +1124,8 @@
         : '';
 
       box.innerHTML = `
-        <p style="margin:0;">Steam ID: <code>${escapeHtml(user.steam_id)}</code> — ${verified}</p>
+        <p style="margin:0;">Steam ID: <code class="wrap-any">${escapeHtml(user.steam_id)}</code></p>
+        <p style="margin:4px 0 0;">${verified}</p>
         <p style="margin:8px 0 0;">Состояние: <strong>${escapeHtml(status)}</strong></p>
         ${reason}
         ${form}`;

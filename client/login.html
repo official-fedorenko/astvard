@@ -38,8 +38,12 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
-      overflow: hidden;
+      padding: 30px 20px;
+      /* Только по горизонтали: с блоком Steam карточка стала выше экрана
+         телефона, и overflow:hidden делал кнопку «Войти» недосягаемой —
+         страница не прокручивалась ни пальцем, ни программно. На соседней
+         register.html всегда стояло overflow-x. */
+      overflow-x: hidden;
     }
     .blob {
       position: fixed;

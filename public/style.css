@@ -1570,3 +1570,136 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .ui-dialog__btn--ok:hover { background: hsl(var(--accent-purple) / 0.9); }
 .ui-dialog__btn--danger { background: hsl(var(--accent-red)); }
 .ui-dialog__btn--danger:hover { background: hsl(var(--accent-red) / 0.9); }
+
+/* ==== Общее, чего в панели не хватало ====
+   Всё ниже — варианты в общих стилях, а не правила под один раздел: тем же
+   пользуются «Вайтлист» и «Серверы», и тем же сможет пользоваться следующий. */
+
+/* Кнопка внутри строки таблицы. Полноразмерная .btn (12px 24px) в строке
+   выглядит как отдельный экран, а на телефоне занимает её целиком. Размеры —
+   как у .req-action в «Заявлениях», чтобы кнопки в таблицах совпадали. */
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Ряд кнопок в последней ячейке. Переносится, а не выдавливает таблицу вбок. */
+.row-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Подпись под главной ячейкой — та самая колонка, которая в свёрнутой карточке
+   спрятана. На широком экране она бы дублировала соседний столбец, поэтому
+   показывается только там, где карточка. */
+.row-note { display: none; }
+@media (max-width: 640px) {
+  .row-note {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: hsl(var(--text-muted));
+  }
+}
+
+/* Пустая таблица: одна строка на всю ширину. Класс, а не инлайн-стиль, потому
+   что в карточном режиме у .cards-mobile для него уже есть своё правило. */
+.empty-state {
+  text-align: center;
+  padding: 24px;
+  color: hsl(var(--text-muted));
+}
+
+/* Галочка-переключатель размером с палец. Чекбокс сам по себе — цель в 13
+   пикселей, промахнуться по которой на телефоне легче, чем попасть. */
+.check-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid hsl(var(--border-color));
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.check-chip input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: hsl(var(--accent-purple));
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.check-chip:has(input:checked) {
+  border-color: hsl(var(--accent-purple));
+  background: hsl(var(--accent-purple) / 0.1);
+}
+
+.muted { color: hsl(var(--text-muted)); }
+
+/* Форма над таблицей из нескольких полей. .table-search для неё не годится: он
+   рассчитан на одно поле поиска и зажат 320 пикселями. На телефоне каждое поле
+   занимает строку целиком — иначе поле в треть экрана не заполнить. */
+.toolbar-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.toolbar-form .form-control { flex: 1 1 180px; min-width: 0; }
+.toolbar-form .form-control-wide { flex: 3 1 280px; }
+.toolbar-form .form-control-narrow { flex: 0 1 120px; }
+@media (max-width: 640px) {
+  .toolbar-form .form-control,
+  .toolbar-form .form-control-wide,
+  .toolbar-form .form-control-narrow,
+  .toolbar-form .btn { flex: 1 1 100%; }
+}
+
+/* В таблице номер живёт одной строкой: разрывать SteamID64 по цифрам — значит
+   сделать его нечитаемым ради колонки, которая и так помещается. А вот в
+   карточке и в модалке переносить приходится, там ширины нет. */
+table.data-table code { white-space: nowrap; }
+@media (max-width: 640px) {
+  table.data-table code { white-space: normal; word-break: break-all; }
+}
+#rowDetailBody code { word-break: break-all; }
+
+/* Вторая строка в ячейке таблицы — подпись к значению (кто именно в игре, чем
+   уточнён статус). В отличие от .row-note видна всегда: это не дубль соседней
+   колонки, а то, чего больше нигде нет. */
+.cell-note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+  line-height: 1.4;
+}
+/* То же самое, но янтарём — цветом предупреждения этой темы: строка, которую
+   админ обязан заметить (номер вписан руками, а не подтверждён Steam). */
+.cell-note-warn { color: hsl(var(--accent-amber)); }
+
+/* Серый бейдж: базовый .badge не задаёт ни фона, ни цвета, и «offline» выходил
+   белым капсом — мёртвый сервер кричал громче живого. */
+.badge-muted {
+  background-color: hsl(var(--border-color) / 0.5);
+  color: hsl(var(--text-muted));
+}
+
+/* Заглушка «ничего нет» — не карточка, нажимать её незачем. */
+.data-table.cards-mobile tbody tr.empty-row { cursor: default; }
+
+/* Тост и нижний лист делят один угол экрана: у тоста z-index 2000 против 1000 у
+   модалки, и сообщение ложилось ровно на её кнопки. Пока лист открыт, тост
+   уходит наверх — там он ничего не закрывает. */
+@media (max-width: 480px) {
+  body:has(.modal-overlay.active) .toast-container {
+    top: 12px;
+    bottom: auto;
+  }
+}
