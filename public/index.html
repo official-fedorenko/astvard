@@ -25,6 +25,18 @@
       </a>
       
       <ul class="nav-list">
+        <li class="nav-item" data-section="whitelist">
+          <a href="#whitelist" title="Вайтлист">
+            <i data-lucide="shield-check"></i>
+            <span>Вайтлист</span>
+          </a>
+        </li>
+        <li class="nav-item" data-section="servers">
+          <a href="#servers" title="Серверы">
+            <i data-lucide="server"></i>
+            <span>Серверы</span>
+          </a>
+        </li>
         <li class="nav-item active" data-section="employees">
           <a href="#employees" title="Сотрудники">
             <i data-lucide="users-round"></i>
@@ -859,6 +871,107 @@
       </section>
 
       <!-- LOGS SECTION -->
+      <section id="section-whitelist" class="app-section">
+        <div class="page-header">
+          <div class="page-title">
+            <h2>Вайтлист сервера</h2>
+            <p>Кто может зайти на игровой сервер. Списки перечитываются сервером на ходу</p>
+          </div>
+          <div class="page-header-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-secondary" id="permittedListBtn">
+              <i data-lucide="download"></i>
+              <span>permittedlist.txt</span>
+            </button>
+            <button class="btn btn-secondary" id="adminListBtn">
+              <i data-lucide="download"></i>
+              <span>adminlist.txt</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <div class="table-toolbar">
+            <div class="table-search" style="display:flex; gap:8px; flex-wrap:wrap;">
+              <input type="text" id="whitelistSteamId" class="form-control"
+                     placeholder="SteamID64 или ссылка на профиль — для тех, кто не заходил на сайт">
+              <button class="btn btn-primary" id="whitelistAddBtn">
+                <i data-lucide="user-plus"></i>
+                <span>Дать доступ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <h3 style="margin:24px 0 8px;">Заявки</h3>
+        <div class="table-container">
+          <div class="table-scroll">
+            <table class="data-table cards-mobile">
+              <thead>
+                <tr>
+                  <th>Игрок</th><th>Steam ID</th><th>Сообщение</th><th>Когда</th><th>В игре</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="whitelistRequestsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <h3 style="margin:24px 0 8px;">Доступ на сервер <span id="whitelistCount" class="muted" style="font-weight:400; font-size:13px;"></span></h3>
+        <div class="table-container">
+          <div class="table-scroll">
+            <table class="data-table cards-mobile">
+              <thead>
+                <tr>
+                  <th>Игрок</th><th>Steam ID</th><th>Статус</th><th>Когда</th><th>В игре</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="whitelistAccessBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-servers" class="app-section">
+        <div class="page-header">
+          <div class="page-title">
+            <h2>Игровые серверы</h2>
+            <p>Адрес для входа и состояние. Закрытый сервер Valheim на сетевой запрос не отвечает — его статус читается из лога</p>
+          </div>
+          <button class="btn btn-secondary" id="serversRefreshBtn">
+            <i data-lucide="refresh-cw"></i>
+            <span>Обновить статус</span>
+          </button>
+        </div>
+
+        <div class="table-container">
+          <div class="table-toolbar">
+            <div class="table-search" style="display:flex; gap:8px; flex-wrap:wrap;">
+              <input type="text" id="serverName" class="form-control" placeholder="Название" style="max-width:220px;">
+              <input type="text" id="serverHost" class="form-control" placeholder="Адрес или IP" style="max-width:200px;">
+              <input type="number" id="serverPort" class="form-control" placeholder="Порт" style="max-width:120px;">
+              <select id="serverProbe" class="form-control" style="max-width:260px;">
+                <option value="a2s">Статус: запрос к серверу</option>
+                <option value="valheim-log">Статус: лог Valheim на этой машине</option>
+              </select>
+              <button class="btn btn-primary" id="serverAddBtn">
+                <i data-lucide="plus"></i>
+                <span>Добавить</span>
+              </button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table cards-mobile">
+              <thead>
+                <tr>
+                  <th>Название</th><th>Адрес</th><th>Статус</th><th>Игроки</th><th>Проверен</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="serversTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section id="section-logs" class="app-section">
         <div class="page-header">
           <div class="page-title">
@@ -1819,5 +1932,6 @@
   <!-- App logic JS -->
   <!-- ?v= подставляется сервером автоматически по mtime файла (см. injectAssetVersions в server.js) -->
   <script src="app.js"></script>
+  <script src="astvard.js"></script>
 </body>
 </html>

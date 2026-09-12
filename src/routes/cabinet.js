@@ -2,10 +2,16 @@ const { sendJson, getJsonBody, logAction } = require('../utils');
 const { db, verifyPassword, hashPassword } = require('../../db');
 
 function getMe(req, res, user) {
-  db.get("SELECT id, username, email, role, account_type, avatar_url, created_at FROM users WHERE id = ?", [user.id], (err, row) => {
-    if (err || !row) return sendJson(res, 404, { success: false, message: 'Пользователь не найден' });
-    sendJson(res, 200, { success: true, user: row });
-  });
+  db.get(
+    `SELECT id, username, email, role, account_type, avatar_url, created_at,
+            steam_id, steam_id_verified, whitelist_status, whitelist_note
+     FROM users WHERE id = ?`,
+    [user.id],
+    (err, row) => {
+      if (err || !row) return sendJson(res, 404, { success: false, message: 'Пользователь не найден' });
+      sendJson(res, 200, { success: true, user: row });
+    }
+  );
 }
 
 // Карточка сотрудника, привязанная к текущему аккаунту (read-only для

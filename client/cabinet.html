@@ -708,6 +708,16 @@
           </div><!-- /cbody -->
         </div>
 
+        <div class="card mobile-collapse" id="serverAccessCard" style="margin-top: 28px;">
+          <div class="card-title collapse-toggle">
+            <span style="display:flex;align-items:center;gap:10px;">🛡 Доступ на сервер</span>
+            <span class="collapse-chev">▾</span>
+          </div>
+          <div class="cbody">
+            <div id="serverAccessBody" style="font-size: 13px; color: var(--text-secondary);">Загрузка...</div>
+          </div>
+        </div>
+
         <div class="card mobile-collapse" id="twoFactorCard" style="margin-top: 28px;">
           <div class="card-title collapse-toggle">
             <span style="display:flex;align-items:center;gap:10px;"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg> Двухфакторная аутентификация</span>
@@ -1069,6 +1079,79 @@
       return { filename: file.name, data: await readAsBase64(file), mimeType: file.type };
     }
 
+    // === Доступ на игровой сервер ===
+    const WL_LABELS = {
+      none: 'доступа нет',
+      pending: 'заявка на рассмотрении',
+      approved: 'доступ открыт',
+      rejected: 'отказано'
+    };
+
+    function renderServerAccess(user) {
+      const box = document.getElementById('serverAccessBody');
+      if (!box) return;
+
+      // Пока Steam не привязан, просить нечего: вайтлист сервера держится на
+      // SteamID, и он должен прийти от самого Steam, а не из формы.
+      if (!user.steam_id) {
+        box.innerHTML = `
+          <p style="margin:0 0 12px;">Чтобы попасть на игровой сервер, нужен Steam: сервер пускает по номеру, а не по имени.</p>
+          <a class="btn-save" style="display:inline-block; text-decoration:none;" href="/api/auth/steam">Войти через Steam</a>`;
+        return;
+      }
+
+      const verified = user.steam_id_verified
+        ? '<span style="color: var(--green);">подтверждён Steam</span>'
+        : '<span style="color: var(--accent-cyan);">вписан админом — войди через Steam, чтобы подтвердить</span>';
+      const status = WL_LABELS[user.whitelist_status] || user.whitelist_status;
+      const reason = user.whitelist_status === 'rejected' && user.whitelist_note
+        ? `<p style="margin:8px 0 0;">Причина: ${escapeHtml(user.whitelist_note)}</p>`
+        : '';
+
+      const canAsk = user.whitelist_status === 'none' || user.whitelist_status === 'rejected';
+      const form = canAsk
+        ? `<div style="margin-top:12px;">
+             <textarea id="wlRequestNote" rows="2" placeholder="Пара слов о себе — необязательно, но с ними решают быстрее"
+                       style="width:100%; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary); font-family:inherit; font-size:13px;"></textarea>
+             <button type="button" class="btn-save" id="wlRequestBtn" style="margin-top:8px;">
+               ${user.whitelist_status === 'rejected' ? 'Подать заново' : 'Запросить доступ'}
+             </button>
+           </div>`
+        : '';
+
+      box.innerHTML = `
+        <p style="margin:0;">Steam ID: <code>${escapeHtml(user.steam_id)}</code> — ${verified}</p>
+        <p style="margin:8px 0 0;">Состояние: <strong>${escapeHtml(status)}</strong></p>
+        ${reason}
+        ${form}`;
+
+      const btn = document.getElementById('wlRequestBtn');
+      if (btn) {
+        btn.addEventListener('click', async () => {
+          const note = document.getElementById('wlRequestNote').value.trim();
+          btn.disabled = true;
+          try {
+            const res = await fetch('/api/cabinet/whitelist/request', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ note })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              showToast(data.message || 'Не получилось', 'error');
+              btn.disabled = false;
+              return;
+            }
+            showToast('Заявка отправлена — админ её увидит');
+            loadProfile();
+          } catch (e) {
+            showToast('Не получилось', 'error');
+            btn.disabled = false;
+          }
+        });
+      }
+    }
+
     async function loadProfile() {
       try {
         const res = await fetch('/api/cabinet/me');
@@ -1079,6 +1162,7 @@
         const data = await res.json();
         currentUserData = data.user;
         populateUI(data.user);
+        renderServerAccess(data.user);
         // Карточку сотрудника и инструмент показываем только сотрудникам
         if (data.user.account_type === 'employee') {
           document.getElementById('myEmployeeCard').style.display = '';

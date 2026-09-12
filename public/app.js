@@ -685,7 +685,11 @@ function initApp() {
 
 // Load data specifically for selected route
 function loadSectionData(hash) {
-  if (hash === 'dashboard') {
+  if (hash === 'whitelist') {
+    loadWhitelist();
+  } else if (hash === 'servers') {
+    loadServersSection();
+  } else if (hash === 'dashboard') {
     loadDashboardStats();
   } else if (hash === 'employees') {
     loadEmployees();
