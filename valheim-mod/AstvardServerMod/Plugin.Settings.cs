@@ -98,7 +98,8 @@ namespace AstvardServerMod
                     }
 
                     _editingRule = index;
-                    if (rule.Kind == RuleKind.Limit) SetFieldText(RuleEditInput, rule.PlayerLimit.ToString());
+                    if (rule.Kind == RuleKind.Limit || rule.Kind == RuleKind.ChoiceLimit)
+                        SetFieldText(RuleEditInput, rule.PlayerLimit.ToString());
                     MenuState = StateRuleEdit;
                     RefreshMenu();
                 });
@@ -185,8 +186,9 @@ namespace AstvardServerMod
                 {
                     var rule = PlayerRules[_editingRule];
                     SetPlayerRule(rule.Key, choice);
-                    // Straight back to the page, where the button now says what was chosen.
-                    OpenRulePage(RulePage(rule.Group));
+                    // Straight back to the page, where the button now says what was chosen -
+                    // unless there is a reach to set too, and leaving would mean coming back.
+                    if (rule.Kind != RuleKind.ChoiceLimit) OpenRulePage(RulePage(rule.Group));
                 });
             }
         }
@@ -231,7 +233,8 @@ namespace AstvardServerMod
                         break;
                     case StateBuildRules:
                         rulesHint.text = $"Что игроки могут в своих{NEWLINE}«Постройках». Админа это{NEWLINE}"
-                                         + "не касается.";
+                                         + $"не касается.{NEWLINE}«Ресурсы с игроков: нет» —{NEWLINE}"
+                                         + $"всё даром, а «платно»{NEWLINE}ниже ждёт своего часа.";
                         break;
                     default:
                         rulesHint.text = $"Что игроки могут в «Функциях».{NEWLINE}Админа это не касается.";
@@ -258,11 +261,16 @@ namespace AstvardServerMod
 
             var editHint = RuleEditHint != null ? RuleEditHint.GetComponentInChildren<Text>(true) : null;
             if (editHint != null)
-                editHint.text = rule.Kind == RuleKind.Limit
-                    ? $"«{rule.Title}» для игроков.{NEWLINE}Наибольший {rule.LimitWord}, м:{NEWLINE}"
-                      + $"от {rule.LimitMin} до {rule.LimitMax}."
-                    : $"«{rule.Title}» для игроков.{NEWLINE}Сейчас: {ChoiceWord(rule.PlayersValue)}."
-                      + (string.IsNullOrEmpty(rule.Note) ? "" : NEWLINE + rule.Note);
+            {
+                var reach = $"{NEWLINE}Наибольший {rule.LimitWord}, м:{NEWLINE}"
+                            + $"от {rule.LimitMin} до {rule.LimitMax}.";
+                var said = $"{NEWLINE}Сейчас: {ChoiceWord(rule.PlayersValue)}."
+                           + (string.IsNullOrEmpty(rule.Note) ? "" : NEWLINE + rule.Note);
+
+                editHint.text = $"«{rule.Title}» для игроков."
+                                + (rule.Kind == RuleKind.Limit ? reach
+                                    : rule.Kind == RuleKind.ChoiceLimit ? said + reach : said);
+            }
         }
 
         private static void RefreshSettingsVisibility(bool admin)
@@ -307,11 +315,12 @@ namespace AstvardServerMod
             var editing = admin && MenuState == StateRuleEdit;
             var kind = PlayerRules[Mathf.Clamp(_editingRule, 0, PlayerRules.Length - 1)].Kind;
             SetActive(RuleEditHint, editing);
+            var reaches = kind == RuleKind.Limit || kind == RuleKind.ChoiceLimit;
             SetActive(RuleEditToggle, editing && kind == RuleKind.Limit);
-            SetActive(RuleEditInput, editing && kind == RuleKind.Limit);
-            SetActive(RuleEditApply, editing && kind == RuleKind.Limit);
+            SetActive(RuleEditInput, editing && reaches);
+            SetActive(RuleEditApply, editing && reaches);
             foreach (var button in RuleChoiceButtons)
-                SetActive(button, editing && kind == RuleKind.Choice);
+                SetActive(button, editing && (kind == RuleKind.Choice || kind == RuleKind.ChoiceLimit));
         }
     }
 }

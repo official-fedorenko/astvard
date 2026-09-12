@@ -218,7 +218,8 @@ namespace AstvardServerMod
                           + (PlayerTemplates.Count > MaxTemplateButtons
                               ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
                               : "")
-                          + pause)
+                          // Paid, they keep no pause: the bag is the whole price.
+                          + (RulePaid("tpl") ? $"{NEWLINE}Из твоих материалов." : pause))
                     : "Постройки, открытые админом." + pause;
 
             SetLabel(PlayerServerTemplatesButton, $"Шаблоны сервера: {PlayerTemplates.Count}");
@@ -236,8 +237,8 @@ namespace AstvardServerMod
         {
             get
             {
-                return PlayerTemplates.Count > 0 || RuleAllows("floor") || RuleAllows("wall")
-                       || RuleAllows("fence") || RuleAllows("copy");
+                return (PlayerTemplates.Count > 0 && RuleAllows("tpl")) || RuleAllows("floor")
+                       || RuleAllows("wall") || RuleAllows("fence") || RuleAllows("copy");
             }
         }
 
@@ -263,7 +264,7 @@ namespace AstvardServerMod
             SetActive(PlayerCopyButton, page && RuleAllows("copy"));
             SetActive(PlayerSaveButton, page && RuleAllows("copy"));
             SetActive(PlayerMyTemplatesButton, page && RuleAllows("copy"));
-            SetActive(PlayerServerTemplatesButton, page && PlayerTemplates.Count > 0);
+            SetActive(PlayerServerTemplatesButton, page && PlayerTemplates.Count > 0 && RuleAllows("tpl"));
 
             for (var i = 0; i < MaxTemplateButtons; i++)
                 SetActive(PlayerTemplateButtons[i], !admin && MenuState == StatePlayerTemplates
@@ -293,8 +294,18 @@ namespace AstvardServerMod
             if (!LoadTemplate(body.Split('\n'), name)) return;
 
             StartPlacement($"шаблон «{name}»");
-            _playerPlacement = true;
-            _playerPlacementName = name;
+            // Paid, the bag is the whole price and there is nothing left to ask; free, the
+            // click asks the server, which holds it to the pause between builds.
+            if (RulePaid("tpl"))
+            {
+                _playerPaidPlacement = true;
+            }
+            else
+            {
+                _playerPlacement = true;
+                _playerPlacementName = name;
+            }
+
             InventoryGui.instance?.Hide();
         }
 

@@ -240,7 +240,11 @@ namespace AstvardServerMod
                   + $"P — закрепить берег, стрелки — сдвиг."
                 : $"Ширина в секциях (1-4),{NEWLINE}подъём настила над берегом.{NEWLINE}"
                   + $"Встань на этом берегу{NEWLINE}и нажми «Начать»."
-                  + RuleLimitNote("bridge", MaxBridgeLength);
+                  + RuleLimitNote("bridge", MaxBridgeLength)
+                  + (IsAdminUnlocked ? ""
+                      : RulePaid("bridge")
+                          ? $"{NEWLINE}Из твоих материалов."
+                          : $"{NEWLINE}Даром — с паузой между{NEWLINE}постройками.");
         }
 
         private static void UpdateBridgeCoverLabel()
@@ -951,10 +955,10 @@ namespace AstvardServerMod
                 return;
             }
 
-            // «Ресурсы»: an admin building at their own cost pays for the whole bridge
-            // before it goes up, and what did not go up comes back at the end.
+            // Paid for whole before it goes up - an admin at their own cost, or a player whose
+            // rule says «платно» - and what did not go up comes back at the end.
             Bill owed = null;
-            if (AdminPaysForBuilds)
+            if (PaysHere("bridge"))
             {
                 var bill = new Bill();
                 foreach (var piece in BridgePlanned) bill.Add(piece.Prefab);
@@ -968,12 +972,31 @@ namespace AstvardServerMod
 
                 if (PayBill(player, bill)) owed = bill;
             }
+            else if (!IsAdminUnlocked)
+            {
+                // Free, and a player's: it goes up on the server's word, which keeps the pause
+                // between builds. The plan is taken as it stands now - the projection redraws
+                // it every frame, and the answer lands a moment later.
+                var plan = new List<CopiedPiece>(BridgePlanned);
+                var from = _bridgeStart;
+                AskToBuild("#bridge", () => RaiseBridge(plan, from, survey, null), null, null);
+                return;
+            }
+
+            RaiseBridge(BridgePlanned, _bridgeStart, survey, owed);
+        }
+
+        /// <summary>Puts the surveyed crossing in the world and says what went up.</summary>
+        private static void RaiseBridge(List<CopiedPiece> plan, Vector3 from, BridgeSurvey survey, Bill owed)
+        {
+            var player = Player.m_localPlayer;
+            if (player == null) return;
 
             _bridgeStarted = false;
             _bridgePinned = false;
             UpdateBridgeHint();
 
-            var placed = Raise(BridgePlanned, survey.Facing, player.GetPlayerID(), owed);
+            var placed = Raise(plan, from, survey.Facing, player.GetPlayerID(), owed);
             RefundBill(owed);
             ClearBridgeGhost();
 
@@ -993,7 +1016,8 @@ namespace AstvardServerMod
         /// middle before the far end existed. One long frame is the price, and the length
         /// cap is what keeps it to one.
         /// </summary>
-        private static int Raise(List<CopiedPiece> pieces, Quaternion facing, long creator, Bill owed = null)
+        private static int Raise(List<CopiedPiece> pieces, Vector3 from, Quaternion facing, long creator,
+                                 Bill owed = null)
         {
             var scene = ZNetScene.instance;
             var placed = 0;
@@ -1013,7 +1037,7 @@ namespace AstvardServerMod
                     continue;
                 }
 
-                var go = Instantiate(prefab, _bridgeStart + facing * piece.LocalPos,
+                var go = Instantiate(prefab, from + facing * piece.LocalPos,
                                      facing * piece.LocalRot);
                 var built = go.GetComponent<Piece>();
                 if (built != null) built.SetCreator(creator, creatorPlatform);

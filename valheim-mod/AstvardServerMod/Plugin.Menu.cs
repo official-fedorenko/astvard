@@ -892,8 +892,7 @@ namespace AstvardServerMod
                 if (!LoadTemplate(_editingTemplate.Lines, _editingTemplate.Name)) return;
 
                 StartPlacement($"шаблон «{_editingTemplate.Name}»");
-                // A player's own template is paid for when it goes up.
-                if (!IsAdminUnlocked) _playerPaidPlacement = true;
+                MarkPlayerCopy();
                 InventoryGui.instance?.Hide();
             });
 

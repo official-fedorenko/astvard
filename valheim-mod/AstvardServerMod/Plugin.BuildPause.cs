@@ -126,11 +126,23 @@ namespace AstvardServerMod
                 return;
             }
 
-            var wait = WaitFor(SenderId());
-            if (wait > 0)
+            // The rule over all of them, above whether this one is open: shut, nothing is
+            // handed over; paid, the bag is the price and there is no pause to wait out.
+            var mode = ServerRuleValue("tpl");
+            if (mode == ChoiceClosed)
             {
-                Answer(sender, name, wait);
+                Answer(sender, name, -1);
                 return;
+            }
+
+            if (mode == ChoiceFree)
+            {
+                var wait = WaitFor(SenderId());
+                if (wait > 0)
+                {
+                    Answer(sender, name, wait);
+                    return;
+                }
             }
 
             ZRoutedRpc.instance?.InvokeRoutedRPC(sender, RpcTplBody,
@@ -146,12 +158,19 @@ namespace AstvardServerMod
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
 
-            // A floor, a wall or a fence has no template to look at, only its rule: closed says
+            // A name starting with «#» is a rule, not a template: a floor, a wall, a fence, a
+            // copy or a bridge has no file to look at, only what the admins allow. Closed says
             // no, paid says yes without a count - a paid build prints nothing, so it has no
-            // pause to keep - and free goes on to the pause like a template.
-            if (name == "#floor" || name == "#wall" || name == "#fence")
+            // pause to keep - and free goes on to the pause like a template. A rule this
+            // server does not know reads as closed.
+            if (!string.IsNullOrEmpty(name) && name[0] == '#')
             {
-                var mode = ServerRuleValue(name.Substring(1));
+                // Only a rule that can say «даром» may be built against: anything else named
+                // this way - a switch, a limit, a word this server has never heard - is a no.
+                var rule = FindRule(name.Substring(1));
+                var mode = rule != null && (rule.Kind == RuleKind.Choice || rule.Kind == RuleKind.ChoiceLimit)
+                    ? ServerRuleValue(rule)
+                    : ChoiceClosed;
                 if (mode != ChoiceFree)
                 {
                     Answer(sender, name, mode == ChoicePaid ? 0 : -1);
@@ -164,6 +183,13 @@ namespace AstvardServerMod
                 if (template == null || !template.ForPlayers)
                 {
                     Answer(sender, name, -1);
+                    return;
+                }
+
+                var mode = ServerRuleValue("tpl");
+                if (mode != ChoiceFree)
+                {
+                    Answer(sender, name, mode == ChoicePaid ? 0 : -1);
                     return;
                 }
             }
@@ -254,7 +280,8 @@ namespace AstvardServerMod
 
         private static void SayClosedToPlayers(string name)
         {
-            var what = name == "#floor" ? "Пол" : name == "#wall" ? "Стену" : name == "#fence" ? "Забор" : $"«{name}»";
+            var what = name == "#floor" ? "Пол" : name == "#wall" ? "Стену" : name == "#fence" ? "Забор"
+                : name == "#copy" ? "Копию" : name == "#bridge" ? "Мост" : $"«{name}»";
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"{what} админ больше не разрешает");
             AskSharedList();
         }

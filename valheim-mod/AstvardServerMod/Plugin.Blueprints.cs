@@ -313,8 +313,7 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] Copied {Clipboard.Count} pieces (r={radius}), placing.");
 
             StartPlacement("копия");
-            // A player's copy is paid for when it goes up.
-            if (!IsAdminUnlocked) _playerPaidPlacement = true;
+            MarkPlayerCopy();
             InventoryGui.instance?.Hide();
         }
 
@@ -367,8 +366,11 @@ namespace AstvardServerMod
                 : $"Радиус (м), до {RuleLimit("copy", 64f):0}.{NEWLINE}Копируются только твои детали.{NEWLINE}"
                   + (_copyToFile
                       ? $"Имя и категорию задай ниже —{NEWLINE}шаблон ляжет в «Мои шаблоны»."
-                      : $"Проекция перед тобой: ЛКМ —{NEWLINE}поставить из твоих материалов,{NEWLINE}"
-                        + "Esc — отмена, P — закрепить.");
+                      : RulePaid("copy")
+                          ? $"Проекция перед тобой: ЛКМ —{NEWLINE}поставить из твоих материалов,{NEWLINE}"
+                            + "Esc — отмена, P — закрепить."
+                          : $"Проекция перед тобой: ЛКМ —{NEWLINE}поставить, Esc — отмена,{NEWLINE}"
+                            + $"P — закрепить.{NEWLINE}Даром — с паузой между{NEWLINE}постройками.");
         }
 
         // What the build now being placed is called, for «Отменить постройку».
@@ -394,6 +396,26 @@ namespace AstvardServerMod
             IsPlacing = true;
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                 "ЛКМ — поставить, Esc — отменить, P — закрепить");
+        }
+
+        /// <summary>
+        /// A player's own copy or template just put in hand, marked by the rule the admins
+        /// set: paid, and the bag is the whole price; free, and the click asks the server,
+        /// which holds it to the pause between builds. Says nothing for an admin - their
+        /// «Ресурсы» decides that at the click.
+        /// </summary>
+        private static void MarkPlayerCopy()
+        {
+            if (IsAdminUnlocked) return;
+
+            if (RulePaid("copy"))
+            {
+                _playerPaidPlacement = true;
+                return;
+            }
+
+            _playerPlacement = true;
+            _playerPlacementName = "#copy";
         }
 
         private static void CancelPlacement()
@@ -580,8 +602,9 @@ namespace AstvardServerMod
                     return;
                 }
 
-                // A player's build goes up on the server's word: it keeps the pause
-                // between builds, and a client's own clock would be too easy to wind.
+                // A player's free build - a server template, or their own copy the admins made
+                // free - goes up on the server's word: it keeps the pause between builds, and
+                // a client's own clock would be too easy to wind.
                 if (_playerPlacement)
                 {
                     _inputHeldUntil = Time.time + 0.3f;

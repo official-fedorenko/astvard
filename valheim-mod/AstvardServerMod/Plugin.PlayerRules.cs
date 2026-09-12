@@ -18,6 +18,9 @@ namespace AstvardServerMod
             Toggle,
             Limit,
             Choice,
+
+            /// <summary>A choice with a reach of its own: no / free / paid, and how far.</summary>
+            ChoiceLimit,
         }
 
         /// <summary>The «Настройки» page a rule is set from, and the config section it is kept under.</summary>
@@ -66,6 +69,16 @@ namespace AstvardServerMod
 
             public ConfigEntry<bool> Open;
 
+            /// <summary>
+            /// ChoiceLimit: whether what is open is paid for. Its own entry beside
+            /// <see cref="Open"/>, and not one number as a plain choice has, so a config
+            /// written before the choice existed keeps meaning exactly what it meant.
+            /// </summary>
+            public ConfigEntry<bool> Paid;
+
+            /// <summary>ChoiceLimit: what «платно» means for a config that has never said.</summary>
+            public bool PaidDefault;
+
             public ConfigEntry<int> Mode;
 
             public ConfigEntry<int> Limit;
@@ -95,6 +108,17 @@ namespace AstvardServerMod
             };
         }
 
+        private static PlayerRule ChoiceLimitRule(string key, string config, string title, RuleGroup group, bool open,
+                                                  bool paid, string word, int min, int max, int value, string note)
+        {
+            return new PlayerRule
+            {
+                Key = key, ConfigName = config, Title = title, Group = group, Kind = RuleKind.ChoiceLimit,
+                Default = open ? 1 : 0, PaidDefault = paid, LimitWord = word, LimitMin = min, LimitMax = max,
+                LimitDefault = value, PlayerLimit = value, Note = note,
+            };
+        }
+
         private static PlayerRule ChoiceRule(string key, string config, string title, RuleGroup group, int mode,
                                              string note)
         {
@@ -116,8 +140,12 @@ namespace AstvardServerMod
                       "длина", 10, (int)MaxRoadLength, (int)MaxRoadLength),
             LimitRule("area", "Area", "Мощение", RuleGroup.Terrain, true,
                       "радиус", 2, (int)MaxAreaRadius, (int)MaxAreaRadius),
-            LimitRule("bridge", "Bridge", "Мост", RuleGroup.Terrain, true,
-                      "длина", 10, (int)MaxBridgeLength, (int)MaxBridgeLength),
+            // Free out of the box, as it was before it could be paid for - and that is why
+            // the choice lives in an entry of its own: an admin's «Bridge = true» from then
+            // still says what it said.
+            ChoiceLimitRule("bridge", "Bridge", "Мост", RuleGroup.Terrain, true, false,
+                            "длина", 10, (int)MaxBridgeLength, (int)MaxBridgeLength,
+                            "Даром — с паузой между\nпостройками, платно — без неё."),
             ToggleRule("smooth", "Smooth", "Сглаживание", RuleGroup.Terrain, true),
             ToggleRule("torches", "Torches", "Факелы", RuleGroup.Terrain, true),
             new PlayerRule
@@ -131,6 +159,17 @@ namespace AstvardServerMod
             ToggleRule("clear", "Clear", "Снос", RuleGroup.Terrain, false),
             ToggleRule("undo", "Undo", "Откат", RuleGroup.Terrain, true),
 
+            // Over all the rest: off, and nothing a player builds costs anything, while every
+            // rule below keeps the word it was set to and takes it up again when this goes
+            // back on. Its own switch because that is how the owner asked for it - one answer
+            // to «за ресурсы или даром», not a round of every rule.
+            new PlayerRule
+            {
+                Key = "pay", ConfigName = "Resources", Title = "Ресурсы с игроков", Group = RuleGroup.Build,
+                Kind = RuleKind.Toggle, Default = 1,
+                ConfigNote = "Берут ли с игроков материалы вообще. false — всё, что игрок строит, даром, "
+                             + "а правила «платно» ниже ждут, пока это включат обратно. Админа не касается.",
+            },
             ToggleRule("snap", "Snap", "Прилипание", RuleGroup.Build, true),
             ChoiceRule("floor", "Floor", "Пол", RuleGroup.Build, ChoicePaid,
                        "Даром — с паузой между\nпостройками, платно — без неё."),
@@ -140,7 +179,15 @@ namespace AstvardServerMod
                        "Стена по краю пола.\nДаром — с паузой между\nпостройками, платно — без неё."),
             ChoiceRule("fence", "Fence", "Забор", RuleGroup.Build, ChoicePaid,
                        "Даром — с паузой между\nпостройками, платно — без неё."),
-            LimitRule("copy", "Copy", "Копирование", RuleGroup.Build, true, "радиус", 1, 64, 20),
+            // Paid out of the box, as a player's copy has always been: it prints whatever
+            // stands around them, and the hammer gives the pieces back.
+            ChoiceLimitRule("copy", "Copy", "Копирование", RuleGroup.Build, true, true,
+                            "радиус", 1, 64, 20,
+                            "Копия и свой шаблон.\nДаром — с паузой между\nпостройками, платно — без неё."),
+            // Free out of the box, as the templates were before this: what an admin opens,
+            // a player has always been given for nothing.
+            ChoiceRule("tpl", "Templates", "Шаблоны сервера", RuleGroup.Build, ChoiceFree,
+                       "Только те, что разрешены.\nДаром — с паузой между\nпостройками, платно — без неё."),
             // Closed until an admin wants players' builds sent in: every one lands in «Общие».
             ToggleRule("share", "Share", "Делиться", RuleGroup.Build, false),
 
@@ -185,7 +232,13 @@ namespace AstvardServerMod
 
                 rule.Open = config.Bind(section, rule.ConfigName, rule.Default != 0,
                     rule.ConfigNote ?? $"«{rule.Title}»: разрешено ли игрокам. Админа не касается.");
-                if (rule.Kind == RuleKind.Limit)
+
+                if (rule.Kind == RuleKind.ChoiceLimit)
+                    rule.Paid = config.Bind(section, rule.ConfigName + "Paid", rule.PaidDefault,
+                        $"«{rule.Title}»: платит ли игрок из сумки. false — даром, "
+                        + "с паузой между постройками.");
+
+                if (rule.Kind == RuleKind.Limit || rule.Kind == RuleKind.ChoiceLimit)
                     rule.Limit = config.Bind(section, rule.ConfigName + "Max", rule.LimitDefault,
                         $"«{rule.Title}»: наибольший {rule.LimitWord} для игрока, м, "
                         + $"от {rule.LimitMin} до {rule.LimitMax}.");
@@ -216,7 +269,11 @@ namespace AstvardServerMod
         {
             if (rule.Kind == RuleKind.Choice)
                 return rule.Mode != null ? Mathf.Clamp(rule.Mode.Value, ChoiceClosed, ChoicePaid) : ChoiceClosed;
-            return rule.Open != null && rule.Open.Value ? 1 : 0;
+
+            var open = rule.Open != null && rule.Open.Value;
+            if (rule.Kind != RuleKind.ChoiceLimit) return open ? 1 : 0;
+            if (!open) return ChoiceClosed;
+            return (rule.Paid != null ? rule.Paid.Value : rule.PaidDefault) ? ChoicePaid : ChoiceFree;
         }
 
         private static int ServerRuleValue(string key)
@@ -268,6 +325,13 @@ namespace AstvardServerMod
             {
                 rule.Mode.Value = Mathf.Clamp(value, ChoiceClosed, ChoicePaid);
             }
+            else if (rule.Kind == RuleKind.ChoiceLimit)
+            {
+                value = Mathf.Clamp(value, ChoiceClosed, ChoicePaid);
+                rule.Open.Value = value != ChoiceClosed;
+                // Shut, it keeps whether it was paid: opened again, it opens as it was.
+                if (value != ChoiceClosed && rule.Paid != null) rule.Paid.Value = value == ChoicePaid;
+            }
             else
             {
                 rule.Open.Value = value != 0;
@@ -316,13 +380,28 @@ namespace AstvardServerMod
             return _playerRulesKnown && rule != null && rule.PlayersValue > 0;
         }
 
+        /// <summary>
+        /// Whether the admins take materials from players at all. Off, every «платно» below
+        /// reads as «даром» without being changed - the one answer to «за ресурсы или даром»,
+        /// and the rules are still there when it goes back on.
+        /// </summary>
+        private static bool PlayersPayAtAll
+        {
+            get
+            {
+                var rule = FindRule("pay");
+                return rule != null && rule.PlayersValue > 0;
+            }
+        }
+
         /// <summary>Whether a choice rule makes this client pay: never an admin.</summary>
         private static bool RulePaid(string key)
         {
-            if (IsAdminUnlocked) return false;
+            if (IsAdminUnlocked || !PlayersPayAtAll) return false;
 
             var rule = FindRule(key);
-            return rule != null && rule.Kind == RuleKind.Choice && rule.PlayersValue == ChoicePaid;
+            return rule != null && (rule.Kind == RuleKind.Choice || rule.Kind == RuleKind.ChoiceLimit)
+                   && rule.PlayersValue == ChoicePaid;
         }
 
         /// <summary>How far a tool reaches here: its own cap for an admin, the admins' limit for a player.</summary>
@@ -359,6 +438,7 @@ namespace AstvardServerMod
             {
                 // An admin pays for them only while building at their own cost.
                 if (IsAdminUnlocked) return IsBuildResources;
+                if (!PlayersPayAtAll) return false;
 
                 var rule = FindRule("torchpay");
                 return rule == null || rule.PlayersValue != 0;
@@ -394,6 +474,10 @@ namespace AstvardServerMod
             {
                 case RuleKind.Choice:
                     return $"{rule.Title}: {ChoiceWord(rule.PlayersValue)}";
+                case RuleKind.ChoiceLimit:
+                    return rule.PlayersValue > 0
+                        ? $"{rule.Title}: {ChoiceWord(rule.PlayersValue)}, до {rule.PlayerLimit} м"
+                        : $"{rule.Title}: нет";
                 case RuleKind.Limit:
                     return rule.PlayersValue > 0 ? $"{rule.Title}: до {rule.PlayerLimit} м" : $"{rule.Title}: нет";
                 default:
