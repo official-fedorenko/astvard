@@ -71,6 +71,7 @@ PORT=3001
 JWT_SECRET=$(openssl rand -hex 32)
 APP_ENV=production
 APP_URL=https://astvard.online
+SUPERADMIN_STEAM_ID=${SUPERADMIN_STEAM_ID:-}
 ENV
   echo "   создан, секреты сгенерированы"
 fi
@@ -168,10 +169,10 @@ echo "   перезагружен"
 say "Готово"
 echo "Проверь снаружи:"
 echo "  curl -s https://astvard.online/api/health     # {\"status\":\"ok\",\"db\":\"ok\"}"
-echo "Первого суперадмина назначить руками, после первого входа на сайт:"
-if [ -n "${POSTGRES_CONTAINER:-}" ]; then
-  echo "  docker exec $POSTGRES_CONTAINER psql -U $POSTGRES_USER -d $POSTGRES_DB \\"
+if [ -n "${SUPERADMIN_STEAM_ID:-}" ]; then
+  echo "Суперадмин: SteamID $SUPERADMIN_STEAM_ID — бэкенд заводит его при старте,"
+  echo "смотри journalctl -u astvard-backend. Войти на сайт — «Войти через Steam»."
 else
-  echo "  docker compose -f $DIR/docker-compose.yml exec -T postgres psql -U $POSTGRES_USER -d $POSTGRES_DB \\"
+  echo "Суперадмина нет: впиши SUPERADMIN_STEAM_ID=<SteamID64> в $DIR/.env и"
+  echo "  systemctl restart astvard-backend — бэкенд заведёт его сам."
 fi
-echo "    -c \"UPDATE users SET role='superadmin' WHERE nickname='НИК';\""

@@ -100,6 +100,14 @@ function listUsers() {
     .then((r) => r.rows);
 }
 
+// Whether anyone can let players in at all. Used at startup, where the answer
+// decides if the deployment has to create the first superadmin.
+function countSuperadmins() {
+  return pool
+    .query("SELECT count(*)::int AS n FROM users WHERE role = 'superadmin'")
+    .then((r) => r.rows[0].n);
+}
+
 function updateUserRole(id, role) {
   return pool
     .query(
@@ -120,4 +128,5 @@ module.exports = {
   markSteamIdVerified,
   listUsers,
   updateUserRole,
+  countSuperadmins,
 };

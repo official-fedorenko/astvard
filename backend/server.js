@@ -10,6 +10,7 @@ const admin = require('./handlers/admin');
 const whitelistHandlers = require('./handlers/whitelist');
 const steamHandlers = require('./handlers/steam');
 const { listServers, refreshAllServers } = require('./servers');
+const { ensureSuperadmin } = require('./bootstrap');
 
 const PORT = process.env.PORT || 3001;
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
@@ -163,6 +164,12 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`astvard backend listening on port ${PORT}`);
+
+  // Runs at every start, so a deployment and a restart both end with a site that
+  // has someone who can answer whitelist requests. A database that is not up yet
+  // must not take the process down with it — the site answers 500 on /api/health
+  // in that case and says so, which is a better failure than no site at all.
+  ensureSuperadmin().catch((err) => console.error('Суперадмин не создан:', err.message));
 });
 
 // Periodic server-status polling (crude TCP check for now).
