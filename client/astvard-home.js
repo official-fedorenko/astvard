@@ -28,7 +28,9 @@
           </p>
           <p class="article-card__meta" style="color: ${s.is_online ? '#4ade80' : 'var(--text-muted, #a0a0ab)'};">
             ${s.is_online
-              ? `● online — игроков ${escape(s.players)}/${escape(s.max_players)}`
+              ? (s.players === null
+                ? '● online'
+                : `● online — игроков ${escape(s.players)}/${escape(s.max_players)}`)
               : '○ offline'}
           </p>
         </div>

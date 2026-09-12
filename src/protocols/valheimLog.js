@@ -10,6 +10,12 @@ const fs = require('node:fs/promises');
 // server every time someone walks into a crypt.
 const HEARTBEAT_RE = /Connections (\d+) ZDOS:/g;
 
+// Written once, when the server finishes loading the world. It is the only sign of
+// life during the first ten minutes: the heartbeat above comes at that interval, so
+// a server restarted a minute ago has none yet and used to read as offline — which
+// is exactly when somebody is looking at the page.
+const STARTED_RE = /Game server connected/g;
+
 // After a clean shutdown the log is history, not a heartbeat that merely went quiet.
 const SHUTDOWN_RE = /(OnApplicationQuit|ZNet Shutdown)/g;
 
@@ -47,14 +53,26 @@ async function readValheimLogStatus(logPath) {
     const tail = buffer.toString('utf8');
 
     const heartbeat = lastMatch(tail, HEARTBEAT_RE);
+    const started = lastMatch(tail, STARTED_RE);
     const shutdown = lastMatch(tail, SHUTDOWN_RE);
-    const stopped = shutdown && (!heartbeat || shutdown.index > heartbeat.index);
+
+    // Whichever sign of life came last in the file wins; a shutdown after it means
+    // the server is gone rather than quiet.
+    const alive = [heartbeat, started]
+      .filter(Boolean)
+      .sort((a, b) => a.index - b.index)
+      .pop();
+    const stopped = shutdown && (!alive || shutdown.index > alive.index);
     const fresh = Date.now() - mtimeMs < STALE_MS;
 
-    if (stopped || !fresh || !heartbeat) {
+    if (stopped || !fresh || !alive) {
       return { online: false };
     }
-    return { online: true, players: Number(heartbeat[1]), maxPlayers: MAX_PLAYERS };
+
+    // Between the start and the first heartbeat the count is genuinely unknown, and
+    // saying "0 players" then would be a number nobody measured.
+    const players = alive === heartbeat ? Number(heartbeat[1]) : null;
+    return { online: true, players, maxPlayers: MAX_PLAYERS };
   } catch {
     // No log, no permission, a directory in its place: all of them mean the same
     // thing to a player looking at the page.
