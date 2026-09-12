@@ -2,9 +2,9 @@
 # Portal update on the VPS: pull the code, reinstall dependencies, restart.
 # Run as root.
 #
-# The schema is not applied here any more: the panel migrates its own SQLite
-# database at startup, and the database lives outside the checkout ($DB_PATH in
-# .env), where `git reset --hard` below cannot reach it.
+# There is no step for the database here: the panel applies db/schema.sql itself at
+# startup, and the data sits in Postgres, which `git reset --hard` below cannot reach.
+# Uploads are inside the checkout but in .gitignore, so the reset leaves them alone.
 set -euo pipefail
 
 BRANCH=${BRANCH:-valheim-mod}

@@ -68,7 +68,7 @@ function parsePagination(parsedUrl, { defaultLimit = 1000, maxLimit = 1000 } = {
 }
 
 function logAction(user, action) {
-  db.run("INSERT INTO logs (user, action) VALUES (?, ?)", [user, action], (err) => {
+  db.run("INSERT INTO logs (username, action) VALUES (?, ?)", [user, action], (err) => {
     if (err) logger.error("Ошибка записи лога:", err);
   });
 }

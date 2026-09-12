@@ -31,4 +31,4 @@ Add any other context about the problem here (screenshots, logs, etc).
 ## Checklist
 - [ ] I have searched existing issues and this is not a duplicate
 - [ ] I am using the latest version
-- [ ] I have tried resetting the database (`rm db.sqlite` + restart)
+- [ ] I have tried resetting the database (drop and recreate it, then restart)

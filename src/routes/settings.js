@@ -12,7 +12,13 @@ module.exports = async function handleSettings(req, res, user, parsedUrl, method
   } else if (method === 'POST') {
     try {
       const settings = await getJsonBody(req);
-      const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
+      // INSERT OR REPLACE был SQLite-выражением; в Postgres то же самое — это
+      // ON CONFLICT по ключу. Описание настройки при этом не затирается: его
+      // пишет схема, а форма настроек присылает только значения.
+      const stmt = db.prepare(
+        `INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+      );
       let writeError = null;
       db.serialize(() => {
         for (const [key, value] of Object.entries(settings)) {

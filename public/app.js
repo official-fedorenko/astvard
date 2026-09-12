@@ -1468,7 +1468,7 @@ async function loadLogs() {
         const dateStr = new Date(log.created_at).toLocaleString('ru-RU');
         tr.innerHTML = `
           <td style="color: hsl(var(--text-muted)); font-size: 13px;">${dateStr}</td>
-          <td><span class="badge badge-warning">${escapeHtml(log.user)}</span></td>
+          <td><span class="badge badge-warning">${escapeHtml(log.username)}</span></td>
           <td>${escapeHtml(log.action)}</td>
         `;
         tbody.appendChild(tr);

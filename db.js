@@ -1,1004 +1,398 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+// .env читается и здесь, а не только в server.js: этот модуль подключают тесты и
+// служебные скрипты, у которых своего чтения настроек нет, и без пароля к базе
+// они падали с невнятным «client password must be a string». dotenv не
+// перезаписывает уже заданные переменные, так что окружение остаётся главным.
+require('dotenv').config({ quiet: true });
+
+const { Pool } = require('pg');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const logger = require('./src/logger');
 
-// Allows tests to point at an isolated, disposable database file instead of
-// the real db.sqlite (which would otherwise get seeded/mutated by every test run).
-const dbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(__dirname, 'db.sqlite');
-const db = new sqlite3.Database(dbPath);
+// === Почему этот файл выглядит как sqlite3 ===
+//
+// Панель написана под sqlite3: `db.run/get/all(sql, params, cb)`, вопросительные
+// знаки вместо номеров, `this.lastID`, `this.changes`, `db.serialize` и
+// `db.prepare` — 335 обращений в двух десятках маршрутов. Переписать их все под
+// драйвер Postgres значит переписать панель, поэтому наружу этот модуль оставляет
+// прежнюю форму, а внутри говорит с Postgres. Слой делает ровно четыре вещи и
+// больше ничего волшебного:
+//
+//   ?                    → $1, $2 … (кавычки уважаются: «?» внутри строки — текст)
+//   INSERT OR IGNORE     → INSERT … ON CONFLICT DO NOTHING
+//   INSERT без RETURNING → добавляется RETURNING *, чтобы работал lastID
+//   this.lastID = id вставленной строки, this.changes = число затронутых
+//
+// Порядок выполнения: одно соединение (pool max: 1) и очередь — как было у sqlite3
+// в serialized-режиме. Поэтому `db.serialize()` продолжает означать то же, что
+// означал, а не превращается в ложь.
 
-// Resolves once schema creation + default-data seeding below has finished.
-// server.js doesn't wait on this (by the time a real request arrives it's
-// long done), but tests that fire requests immediately after startup need it
-// to avoid racing the initial seed.
-let resolveDbReady;
-const dbReady = new Promise((resolve) => { resolveDbReady = resolve; });
+const pool = new Pool({
+  host: process.env.POSTGRES_HOST || '127.0.0.1',
+  port: Number(process.env.POSTGRES_PORT || 5432),
+  user: process.env.POSTGRES_USER || 'astvard',
+  password: process.env.POSTGRES_PASSWORD,
+  database: process.env.POSTGRES_DB || 'astvard',
+  // Одно соединение: очередь запросов остаётся такой же, как была. Панель не под
+  // нагрузкой, а предсказуемый порядок здесь дороже параллелизма.
+  max: 1
+});
 
-// Предустановленный набор известных брендов инструмента с сгенерированными
-// плейсхолдер-иконками (монограмма на градиенте, БЕЗ реальных логотипов).
-// Иконки лежат в data/tool-catalog/images/brand-*.svg, отдаются тем же
-// маршрутом, что и иконки категорий (/catalog/images/*.svg).
-const PRESET_BRANDS = [
-  { name: 'Bosch', icon_url: '/catalog/images/brand-bosch.svg' },
-  { name: 'DeWalt', icon_url: '/catalog/images/brand-dewalt.svg' },
-  { name: 'Makita', icon_url: '/catalog/images/brand-makita.svg' },
-  { name: 'Metabo', icon_url: '/catalog/images/brand-metabo.svg' },
-  { name: 'Hilti', icon_url: '/catalog/images/brand-hilti.svg' },
-  { name: 'Milwaukee', icon_url: '/catalog/images/brand-milwaukee.svg' },
-  { name: 'Ryobi', icon_url: '/catalog/images/brand-ryobi.svg' },
-  { name: 'AEG', icon_url: '/catalog/images/brand-aeg.svg' },
-  { name: 'Skil', icon_url: '/catalog/images/brand-skil.svg' },
-  { name: 'Interskol', icon_url: '/catalog/images/brand-interskol.svg' },
-  { name: 'Einhell', icon_url: '/catalog/images/brand-einhell.svg' },
-  { name: 'Sturm', icon_url: '/catalog/images/brand-sturm.svg' },
-  { name: 'Зубр', icon_url: '/catalog/images/brand-zubr.svg' },
-  { name: 'Bort', icon_url: '/catalog/images/brand-bort.svg' }
-];
+pool.on('error', (err) => logger.error('[db] соединение с Postgres:', err.message));
 
-// === Простая система миграций (для надёжности) ===
-const MIGRATIONS = [
-  {
-    version: 1,
-    description: 'Initial schema + default data',
-    up: () => {
-      // The existing CREATEs and seeds are run below.
-      // This migration is considered applied on first run.
-    }
-  },
-  {
-    version: 2,
-    description: 'Add image_url to support_messages for chat images',
-    up: () => {
-      db.run("ALTER TABLE support_messages ADD COLUMN image_url TEXT", () => {});
-    }
-  },
-  {
-    version: 3,
-    description: 'Add two-factor auth columns to users',
-    up: () => {
-      db.run("ALTER TABLE users ADD COLUMN two_factor_secret TEXT", () => {});
-      db.run("ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0", () => {});
-    }
-  },
-  {
-    version: 4,
-    description: 'Add account_type to users (client/employee)',
-    up: () => {
-      // Тип аккаунта: 'client' (клиент компании) или 'employee' (сотрудник).
-      // Существующие аккаунты по умолчанию считаем клиентами — админам это
-      // поле не мешает (доступ определяется полем role).
-      db.run("ALTER TABLE users ADD COLUMN account_type TEXT NOT NULL DEFAULT 'client'", () => {});
-    }
-  },
-  {
-    version: 5,
-    description: 'Add photo_url to tools',
-    up: () => {
-      db.run("ALTER TABLE tools ADD COLUMN photo_url TEXT", () => {});
-    }
-  },
-  {
-    version: 6,
-    description: 'Add category to media',
-    up: () => {
-      db.run("ALTER TABLE media ADD COLUMN category TEXT NOT NULL DEFAULT 'general'", () => {});
-    }
-  },
-  {
-    version: 7,
-    description: 'Create tool_photos gallery table',
-    up: () => {
-      db.run(`
-        CREATE TABLE IF NOT EXISTS tool_photos (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          tool_id INTEGER NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
-          photo_url TEXT NOT NULL,
-          uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, () => {});
-    }
-  },
-  {
-    version: 8,
-    description: 'Add uploaded_by to media',
-    up: () => {
-      db.run("ALTER TABLE media ADD COLUMN uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL", () => {});
-    }
-  },
-  {
-    version: 9,
-    description: 'Create category_icons overrides table',
-    up: () => {
-      // Переопределение стандартной иконки категории инструмента. Ключ —
-      // название категории (как в data/tool-catalog). Если записи нет —
-      // используется дефолтная иконка из каталога (tools.json).
-      db.run(`
-        CREATE TABLE IF NOT EXISTS category_icons (
-          category TEXT PRIMARY KEY,
-          image_url TEXT NOT NULL,
-          updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, () => {});
-    }
-  },
-  {
-    version: 10,
-    description: 'Create tool_requests table (user-submitted, admin-approved)',
-    up: () => {
-      // Заявки на добавление инструмента от пользователей. Админ одобряет
-      // (создаётся запись в tools) или отклоняет. status: pending/approved/rejected.
-      db.run(`
-        CREATE TABLE IF NOT EXISTS tool_requests (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          category TEXT,
-          brand TEXT,
-          model TEXT,
-          serial_number TEXT,
-          inventory_number TEXT,
-          photo_url TEXT,
-          notes TEXT,
-          status TEXT NOT NULL DEFAULT 'pending',
-          requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          reviewed_at DATETIME,
-          review_note TEXT,
-          created_tool_id INTEGER REFERENCES tools(id) ON DELETE SET NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, () => {});
-    }
-  },
-  {
-    version: 11,
-    description: 'Create generic requests table (заявления разных типов)',
-    up: () => {
-      // Универсальные заявления пользователей: type определяет вид (добавить
-      // инструмент, отпуск, увольнение, заказать инструмент …), payload — JSON
-      // с полями конкретного типа. Админ одобряет/отклоняет.
-      db.run(`
-        CREATE TABLE IF NOT EXISTS requests (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          type TEXT NOT NULL,
-          title TEXT,
-          payload TEXT,
-          status TEXT NOT NULL DEFAULT 'pending',
-          requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          reviewed_at DATETIME,
-          review_note TEXT,
-          result_ref TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, () => {});
-    }
-  },
-  {
-    version: 12,
-    description: 'Add received_at to requests (сотрудник отметил получение заказа)',
-    up: () => {
-      // Для заявок type='tool_order': после одобрения сотрудник нажимает
-      // «Получил» → проставляется received_at. Пока NULL — заявка «висит».
-      db.run("ALTER TABLE requests ADD COLUMN received_at DATETIME", () => {});
-    }
-  },
-  {
-    version: 13,
-    description: 'Create catalog_models (редактируемый каталог стандартного инструмента) + seed из tools.json',
-    up: () => {
-      // Стандартный каталог моделей для подсказок при добавлении инструмента
-      // (и в админке, и в заявке). Раньше — статичный файл data/tool-catalog;
-      // теперь редактируется из админпанели. Сидим первоначальным содержимым.
-      db.run(`
-        CREATE TABLE IF NOT EXISTS catalog_models (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          category TEXT NOT NULL,
-          brand TEXT NOT NULL,
-          model TEXT NOT NULL,
-          name TEXT,
-          line TEXT,
-          power_type TEXT,
-          power_w INTEGER,
-          voltage_v INTEGER,
-          brushless INTEGER NOT NULL DEFAULT 0,
-          impact INTEGER NOT NULL DEFAULT 0,
-          chuck TEXT,
-          disc_mm INTEGER,
-          image_url TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, () => {
-        try {
-          const cat = require('./data/tool-catalog');
-          const toUrl = (img) => img ? '/catalog/' + String(img).replace(/^\/+/, '') : null;
-          const stmt = db.prepare(`INSERT INTO catalog_models
-            (category, brand, model, name, line, power_type, power_w, voltage_v, brushless, impact, chuck, disc_mm, image_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-          (cat.raw.categories || []).forEach((c) => {
-            const catImg = toUrl(c.image);
-            (c.tools || []).forEach((t) => {
-              stmt.run([
-                c.category, t.brand, t.model, t.name || `${t.brand} ${t.model}`,
-                t.line || null, t.powerType || null, t.powerW || null, t.voltageV || null,
-                t.brushless ? 1 : 0, t.impact ? 1 : 0, t.chuck || null, t.discMm || null,
-                t.image ? toUrl(t.image) : catImg
-              ]);
-            });
-          });
-          stmt.finalize();
-          logger.info('[db] catalog_models засеян из data/tool-catalog');
-        } catch (e) {
-          logger.error('[db] Не удалось засеять catalog_models:', e.message);
-        }
-      });
-    }
-  },
-  {
-    version: 14,
-    description: 'Add specs (JSON) to tools — характеристики по категории',
-    up: () => {
-      // Характеристики инструмента, зависящие от категории (диск, патрон,
-      // мощность, вольтаж…). Хранятся как JSON, набор полей задаёт схема
-      // src/toolSpecs.js. NULL/'{}' — характеристик нет.
-      db.run("ALTER TABLE tools ADD COLUMN specs TEXT", () => {});
-    }
-  },
-  {
-    version: 15,
-    description: 'Add specs (JSON) to catalog_models — характеристики модели по категории',
-    up: () => {
-      // Узкоспециальные характеристики модели каталога, зависящие от категории
-      // (энергия удара, Ø бурения…). Общие поля остаются колонками; здесь — JSON.
-      db.run("ALTER TABLE catalog_models ADD COLUMN specs TEXT", () => {});
-    }
-  },
-  {
-    version: 16,
-    description: 'Create brands table (справочник брендов инструмента с иконками) + seed стандартных брендов',
-    up: () => {
-      // Реестр брендов: id (не name), т.к. бренды свободно добавляются/
-      // переименовываются/удаляются пользователем — это первоклассная
-      // сущность, а не override поверх фиксированного списка (как
-      // category_icons). brand на tools/catalog_models остаётся обычной
-      // строкой без FK — удаление бренда из реестра не ломает старые записи.
-      db.run(`
-        CREATE TABLE IF NOT EXISTS brands (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL UNIQUE,
-          icon_url TEXT,
-          is_preset INTEGER NOT NULL DEFAULT 0,
-          created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, () => {
-        try {
-          const stmt = db.prepare(`INSERT OR IGNORE INTO brands (name, icon_url, is_preset) VALUES (?, ?, 1)`);
-          PRESET_BRANDS.forEach(b => stmt.run([b.name, b.icon_url]));
-          stmt.finalize();
-          logger.info('[db] brands засеян стандартным набором');
-        } catch (e) {
-          logger.error('[db] Не удалось засеять brands:', e.message);
-        }
-      });
-    }
-  },
-  {
-    version: 17,
-    description: 'Create notifications + notification_reads (внутренние уведомления от администрации)',
-    up: () => {
-      // Уведомления от администрации в личном кабинете. user_id = NULL —
-      // уведомление для всех пользователей. Прочтения храним отдельной
-      // таблицей (a не колонкой is_read на самой notifications), чтобы
-      // бродкаст на всех не плодил по строке на каждого пользователя —
-      // один уведомление = одна строка независимо от адресатов.
-      db.run(`
-        CREATE TABLE IF NOT EXISTS notifications (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-          message TEXT NOT NULL,
-          created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, () => {});
-      db.run(`
-        CREATE TABLE IF NOT EXISTS notification_reads (
-          notification_id INTEGER NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (notification_id, user_id)
-        )
-      `, () => {});
-    }
-  },
-  {
-    version: 18,
-    description: 'Add read_by_user to support_messages (непрочитанные ответы админа в личном чате пользователя)',
-    up: () => {
-      // is_read на support_messages отвечает только за «прочитано админом»
-      // (используется в списке тикетов) — нельзя переиспользовать для
-      // обратного направления. read_by_user — отдельная колонка: отмечает,
-      // видел ли пользователь ответы администрации в своём чате.
-      db.run("ALTER TABLE support_messages ADD COLUMN read_by_user INTEGER NOT NULL DEFAULT 0", () => {});
-    }
-  },
-  {
-    version: 19,
-    description: 'Add scheduled_at to notifications (отложенная отправка)',
-    up: () => {
-      // NULL — отправлено сразу. Если задано, уведомление появляется у
-      // получателя (GET /api/cabinet/notifications) только после наступления
-      // этого момента — никакого фонового планировщика не нужно, просто
-      // фильтр в выборке. Таблица notifications создаётся миграцией 17,
-      // которая гарантированно уже отработала к этому моменту.
-      db.run("ALTER TABLE notifications ADD COLUMN scheduled_at DATETIME", () => {});
-    }
-  },
-  {
-    version: 20,
-    description: 'Add support_tickets (статус тикета поддержки: open/closed)',
-    up: () => {
-      // Тикет как отдельная сущность не хранился — только ticket_id внутри
-      // support_messages. Строка здесь создаётся лениво (INSERT OR IGNORE)
-      // при первом обращении к статусу тикета, а не при каждой вставке
-      // сообщения.
-      db.run(`
-        CREATE TABLE IF NOT EXISTS support_tickets (
-          ticket_id TEXT PRIMARY KEY,
-          status TEXT NOT NULL DEFAULT 'open',
-          closed_at DATETIME,
-          closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
-        )
-      `, () => {});
-    }
-  },
-  {
-    version: 21,
-    description: 'Steam sign-in and the game whitelist: SteamID on users, email/password optional, servers table',
-    up: () => {
-      // Users are handled by ensureUsersGameColumns() instead of here: a migration
-      // records itself as applied the moment it is issued, and this one has to open
-      // a PRAGMA first, so a crash in between left the version written and the work
-      // undone — after which it would never run again. The ensure function runs at
-      // every start and is safe to repeat.
-      db.run(`
-        CREATE TABLE IF NOT EXISTS servers (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          host TEXT NOT NULL,
-          port INTEGER NOT NULL,
-          probe TEXT NOT NULL DEFAULT 'a2s',
-          is_online INTEGER,
-          players INTEGER,
-          max_players INTEGER,
-          last_checked_at DATETIME,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE (host, port)
-        )
-      `, () => {});
-    }
-  }
-];
-
-function runMigrations() {
-  db.serialize(() => {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY,
-        description TEXT,
-        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    db.get("SELECT MAX(version) as current FROM schema_migrations", (err, row) => {
-      const currentVersion = row && row.current ? row.current : 0;
-
-      MIGRATIONS.forEach(migration => {
-        if (migration.version > currentVersion) {
-          logger.info(`[db] Running migration ${migration.version}: ${migration.description}`);
-          migration.up();
-          db.run(
-            "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
-            [migration.version, migration.description]
-          );
-        }
-      });
-
-      // Вызываем здесь (а не в верхнеуровневом db.serialize() ниже), чтобы
-      // PRAGMA-проверка гарантированно шла в очереди sqlite3 ПОСЛЕ операторов
-      // самих миграций (включая CREATE TABLE requests и ALTER ADD COLUMN
-      // received_at выше) — иначе на свежей базе она может выполниться раньше
-      // (см. комментарий у ensureRequestsReceivedAtColumn).
-      ensureRequestsReceivedAtColumn();
-    });
-  });
+// Ошибка одного запроса не должна рвать очередь следующих.
+let chain = Promise.resolve();
+function enqueue(task) {
+  const result = chain.then(task, task);
+  chain = result.then(() => undefined, () => undefined);
+  return result;
 }
 
-// Хеширование пароля с помощью встроенного модуля pbkdf2
-// 1000 → подняли до 120000 итераций для лучшей стойкости (формат хранения не изменился)
+// Вопросительные знаки в номера. Строки в кавычках пропускаются.
+function toNumberedParams(sql) {
+  let out = '';
+  let index = 0;
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i];
+    if (ch === "'" && !inDouble) inSingle = !inSingle;
+    else if (ch === '"' && !inSingle) inDouble = !inDouble;
+    if (ch === '?' && !inSingle && !inDouble) {
+      index += 1;
+      out += `$${index}`;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+function translate(sql) {
+  let text = String(sql).trim();
+  let ignoreConflict = false;
+
+  if (/^insert\s+or\s+ignore\s+into/i.test(text)) {
+    text = text.replace(/^insert\s+or\s+ignore\s+into/i, 'INSERT INTO');
+    ignoreConflict = true;
+  }
+
+  const isInsert = /^insert\s+into/i.test(text);
+  const hasReturning = /\breturning\b/i.test(text);
+  text = text.replace(/;\s*$/, '');
+
+  if (ignoreConflict && !/\bon\s+conflict\b/i.test(text)) {
+    text += ' ON CONFLICT DO NOTHING';
+  }
+  // RETURNING *, а не RETURNING id: id есть не у каждой таблицы (составной ключ у
+  // notification_reads), а звёздочка работает везде.
+  if (isInsert && !hasReturning) {
+    text += ' RETURNING *';
+  }
+  return toNumberedParams(text);
+}
+
+function normalizeArgs(params, callback) {
+  if (typeof params === 'function') return { values: [], cb: params };
+  return { values: params === undefined ? [] : params, cb: callback };
+}
+
+function query(sql, values) {
+  return enqueue(() => pool.query(translate(sql), values));
+}
+
+const db = {
+  run(sql, params, callback) {
+    const { values, cb } = normalizeArgs(params, callback);
+    query(sql, values).then(
+      (res) => {
+        if (!cb) return;
+        // sqlite3 отдавал lastID и changes через this — маршруты рассчитывают
+        // именно на это.
+        const context = {
+          lastID: res.rows && res.rows[0] && res.rows[0].id !== undefined ? res.rows[0].id : null,
+          changes: res.rowCount
+        };
+        cb.call(context, null);
+      },
+      (err) => {
+        if (cb) cb.call({ lastID: null, changes: 0 }, err);
+        else logger.error('[db] запрос без обработчика ошибки:', err.message, '|', String(sql).trim().slice(0, 90));
+      }
+    );
+    return db;
+  },
+
+  get(sql, params, callback) {
+    const { values, cb } = normalizeArgs(params, callback);
+    query(sql, values).then(
+      (res) => cb && cb(null, res.rows[0]),
+      (err) => (cb ? cb(err) : logger.error('[db] get:', err.message))
+    );
+    return db;
+  },
+
+  all(sql, params, callback) {
+    const { values, cb } = normalizeArgs(params, callback);
+    query(sql, values).then(
+      (res) => cb && cb(null, res.rows),
+      (err) => (cb ? cb(err, []) : logger.error('[db] all:', err.message))
+    );
+    return db;
+  },
+
+  // В sqlite3 это означало «выполняй по очереди». Здесь очередь одна и так,
+  // поэтому достаточно вызвать переданное: порядок сохранится сам.
+  serialize(fn) {
+    if (typeof fn === 'function') fn();
+    return db;
+  },
+
+  // Подготовленных выражений в том же виде у pg нет, а панели от них нужен только
+  // повторный запуск с разными значениями.
+  prepare(sql) {
+    return {
+      run(...args) {
+        const cb = typeof args[args.length - 1] === 'function' ? args.pop() : undefined;
+        const values = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+        db.run(sql, values, cb);
+        return this;
+      },
+      finalize(cb) {
+        if (cb) enqueue(() => Promise.resolve()).then(() => cb(null));
+      }
+    };
+  },
+
+  close(cb) {
+    pool.end().then(() => cb && cb(null), (err) => cb && cb(err));
+  }
+};
+
+// Хеширование пароля встроенным pbkdf2; формат хранения «соль:хеш» тот же, что был.
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 120000, 64, 'sha512').toString('hex');
   return `${salt}:${hash}`;
 }
 
-// Проверка пароля (поддерживает как старые, так и новые хэши)
-function verifyPassword(password, storedHash) {
-  if (!storedHash || !storedHash.includes(':')) return false;
-  const [salt, originalHash] = storedHash.split(':');
-  const hash = crypto.pbkdf2Sync(password, salt, 120000, 64, 'sha512').toString('hex');
-  // Если не совпало — попробуем со старыми 1000 итерациями (для существующих аккаунтов)
-  if (hash !== originalHash) {
-    const oldHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return oldHash === originalHash;
-  }
-  return true;
+function verifyPassword(password, stored) {
+  if (!stored || !String(stored).includes(':')) return false;
+  const [salt, hash] = String(stored).split(':');
+  const candidate = crypto.pbkdf2Sync(password, salt, 120000, 64, 'sha512').toString('hex');
+  // Сравнение постоянного времени: обычное === выдаёт длину общего префикса.
+  const a = Buffer.from(hash, 'hex');
+  const b = Buffer.from(candidate, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Набор тестовых сотрудников (демо). Используется при первичном сиде и
-// кнопкой «Добавить/Удалить тестовых сотрудников» в настройках (Superadmin).
+// Демо-данные компанейских модулей. Модули спрятаны, но их маршруты ещё в дереве и
+// эти списки импортируют.
 const TEST_EMPLOYEES = [
-  { username: 'jonas.k',   email: 'jonas.kazlauskas@diamantas.lt',     first: 'Jonas',   last: 'Kazlauskas',   position: 'Электромонтажник', department: 'Монтаж',  phone: '+370 600 11111', hire: '2021-03-15' },
-  { username: 'petras.p',  email: 'petras.petrauskas@diamantas.lt',    first: 'Petras',  last: 'Petrauskas',   position: 'Бригадир',         department: 'Монтаж',  phone: '+370 600 22222', hire: '2019-06-01' },
-  { username: 'tomas.j',   email: 'tomas.jankauskas@diamantas.lt',     first: 'Tomas',   last: 'Jankauskas',   position: 'Электромонтажник', department: 'Сервис',  phone: '+370 600 33333', hire: '2022-01-10' },
-  { username: 'mantas.s',  email: 'mantas.stankevicius@diamantas.lt',  first: 'Mantas',  last: 'Stankevičius', position: 'Монтажник',        department: 'Монтаж',  phone: '+370 600 44444', hire: '2023-09-20' },
-  { username: 'andrius.v', email: 'andrius.vasiliauskas@diamantas.lt', first: 'Andrius', last: 'Vasiliauskas', position: 'Мастер участка',   department: 'Монтаж',  phone: '+370 600 55555', hire: '2018-05-05' }
+  { first_name: 'Иван', last_name: 'Петров', position: 'Электрик', department: 'Монтаж', email: 'ivan.test@example.com', phone: '+370 600 00001', status: 'active' },
+  { first_name: 'Пётр', last_name: 'Сидоров', position: 'Бригадир', department: 'Монтаж', email: 'petr.test@example.com', phone: '+370 600 00002', status: 'active' },
+  { first_name: 'Алексей', last_name: 'Козлов', position: 'Электрик', department: 'Сервис', email: 'alex.test@example.com', phone: '+370 600 00003', status: 'vacation' },
+  { first_name: 'Мария', last_name: 'Иванова', position: 'Инженер', department: 'Проект', email: 'maria.test@example.com', phone: '+370 600 00004', status: 'active' },
+  { first_name: 'Сергей', last_name: 'Волков', position: 'Электрик', department: 'Монтаж', email: 'sergey.test@example.com', phone: '+370 600 00005', status: 'inactive' }
 ];
 
-// Набор тестовых инструментов (демо). Используется при первичном сиде и
-// кнопкой «Добавить/Удалить тестовых инструментов» в настройках (Superadmin).
 const TEST_TOOLS = [
-  { name: 'Bosch GBH 2-26 DRE', category: 'Перфоратор', brand: 'Bosch', model: 'GBH 2-26 DRE', serial_number: 'BSH-GBH-0001', inventory_number: 'INV-001', photo_url: '/catalog/images/rotary-hammer.svg' },
-  { name: 'Bosch GBH 2-28 F', category: 'Перфоратор', brand: 'Bosch', model: 'GBH 2-28 F', serial_number: 'BSH-GBH-0002', inventory_number: 'INV-002', photo_url: '/catalog/images/rotary-hammer.svg' },
-  { name: 'DeWalt D25143K', category: 'Перфоратор', brand: 'DeWalt', model: 'D25143K', serial_number: 'DW-D25-0003', inventory_number: 'INV-003', photo_url: '/catalog/images/rotary-hammer.svg' },
-  { name: 'Bosch GSR 18V-55', category: 'Шуруповёрт', brand: 'Bosch', model: 'GSR 18V-55', serial_number: 'BSH-GSR-0004', inventory_number: 'INV-004', photo_url: '/catalog/images/drill-driver.svg' },
-  { name: 'DeWalt DCD791', category: 'Шуруповёрт', brand: 'DeWalt', model: 'DCD791', serial_number: 'DW-DCD-0005', inventory_number: 'INV-005', photo_url: '/catalog/images/drill-driver.svg' },
-  { name: 'Bosch GWS 850', category: 'Углошлифовальная машина (болгарка)', brand: 'Bosch', model: 'GWS 850', serial_number: 'BSH-GWS-0006', inventory_number: 'INV-006', photo_url: '/catalog/images/angle-grinder.svg' },
-  { name: 'DeWalt DWE4237', category: 'Углошлифовальная машина (болгарка)', brand: 'DeWalt', model: 'DWE4237', serial_number: 'DW-DWE-0007', inventory_number: 'INV-007', photo_url: '/catalog/images/angle-grinder.svg' },
-  { name: 'Bosch GWS 18V-10', category: 'Углошлифовальная машина (болгарка)', brand: 'Bosch', model: 'GWS 18V-10', serial_number: 'BSH-GWS-0008', inventory_number: 'INV-008', photo_url: '/catalog/images/angle-grinder.svg' }
+  { name: 'Перфоратор', category: 'Перфораторы', brand: 'Bosch', model: 'GBH 2-26', serial_number: 'TEST-0001', status: 'available' },
+  { name: 'Шуруповёрт', category: 'Дрели-шуруповёрты', brand: 'Makita', model: 'DDF482', serial_number: 'TEST-0002', status: 'available' },
+  { name: 'УШМ 125', category: 'УШМ (болгарки)', brand: 'DeWalt', model: 'DWE4237', serial_number: 'TEST-0003', status: 'available' },
+  { name: 'Лазерный уровень', category: 'Измерительный инструмент', brand: 'Bosch', model: 'GLL 3-80', serial_number: 'TEST-0004', status: 'available' },
+  { name: 'Штроборез', category: 'Штроборезы', brand: 'Makita', model: 'SG1251J', serial_number: 'TEST-0005', status: 'available' }
 ];
 
-// Самолечение: миграция 15 (ALTER TABLE catalog_models ADD COLUMN specs)
-// на части инсталляций отметилась применённой, но саму колонку не добавила
-// (fire-and-forget ALTER без проверки ошибки). Без неё падает любое
-// добавление/изменение модели каталога. Проверяем факт наличия колонки
-// напрямую через PRAGMA и досоздаём при необходимости — безопасно и
-// идемпотентно, можно гонять на каждом старте.
-function ensureCatalogModelsSpecsColumn() {
-  db.all("PRAGMA table_info(catalog_models)", (err, rows) => {
-    if (err || !rows) return;
-    const hasSpecs = rows.some((r) => r.name === 'specs');
-    if (!hasSpecs) {
-      db.run("ALTER TABLE catalog_models ADD COLUMN specs TEXT", (alterErr) => {
-        if (alterErr) logger.error('[db] Не удалось добавить catalog_models.specs:', alterErr.message);
-        else logger.info('[db] Восстановлена отсутствовавшая колонка catalog_models.specs');
-      });
-    }
-  });
+// === Схема и начальные данные ===
+
+const SCHEMA_FILE = path.join(__dirname, 'db', 'schema.sql');
+
+// Панель называет себя из базы, поэтому имя Astvard живёт здесь, а не только в
+// вёрстке: на чистой базе иначе вернулось бы чужое имя.
+const DEFAULT_SETTINGS = [
+  ['site_name', 'Astvard', 'Название вашего веб-ресурса'],
+  ['maintenance_mode', 'false', 'Включить/выключить режим обслуживания'],
+  ['allow_registration', 'true', 'Разрешить самостоятельную регистрацию пользователей'],
+  ['hero_title', 'Astvard — портал игровых серверов', 'Заголовок главного баннера'],
+  ['site_description', 'Наши серверы, доступ к ним и всё, что вокруг игры.', 'Описание под заголовком баннера'],
+  ['about_title', 'Об Astvard', 'О блоге: Заголовок раздела'],
+  ['about_subtitle', 'Небольшая компания, свои серверы и свои правила', 'О блоге: Подзаголовок'],
+  ['about_card1_title', 'Свои серверы', 'О блоге: Заголовок карточки 1'],
+  ['about_card1_text', 'Valheim и то, что появится дальше. Вход по списку: доступ выдаётся вручную, чтобы на сервере были свои.', 'О блоге: Текст карточки 1'],
+  ['about_card2_title', 'Заявка в пару кликов', 'О блоге: Заголовок карточки 2'],
+  ['about_card2_text', 'Вход через Steam, кнопка «Запросить доступ» — и заявка уходит админу. Номер подтверждает сам Steam.', 'О блоге: Текст карточки 2'],
+  ['contact_title', 'Обратная связь', 'Контакты: Заголовок раздела'],
+  ['contact_subtitle', 'Вопрос по серверу или хочешь к нам — напиши', 'Контакты: Подзаголовок'],
+  ['contact_email', 'info@astvard.online', 'Контакты: Электронная почта'],
+  ['contact_address', 'astvard.online', 'Контакты: Адрес'],
+  ['public_card_enabled', 'true', 'Публичная карточка: доступна всем по QR'],
+  ['public_card_show_photo', 'true', 'Публичная карточка: показывать фото'],
+  ['public_card_show_brand', 'true', 'Публичная карточка: показывать бренд'],
+  ['public_card_show_model', 'true', 'Публичная карточка: показывать модель'],
+  ['public_card_show_serial', 'true', 'Публичная карточка: показывать серийный №'],
+  ['public_card_show_inventory', 'true', 'Публичная карточка: показывать инвентарный №'],
+  ['public_card_show_status', 'true', 'Публичная карточка: показывать статус'],
+  ['public_card_show_category', 'true', 'Публичная карточка: показывать категорию'],
+  ['public_card_show_purchase_date', 'false', 'Публичная карточка: показывать дату покупки'],
+  ['public_card_show_notes', 'false', 'Публичная карточка: показывать заметки'],
+  ['public_vehicle_card_enabled', 'true', 'Публичная карточка авто: доступна всем по QR'],
+  ['public_vehicle_card_show_photo', 'true', 'Публичная карточка авто: показывать фото'],
+  ['public_vehicle_card_show_brand', 'true', 'Публичная карточка авто: показывать бренд'],
+  ['public_vehicle_card_show_model', 'true', 'Публичная карточка авто: показывать модель'],
+  ['public_vehicle_card_show_plate', 'true', 'Публичная карточка авто: показывать гос. номер'],
+  ['public_vehicle_card_show_vin', 'false', 'Публичная карточка авто: показывать VIN'],
+  ['public_vehicle_card_show_status', 'true', 'Публичная карточка авто: показывать статус'],
+  ['public_vehicle_card_show_category', 'true', 'Публичная карточка авто: показывать тип'],
+  ['public_vehicle_card_show_year', 'true', 'Публичная карточка авто: показывать год выпуска'],
+  ['public_vehicle_card_show_mileage', 'false', 'Публичная карточка авто: показывать пробег']
+];
+
+let resolveDbReady;
+let rejectDbReady;
+const dbReady = new Promise((resolve, reject) => { resolveDbReady = resolve; rejectDbReady = reject; });
+
+// Операторы схемы разделяются по «;» в конце строки: в файле нет ни функций, ни
+// долларовых литералов, где точка с запятой значила бы что-то другое.
+function schemaStatements() {
+  const text = fs.readFileSync(SCHEMA_FILE, 'utf8');
+  return text
+    .split(/;\s*$/m)
+    .map((s) => s.trim())
+    .filter((s) => s && !s.split('\n').every((line) => line.trim().startsWith('--')));
 }
 
-// Тот же самолечащийся паттерн для миграции 12 (ALTER TABLE requests ADD
-// COLUMN received_at) — на свежих базах ALTER, идущий сразу вслед за CREATE
-// TABLE requests в той же миграционной последовательности, иногда
-// «отмечается применённым», но колонку не добавляет. Без неё падает
-// отметка получения одобренного заказа инструмента/авто.
-// Аккаунт из Steam не имеет ни email, ни пароля, а в исходной схеме обе колонки
-// были обязательными. SQLite не умеет снимать NOT NULL, поэтому таблица
-// перестраивается: внешние ключи здесь не включены (PRAGMA foreign_keys), и
-// именно поэтому DROP/RENAME безопасны.
-//
-// Функция, а не миграция: миграция отмечается выполненной в тот же миг, когда
-// выдана, а тут сначала нужен ответ PRAGMA — падение между этим оставило бы базу
-// старой навсегда. Эта же проверка идёт при каждом старте и повторов не боится.
-function ensureUsersGameColumns() {
-  db.all("PRAGMA table_info(users)", [], (err, cols) => {
-    if (err || !cols || cols.length === 0) return;
-    if (cols.some((c) => c.name === 'steam_id')) {
-      db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_steam_id ON users(steam_id)", () => {});
-      return;
-    }
-
-    logger.info('[db] Перестраиваю users: email и пароль станут необязательными');
-    db.serialize(() => {
-      db.run('BEGIN');
-      db.run(`
-        CREATE TABLE users_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          username TEXT UNIQUE NOT NULL,
-          email TEXT UNIQUE,
-          password_hash TEXT,
-          role TEXT NOT NULL DEFAULT 'User',
-          account_type TEXT NOT NULL DEFAULT 'client',
-          avatar_url TEXT,
-          two_factor_secret TEXT,
-          two_factor_enabled INTEGER NOT NULL DEFAULT 0,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          steam_id TEXT,
-          steam_id_verified INTEGER NOT NULL DEFAULT 0,
-          whitelist_status TEXT NOT NULL DEFAULT 'none',
-          whitelist_requested_at DATETIME,
-          whitelist_decided_at DATETIME,
-          whitelist_decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-          whitelist_note TEXT,
-          whitelist_request_note TEXT,
-          server_admin INTEGER NOT NULL DEFAULT 0,
-          CHECK ((email IS NOT NULL AND password_hash IS NOT NULL) OR steam_id IS NOT NULL)
-        )
-      `, () => {});
-      db.run(`
-        INSERT INTO users_new
-          (id, username, email, password_hash, role, account_type, avatar_url,
-           two_factor_secret, two_factor_enabled, created_at)
-        SELECT id, username, email, password_hash, role, account_type, avatar_url,
-               two_factor_secret, two_factor_enabled, created_at
-        FROM users
-      `, () => {});
-      db.run('DROP TABLE users', () => {});
-      db.run('ALTER TABLE users_new RENAME TO users', () => {});
-      db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_steam_id ON users(steam_id)", () => {});
-      db.run('COMMIT', (commitErr) => {
-        if (commitErr) {
-          logger.error('[db] Перестройка users не удалась:', commitErr.message);
-          db.run('ROLLBACK', () => {});
-        } else {
-          logger.info('[db] users перестроена');
-        }
-      });
-    });
-  });
+// Вся подготовка базы — одна задача в очереди, а не череда мелких. Сессии
+// восстанавливаются и серверы опрашиваются сразу при старте; когда схема вставала
+// по оператору за раз, эти запросы вклинивались между ними и получали
+// «relation does not exist» на пустой базе. Внутри задачи обращаемся к pool
+// напрямую: очередь уже занята нами, и вложенный enqueue ждал бы сам себя.
+async function initialize() {
+  for (const statement of schemaStatements()) {
+    await pool.query(statement);
+  }
+  await seedDefaults();
 }
 
-function ensureRequestsReceivedAtColumn() {
-  db.all("PRAGMA table_info(requests)", (err, rows) => {
-    if (err || !rows) return;
-    const hasColumn = rows.some((r) => r.name === 'received_at');
-    if (!hasColumn) {
-      db.run("ALTER TABLE requests ADD COLUMN received_at DATETIME", (alterErr) => {
-        if (alterErr) logger.error('[db] Не удалось добавить requests.received_at:', alterErr.message);
-        else logger.info('[db] Восстановлена отсутствовавшая колонка requests.received_at');
-      });
+// Настройки и первый вход. Вынесено отдельно, потому что тесты очищают базу и
+// заводят то же самое заново — иначе они проверяли бы пустоту.
+async function seedDefaults() {
+  for (const [key, value, description] of DEFAULT_SETTINGS) {
+    await pool.query(
+      'INSERT INTO settings (key, value, description) VALUES ($1, $2, $3) ON CONFLICT (key) DO NOTHING',
+      [key, value, description]
+    );
+  }
+
+  // Свежий сайт не должен встречать пустой лентой: одна статья про то, что здесь
+  // происходит, и один черновик, чтобы было видно, как это выглядит в админке.
+  const { rows: articleCount } = await pool.query('SELECT count(*)::int AS n FROM articles');
+  if (articleCount[0].n === 0) {
+    await pool.query(
+      'INSERT INTO articles (title, content, status) VALUES ($1, $2, $3)',
+      ['Добро пожаловать в Astvard',
+       'Здесь будут новости серверов и всё, что вокруг игры. Доступ на сервер — через «Войти через Steam» и кнопку «Запросить доступ» в кабинете.',
+       'published']
+    );
+    await pool.query(
+      'INSERT INTO articles (title, content, status) VALUES ($1, $2, $3)',
+      ['Черновик', 'Эта статья ещё не опубликована — так выглядит черновик в админке.', 'draft']
+    );
+  }
+
+  // Аккаунты по умолчанию — с паролем, напечатанным в README самой панели. Это
+  // единственный вход в свежую установку, но у Astvard вход другой:
+  // SUPERADMIN_STEAM_ID заводит хозяина по номеру Steam (src/bootstrap.js).
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM users');
+  if (rows[0].n === 0 && process.env.SUPERADMIN_STEAM_ID) {
+    logger.info('SUPERADMIN_STEAM_ID задан — аккаунты по умолчанию не создаю');
+  } else if (rows[0].n === 0) {
+    const hashed = hashPassword('1234qwer');
+    for (const u of [
+      { username: 'superadmin', email: 'superadmin@example.com', role: 'Superadmin' },
+      { username: 'admin', email: 'admin@example.com', role: 'Admin' },
+      { username: 'user', email: 'user@example.com', role: 'User' }
+    ]) {
+      await pool.query(
+        'INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4)',
+        [u.username, u.email, hashed, u.role]
+      );
+      logger.info(`Создан аккаунт по умолчанию: ${u.username} (${u.role})`);
     }
-  });
+  }
 }
 
-// Инициализация базы данных
-db.serialize(() => {
-  runMigrations();
-  ensureCatalogModelsSpecsColumn();
-  // 1. Таблица пользователей
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      -- Обе пустые у того, кто пришёл через Steam: OpenID отдаёт SteamID64 и
-      -- больше ничего, а выдуманный адрес — ложь в колонке. Что строка остаётся
-      -- досягаемой, следит CHECK внизу.
-      email TEXT UNIQUE,
-      password_hash TEXT,
-      role TEXT NOT NULL DEFAULT 'User',
-      account_type TEXT NOT NULL DEFAULT 'client',
-      avatar_url TEXT,
-      two_factor_secret TEXT,
-      two_factor_enabled INTEGER NOT NULL DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+enqueue(initialize).then(
+  () => {
+    logger.info('[db] Postgres готов');
+    resolveDbReady();
+  },
+  (err) => {
+    // Молчать нельзя: без схемы панель отвечала бы 500 на каждый запрос и
+    // выглядела бы сломанной без объяснения.
+    logger.error('[db] не удалось подготовить базу:', err.message);
+    rejectDbReady(err);
+  }
+);
+// Отказ dbReady должен иметь обработчик и здесь: без него один незакрытый промис
+// роняет весь процесс, и настоящая причина теряется под стеком pg.
+dbReady.catch(() => {});
 
-      -- Игровая часть: номер Steam и ответ по вайтлисту сервера. steam_id_verified
-      -- отличает номер, за который расписался сам Steam, от вписанного админом.
-      steam_id TEXT,
-      steam_id_verified INTEGER NOT NULL DEFAULT 0,
-      whitelist_status TEXT NOT NULL DEFAULT 'none',
-      whitelist_requested_at DATETIME,
-      whitelist_decided_at DATETIME,
-      whitelist_decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      whitelist_note TEXT,
-      whitelist_request_note TEXT,
-      -- Права в игре (adminlist.txt). Это не роль на сайте: одно про портал,
-      -- другое про сервер, и совпадать они не обязаны.
-      server_admin INTEGER NOT NULL DEFAULT 0,
+// === Сессии ===
+// Живут в базе, чтобы переживать перезапуск. Таблица та же, что была в SQLite.
 
-      CHECK ((email IS NOT NULL AND password_hash IS NOT NULL) OR steam_id IS NOT NULL)
-    )
-  `);
-
-  // Игровые серверы и их состояние. probe — чем спрашивать: 'a2s' по сети или
-  // 'valheim-log' из лога сервера на этой же машине (закрытый сервер на A2S молчит).
-  db.run(`
-    CREATE TABLE IF NOT EXISTS servers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      host TEXT NOT NULL,
-      port INTEGER NOT NULL,
-      probe TEXT NOT NULL DEFAULT 'a2s',
-      is_online INTEGER,
-      players INTEGER,
-      max_players INTEGER,
-      last_checked_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (host, port)
-    )
-  `);
-
-  // 2. Таблица медиафайлов
-  db.run(`
-    CREATE TABLE IF NOT EXISTS media (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      filename TEXT NOT NULL,
-      file_path TEXT NOT NULL,
-      file_size INTEGER NOT NULL,
-      mime_type TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'general',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // 3. Таблица настроек (ключ-значение)
-  db.run(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT,
-      description TEXT
-    )
-  `);
-
-  // 4. Демо-таблица статей для CRUD
-  db.run(`
-    CREATE TABLE IF NOT EXISTS articles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      content TEXT,
-      status TEXT NOT NULL DEFAULT 'draft',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // 5. Таблица логов действий (Activity Log)
-  db.run(`
-    CREATE TABLE IF NOT EXISTS logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user TEXT NOT NULL,
-      action TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // 5a. Таблица сотрудников (учёт персонала компании).
-  // user_id — необязательная привязка к учётной записи в users: когда у
-  // сотрудника появляется свой вход в кабинет, здесь хранится ссылка на
-  // его аккаунт (ON DELETE SET NULL, чтобы удаление аккаунта не удаляло
-  // карточку сотрудника). Это фундамент, к которому позже привяжутся
-  // инструмент, учёт времени, отпуска и документы.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS employees (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      first_name TEXT NOT NULL,
-      last_name TEXT NOT NULL,
-      position TEXT,
-      department TEXT,
-      phone TEXT,
-      email TEXT,
-      hire_date DATE,
-      status TEXT NOT NULL DEFAULT 'active',
-      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Создаем администраторов и пользователя по умолчанию, если таблица пуста
-  db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
-    if (err) {
-      logger.error("Ошибка при проверке пользователей:", err);
-      return;
-    }
-
-    // Аккаунты по умолчанию — с известным всему интернету паролем, и это
-    // единственный способ войти в свежую панель. У Astvard способ другой:
-    // SUPERADMIN_STEAM_ID заводит хозяина по его номеру Steam (src/bootstrap.js),
-    // и тогда демо-аккаунты не нужны — а пароль 1234qwer на живом сайте не нужен
-    // тем более.
-    if (row.count === 0 && process.env.SUPERADMIN_STEAM_ID) {
-      logger.info('SUPERADMIN_STEAM_ID задан — аккаунты по умолчанию не создаю');
-    } else if (row.count === 0) {
-      const defaultPass = '1234qwer';
-      const hashedPassword = hashPassword(defaultPass);
-
-      const usersToCreate = [
-        { username: 'superadmin', email: 'superadmin@example.com', role: 'Superadmin' },
-        { username: 'admin', email: 'admin@example.com', role: 'Admin' },
-        { username: 'user', email: 'user@example.com', role: 'User' }
-      ];
-
-      db.serialize(() => {
-        usersToCreate.forEach((u) => {
-          db.run(
-            "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
-            [u.username, u.email, hashedPassword, u.role],
-            (err) => {
-              if (err) {
-                logger.error(`Не удалось создать пользователя ${u.username}:`, err);
-              } else {
-                logger.info(`Создан аккаунт по умолчанию: ${u.username} (${u.role})`);
-              }
-            }
-          );
-        });
-      });
-    }
-  });
-
-  // 5b. Инвентарь инструмента + история закреплений за сотрудниками.
-  // Модель «выдача-возврат»: активное закрепление = строка в
-  // tool_assignments с returned_at IS NULL. Общая (не под Diamantas)
-  // схема — подойдёт любому инвентарю (инструмент, техника, СИЗ).
-  db.run(`
-    CREATE TABLE IF NOT EXISTS tools (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      category TEXT,
-      brand TEXT,
-      model TEXT,
-      serial_number TEXT,
-      inventory_number TEXT,
-      status TEXT NOT NULL DEFAULT 'available',
-      purchase_date DATE,
-      photo_url TEXT,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS tool_assignments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tool_id INTEGER NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
-      employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
-      issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      returned_at DATETIME,
-      issued_by TEXT,
-      notes TEXT
-    )
-  `);
-
-  // Справочник категорий инструмента. is_default=1 — стандартный список
-  // (удалять нельзя, чтобы не «разъехался» у всех). Свои категории может
-  // добавлять только Superadmin. Список общий, единый для всей базы.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS tool_categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL,
-      is_default INTEGER NOT NULL DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `, () => {
-    const defaults = [
-      'Перфоратор', 'Дрель', 'Шуруповёрт', 'Углошлифовальная машина (болгарка)',
-      'Отбойный молоток', 'Электролобзик', 'Циркулярная (дисковая) пила',
-      'Сабельная пила', 'Штроборез', 'Шлифовальная машина', 'Строительный фен',
-      'Строительный миксер', 'Строительный пылесос', 'Сварочный аппарат',
-      'Паяльник', 'Мультиметр', 'Пресс-клещи', 'Генератор',
-      'Удлинитель на катушке', 'Прожектор LED'
-    ];
-    const catStmt = db.prepare("INSERT OR IGNORE INTO tool_categories (name, is_default) VALUES (?, 1)");
-    defaults.forEach(name => catStmt.run(name));
-    catStmt.finalize();
-  });
-
-  // 5c. Автопарк: инвентарь транспортных средств + история закреплений за
-  // сотрудниками. Та же модель «выдача-возврат», что и у инструмента
-  // (tools/tool_assignments) — активное закрепление = строка в
-  // vehicle_assignments с returned_at IS NULL.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS vehicles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      category TEXT,
-      brand TEXT,
-      model TEXT,
-      year INTEGER,
-      plate_number TEXT,
-      vin TEXT,
-      fuel_type TEXT,
-      mileage INTEGER,
-      status TEXT NOT NULL DEFAULT 'available',
-      purchase_date DATE,
-      insurance_until DATE,
-      inspection_until DATE,
-      photo_url TEXT,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS vehicle_assignments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
-      employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
-      issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      returned_at DATETIME,
-      issued_by TEXT,
-      notes TEXT
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS vehicle_photos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
-      photo_url TEXT NOT NULL,
-      uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Справочник категорий (типов) транспорта — тот же принцип, что и у
-  // tool_categories: is_default=1 удалять нельзя, свои типы добавляет
-  // только Superadmin.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS vehicle_categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL,
-      is_default INTEGER NOT NULL DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `, () => {
-    const defaults = [
-      'Легковой автомобиль', 'Грузовой автомобиль', 'Микроавтобус', 'Автобус',
-      'Спецтехника', 'Погрузчик', 'Прицеп', 'Мотоцикл/скутер'
-    ];
-    const catStmt = db.prepare("INSERT OR IGNORE INTO vehicle_categories (name, is_default) VALUES (?, 1)");
-    defaults.forEach(name => catStmt.run(name));
-    catStmt.finalize();
-  });
-
-  // Учёт рабочего времени. Пользователь вносит записи (дата + часы + заметка),
-  // администраторы видят данные по всем. Одна строка — одна запись за день.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS work_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      work_date DATE NOT NULL,
-      hours REAL NOT NULL,
-      note TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // 6. Таблица сообщений техподдержки / обратной связи (Чат)
-  db.run(`
-    CREATE TABLE IF NOT EXISTS support_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ticket_id TEXT NOT NULL,
-      user_id INTEGER,
-      name TEXT,
-      email TEXT,
-      message TEXT NOT NULL,
-      sender_role TEXT NOT NULL,
-      is_read INTEGER DEFAULT 0,
-      image_url TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `, () => {
-    db.run("ALTER TABLE support_messages ADD COLUMN is_read INTEGER DEFAULT 0", () => {});
-    db.run("ALTER TABLE support_messages ADD COLUMN image_url TEXT", () => {});
-    db.run("ALTER TABLE support_messages ADD COLUMN read_by_user INTEGER NOT NULL DEFAULT 0", () => {});
-  });
-
-  // 7. Простая таблица сессий (для надёжности — переживают перезапуск сервера)
-  db.run(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      token TEXT PRIMARY KEY,
-      user_id INTEGER,
-      username TEXT,
-      role TEXT,
-      expires_at DATETIME
-    )
-  `);
-
-  // Удаляем старые настройки статистики
-  db.run("DELETE FROM settings WHERE key LIKE 'stat_%'");
-
-  // Заполняем настройки сайта
-  const stmt = db.prepare("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)");
-  stmt.run("site_name", "Astvard", "Название вашего веб-ресурса");
-  stmt.run("maintenance_mode", "false", "Включить/выключить режим обслуживания");
-  stmt.run("allow_registration", "true", "Разрешить самостоятельную регистрацию пользователей");
-  stmt.run("hero_title", "Astvard — портал игровых серверов", "Заголовок главного баннера");
-  stmt.run("site_description", "Наши серверы, доступ к ним и всё, что вокруг игры.", "Описание под заголовком баннера");
-  stmt.run("about_title", "Об Astvard", "О блоге: Заголовок раздела");
-  stmt.run("about_subtitle", "Небольшая компания, свои серверы и свои правила", "О блоге: Подзаголовок");
-  stmt.run("about_card1_title", "Свои серверы", "О блоге: Заголовок карточки 1");
-  stmt.run("about_card1_text", "Valheim и то, что появится дальше. Вход по списку: доступ выдаётся вручную, чтобы на сервере были свои.", "О блоге: Текст карточки 1");
-  stmt.run("about_card2_title", "Заявка в пару кликов", "О блоге: Заголовок карточки 2");
-  stmt.run("about_card2_text", "Вход через Steam, кнопка «Запросить доступ» — и заявка уходит админу. Номер подтверждает сам Steam.", "О блоге: Текст карточки 2");
-  stmt.run("contact_title", "Обратная связь", "Контакты: Заголовок раздела");
-  stmt.run("contact_subtitle", "Вопрос по серверу или хочешь к нам — напиши", "Контакты: Подзаголовок");
-  stmt.run("contact_email", "info@astvard.online", "Контакты: Электронная почта");
-  stmt.run("contact_address", "astvard.online", "Контакты: Адрес");
-  // Публичная карточка инструмента (общие настройки для всех QR-карточек)
-  stmt.run("public_card_enabled", "true", "Публичная карточка: доступна всем по QR");
-  stmt.run("public_card_show_photo", "true", "Публичная карточка: показывать фото");
-  stmt.run("public_card_show_brand", "true", "Публичная карточка: показывать бренд");
-  stmt.run("public_card_show_model", "true", "Публичная карточка: показывать модель");
-  stmt.run("public_card_show_serial", "true", "Публичная карточка: показывать серийный №");
-  stmt.run("public_card_show_inventory", "true", "Публичная карточка: показывать инвентарный №");
-  stmt.run("public_card_show_status", "true", "Публичная карточка: показывать статус");
-  stmt.run("public_card_show_category", "true", "Публичная карточка: показывать категорию");
-  stmt.run("public_card_show_purchase_date", "false", "Публичная карточка: показывать дату покупки");
-  stmt.run("public_card_show_notes", "false", "Публичная карточка: показывать заметки");
-  // Публичная карточка транспортного средства (общие настройки для всех QR-карточек автопарка)
-  stmt.run("public_vehicle_card_enabled", "true", "Публичная карточка авто: доступна всем по QR");
-  stmt.run("public_vehicle_card_show_photo", "true", "Публичная карточка авто: показывать фото");
-  stmt.run("public_vehicle_card_show_brand", "true", "Публичная карточка авто: показывать бренд");
-  stmt.run("public_vehicle_card_show_model", "true", "Публичная карточка авто: показывать модель");
-  stmt.run("public_vehicle_card_show_plate", "true", "Публичная карточка авто: показывать гос. номер");
-  stmt.run("public_vehicle_card_show_vin", "false", "Публичная карточка авто: показывать VIN");
-  stmt.run("public_vehicle_card_show_status", "true", "Публичная карточка авто: показывать статус");
-  stmt.run("public_vehicle_card_show_category", "true", "Публичная карточка авто: показывать тип");
-  stmt.run("public_vehicle_card_show_year", "true", "Публичная карточка авто: показывать год выпуска");
-  stmt.run("public_vehicle_card_show_mileage", "false", "Публичная карточка авто: показывать пробег");
-  stmt.run("public_vehicle_card_show_purchase_date", "false", "Публичная карточка авто: показывать дату покупки");
-  stmt.run("public_vehicle_card_show_notes", "false", "Публичная карточка авто: показывать заметки");
-  stmt.finalize();
-
-  // Заполняем тестовые статьи
-  db.get("SELECT COUNT(*) as count FROM articles", (err, row) => {
-    if (!err && row.count === 0) {
-      const stmt = db.prepare("INSERT INTO articles (title, content, status) VALUES (?, ?, ?)");
-      stmt.run("Добро пожаловать в новую админку!", "Это демонстрационная статья, созданная автоматически для проверки работы CRUD панели.", "published");
-      stmt.run("Черновик важной публикации", "Контент этой статьи еще не готов для публикации.", "draft");
-      stmt.finalize(() => { ensureUsersGameColumns(); resolveDbReady(); });
-    } else {
-      ensureUsersGameColumns();
-      resolveDbReady();
-    }
-  });
-
-  // Тестовые сотрудники и тестовый инструмент больше НЕ добавляются
-  // автоматически при старте на свежей БД. Используйте кнопки
-  // «Добавить тестовых сотрудников» / «Добавить тестовые инструменты»
-  // в настройках (Superadmin) — см. src/routes/testEmployees.js
-  // и src/routes/testTools.js.
-});
-
-// === Простые helpers для персистентных сессий (надёжность) ===
-function saveSession(token, user, ttlHours = 24) {
-  const expires = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
+function saveSession(token, sessionUser) {
   db.run(
-    "INSERT OR REPLACE INTO sessions (token, user_id, username, role, expires_at) VALUES (?, ?, ?, ?, ?)",
-    [token, user.id, user.username, user.role, expires]
+    `INSERT INTO sessions (token, user_id, username, role, expires_at)
+     VALUES (?, ?, ?, ?, now() + interval '24 hours')
+     ON CONFLICT (token) DO UPDATE
+       SET user_id = EXCLUDED.user_id, username = EXCLUDED.username,
+           role = EXCLUDED.role, expires_at = EXCLUDED.expires_at`,
+    [token, sessionUser.id, sessionUser.username, sessionUser.role]
   );
 }
 
-function loadSessionsIntoMap(sessionsMap) {
-  db.all("SELECT * FROM sessions WHERE expires_at > datetime('now')", [], (err, rows) => {
-    if (err || !rows) return;
-    rows.forEach(row => {
-      sessionsMap.set(row.token, {
-        id: row.user_id,
-        username: row.username,
-        role: row.role
-      });
-    });
-    if (rows.length) logger.info(`[sessions] Восстановлено ${rows.length} сессий из БД`);
+function loadSessionsIntoMap(map) {
+  db.all('SELECT * FROM sessions WHERE expires_at > now()', [], (err, rows) => {
+    if (err) {
+      logger.error('[db] сессии не загрузились:', err.message);
+      return;
+    }
+    rows.forEach((r) => map.set(r.token, { id: r.user_id, username: r.username, role: r.role }));
+    if (rows.length) logger.info(`[db] восстановлено сессий: ${rows.length}`);
   });
 }
 
 function deleteSession(token) {
-  db.run("DELETE FROM sessions WHERE token = ?", [token]);
+  db.run('DELETE FROM sessions WHERE token = ?', [token]);
 }
 
 function cleanupExpiredSessions() {
-  db.run("DELETE FROM sessions WHERE expires_at <= datetime('now')");
+  db.run('DELETE FROM sessions WHERE expires_at <= now()');
+}
+
+// Выгрузка базы одним JSON — вместо копии файла SQLite, которой больше нет.
+async function dumpDatabase() {
+  const { rows: tables } = await pool.query(
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
+  );
+  const dump = {};
+  for (const { tablename } of tables) {
+    // Сессии не выгружаем: это действующие ключи от чужих аккаунтов.
+    if (tablename === 'sessions') continue;
+    const { rows } = await pool.query(`SELECT * FROM ${tablename}`);
+    dump[tablename] = rows;
+  }
+  return dump;
 }
 
 module.exports = {
   db,
-  dbPath,
+  pool,
   dbReady,
+  seedDefaults,
+  dumpDatabase,
   TEST_EMPLOYEES,
   TEST_TOOLS,
   hashPassword,

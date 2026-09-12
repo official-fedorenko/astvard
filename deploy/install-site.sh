@@ -1,22 +1,28 @@
 #!/bin/bash
 # First install of the portal on the VPS (Ubuntu 24.04). Run as root.
 #
-# The portal is the owner's vanilla-admin-panel: Node without a framework, SQLite,
-# no build step. Nothing here is installed system-wide that the machine's other
-# projects might depend on — Node is checked, never replaced.
+# The portal is the owner's vanilla-admin-panel, moved onto Postgres: Node without
+# a framework, no build step. Nothing here is installed system-wide that the other
+# projects on this machine might depend on — Node is checked, never replaced, and
+# the database goes into the Postgres that already runs here, as its own role and
+# its own database.
 #
-#   SUPERADMIN_STEAM_ID=76561198XXXXXXXXX ./deploy/install-site.sh
+#   SUPERADMIN_STEAM_ID=76561198XXXXXXXXX POSTGRES_CONTAINER=postgres-shared \
+#     ./deploy/install-site.sh
 #
-# Idempotent: a second run breaks nothing, keeps .env and never touches the database.
+# Idempotent: a second run breaks nothing, keeps .env and never drops the database.
 set -euo pipefail
 
 REPO=${REPO:-https://github.com/official-fedorenko/astvard.git}
 BRANCH=${BRANCH:-valheim-mod}
 DIR=${DIR:-/srv/astvard}
-# The database lives outside the checkout on purpose: updates run
-# `git reset --hard`, and one day somebody will reach for `git clean -xdf`.
-DATA_DIR=${DATA_DIR:-/srv/astvard-data}
 SITE_USER=${SITE_USER:-astvard}
+# Which container holds Postgres. Empty means "the role and the database are
+# already there" — then this script only writes .env and never touches the server.
+PG_CONTAINER=${POSTGRES_CONTAINER:-}
+# The superuser inside that container. Connecting over its local socket needs no
+# password: the official image trusts local connections.
+PG_ADMIN=${POSTGRES_ADMIN_USER:-postgres}
 
 say() { printf '\n== %s\n' "$1"; }
 die() { echo "   $1" >&2; exit 1; }
@@ -51,10 +57,12 @@ else
   git clone --branch "$BRANCH" "$REPO" "$DIR"
 fi
 
-say "Данные в $DATA_DIR"
-mkdir -p "$DATA_DIR"
-chown -R "$SITE_USER:$SITE_USER" "$DATA_DIR"
-echo "   база SQLite и то, что переживает обновление"
+say "Загрузки"
+# Uploads live inside the checkout because the panel serves them from there by an
+# absolute path in the code. They survive `git reset --hard` of an update — the
+# directory is in .gitignore — but not `git clean -xdf`, so that one is forbidden here.
+mkdir -p "$DIR/uploads"
+echo "   $DIR/uploads"
 
 say ".env"
 # Keys are added one by one rather than rewritten: a second run must not replace a
@@ -71,7 +79,11 @@ ensure_env() {
 touch "$DIR/.env"
 ensure_env PORT 3001
 ensure_env APP_URL "https://astvard.online"
-ensure_env DB_PATH "$DATA_DIR/db.sqlite"
+ensure_env POSTGRES_HOST 127.0.0.1
+ensure_env POSTGRES_PORT 5432
+ensure_env POSTGRES_USER astvard_panel
+ensure_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+ensure_env POSTGRES_DB astvard_panel
 # nginx terminates HTTPS and forwards X-Forwarded-Proto; without this the session
 # cookie never gets the Secure flag.
 ensure_env TRUST_PROXY true
@@ -80,18 +92,74 @@ ensure_env SUPERADMIN_STEAM_ID "${SUPERADMIN_STEAM_ID:-}"
 chown -R "$SITE_USER:$SITE_USER" "$DIR"
 chmod 600 "$DIR/.env"
 
-say "Зависимости"
-# sqlite3 is a native module. It ships prebuilt binaries for current Node on
-# x86_64 Linux; if there are none for this combination npm falls back to building,
-# which needs python3, make and a compiler.
-if ! sudo -u "$SITE_USER" npm ci --omit=dev --prefix "$DIR" 2>&1 | tail -3; then
-  die "npm ci не прошёл. Если он собирал sqlite3 — нужны python3, make и g++."
+# .env is the only place the password is written down; everything below reads it
+# from there, so a second run keeps the database in step with the file.
+set -a
+# shellcheck disable=SC1091  # written just above, never in the repository
+. "$DIR/.env"
+set +a
+
+say "Postgres"
+if [ -n "$PG_CONTAINER" ]; then
+  [ "$(docker inspect -f '{{.State.Running}}' "$PG_CONTAINER" 2>/dev/null)" = true ] \
+    || die "контейнер $PG_CONTAINER не запущен — базу класть некуда."
+  # Names go into SQL as bare identifiers, so they have to be names and not quoting
+  # tricks. The alternative is escaping quotes through three levels of shell.
+  for name in "$POSTGRES_USER" "$POSTGRES_DB"; do
+    printf '%s' "$name" | grep -Eq '^[a-z_][a-z0-9_]*$' \
+      || die "имя «$name» не годится для SQL: только строчные буквы, цифры и _"
+  done
+  psql_q() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_ADMIN" -d postgres -tAc "$1"; }
+
+  if [ "$(psql_q "SELECT 1 FROM pg_roles WHERE rolname = '$POSTGRES_USER'")" != 1 ]; then
+    psql_q "CREATE ROLE $POSTGRES_USER LOGIN"
+    echo "   роль $POSTGRES_USER заведена"
+  else
+    echo "   роль $POSTGRES_USER — уже есть"
+  fi
+  # Through stdin, not -c: an argument would show the password in `ps` to everyone
+  # on this machine, and the machine is shared.
+  docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -q -U "$PG_ADMIN" -d postgres <<SQL
+ALTER ROLE $POSTGRES_USER WITH LOGIN PASSWORD '$POSTGRES_PASSWORD';
+SQL
+
+  if [ "$(psql_q "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")" != 1 ]; then
+    psql_q "CREATE DATABASE $POSTGRES_DB OWNER $POSTGRES_USER"
+    echo "   база $POSTGRES_DB создана"
+  else
+    echo "   база $POSTGRES_DB — уже есть"
+  fi
+  # This server holds other projects' databases too, and by default any role may
+  # connect to any of them. Their tables stay out of reach anyway, but there is no
+  # reason to leave the door open.
+  psql_q "REVOKE ALL ON DATABASE $POSTGRES_DB FROM PUBLIC" >/dev/null
+else
+  echo "   POSTGRES_CONTAINER не задан — считаю, что роль и база заведены заранее"
 fi
+
+say "Зависимости"
+# Nothing native any more: pg is plain JavaScript, so no compiler, no python3.
+if ! sudo -u "$SITE_USER" npm ci --omit=dev --prefix "$DIR" 2>&1 | tail -3; then
+  die "npm ci не прошёл."
+fi
+
+say "Проверка базы"
+# The panel would start with an unreachable database and only fail on the first
+# request. Ask Postgres now, with exactly the credentials from .env: this catches a
+# container that does not publish 5432 to the host and a password that did not stick.
+if ! (cd "$DIR" && sudo -u "$SITE_USER" \
+      --preserve-env=POSTGRES_HOST,POSTGRES_PORT,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB \
+      node -e 'const { Pool } = require("pg");
+const pool = new Pool({ host: process.env.POSTGRES_HOST, port: Number(process.env.POSTGRES_PORT), user: process.env.POSTGRES_USER, password: process.env.POSTGRES_PASSWORD, database: process.env.POSTGRES_DB, connectionTimeoutMillis: 5000 });
+pool.query("select 1").then(() => pool.end()).catch((e) => { console.error("   " + e.message); process.exit(1); });'); then
+  die "подключиться к $POSTGRES_DB на $POSTGRES_HOST:$POSTGRES_PORT не вышло"
+fi
+echo "   $POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB отвечает"
 
 say "systemd"
 install -m 644 "$DIR/deploy/systemd/astvard-backend.service" /etc/systemd/system/
 sed -i "s#^ExecStart=.*node #ExecStart=$NODE_BIN #" /etc/systemd/system/astvard-backend.service
-sed -i "s#/srv/astvard-data#$DATA_DIR#g; s#/srv/astvard\b#$DIR#g" /etc/systemd/system/astvard-backend.service
+sed -i "s#/srv/astvard\b#$DIR#g" /etc/systemd/system/astvard-backend.service
 systemctl daemon-reload
 systemctl enable --now astvard-backend
 systemctl restart astvard-backend

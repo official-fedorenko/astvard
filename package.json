@@ -1,7 +1,7 @@
 {
   "name": "vanilla-admin-panel",
   "version": "0.3.0-beta",
-  "description": "Лёгкая админ-панель + CMS + личный кабинет на чистом Node.js (без фреймворков) + SQLite. Сильная защита от ботов при регистрации.",
+  "description": "Портал Astvard: публичный сайт, кабинет и админка на чистом Node.js + Postgres.",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -17,10 +17,9 @@
     "cms",
     "vanilla-js",
     "node-js",
-    "sqlite",
+    "postgres",
     "no-framework",
     "self-hosted",
-    "blog",
     "personal-cabinet"
   ],
   "author": "official-fedorenko",
@@ -35,8 +34,8 @@
   "license": "MIT",
   "dependencies": {
     "dotenv": "^17.4.2",
+    "pg": "^8.13.1",
     "qrcode": "^1.5.4",
-    "sanitize-html": "2.17.5",
-    "sqlite3": "5.1.7"
+    "sanitize-html": "2.17.5"
   }
 }

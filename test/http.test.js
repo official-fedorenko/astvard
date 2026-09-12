@@ -1,26 +1,26 @@
 /**
  * Live HTTP tests for the auth/cabinet flows (login, 2FA, register, logout).
- * Runs the real server against an isolated, disposable SQLite file and a
- * random free port, so it doesn't touch the developer's db.sqlite or clash
- * with a server already running on PORT.
+ * Runs the real server against its own Postgres database and a random free
+ * port, so it touches neither the developer's data nor a server already
+ * running on PORT.
+ *
+ * База берётся из POSTGRES_TEST_DB (по умолчанию astvard_test) — отдельная, и
+ * перед прогоном она очищается: тесты рассчитывают на свежие данные, а
+ * повторный запуск не должен спотыкаться о прошлый.
  *
  * TRUST_PROXY is turned on here so each test group can use a distinct
  * X-Forwarded-For IP and get its own rate-limit bucket, instead of tests
  * tripping each other's login/register rate limits.
  */
 
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 
-const dbPath = path.join(os.tmpdir(), `vanilla-admin-test-${process.pid}-${Date.now()}.sqlite`);
-process.env.DB_PATH = dbPath;
+process.env.POSTGRES_DB = process.env.POSTGRES_TEST_DB || 'astvard_test';
 process.env.TRUST_PROXY = 'true';
 
 const server = require('../server');
-const { db, dbReady } = require('../db');
+const { db, pool, dbReady, seedDefaults } = require('../db');
 const { totp } = require('../src/totp');
 
 let baseUrl;
@@ -32,6 +32,18 @@ before(async () => {
   // Schema creation + default-user/article seeding in db.js is async — wait
   // for it, otherwise the first request or two can race an empty database.
   await dbReady;
+
+  // Пустая база на старте: данные прошлого прогона сбили бы счёт и уникальные
+  // поля. Порядок не важен — CASCADE снимает внешние ключи.
+  // settings тоже: тест переключателей публичной карточки оставляет их
+  // выключенными, и следующий прогон падал на наследстве прошлого.
+  await pool.query(`
+    TRUNCATE users, sessions, settings, articles, media, logs, notifications,
+             notification_reads, support_messages, support_tickets, tools,
+             tool_assignments, tool_photos, tool_requests, requests, servers,
+             employees, work_logs, vehicles, vehicle_assignments, vehicle_photos
+    RESTART IDENTITY CASCADE`);
+  await seedDefaults();
 
   await new Promise((resolve, reject) => {
     server.listen(0, '127.0.0.1', (err) => (err ? reject(err) : resolve()));
@@ -54,9 +66,7 @@ before(async () => {
 
 after(async () => {
   await new Promise((resolve) => server.close(() => resolve()));
-  for (const suffix of ['', '-journal', '-wal', '-shm']) {
-    fs.promises.rm(dbPath + suffix, { force: true }).catch(() => {});
-  }
+  await pool.end();
 });
 
 function extractCookie(res) {

@@ -2,14 +2,14 @@
 
 Thank you for your interest in contributing!
 
-This project aims to stay **simple, dependency-free, and understandable** (vanilla Node.js + SQLite + plain HTML/CSS/JS). We value clarity over "enterprise" patterns.
+This project aims to stay **simple, dependency-free, and understandable** (vanilla Node.js + Postgres + plain HTML/CSS/JS). We value clarity over "enterprise" patterns.
 
 ## How to contribute
 
 ### Reporting bugs
 - Use the **Bug report** issue template.
 - Include steps to reproduce, your environment (Node version, OS), and ideally a fresh database state.
-- Try resetting the DB first (`rm db.sqlite && npm start`) before reporting.
+- Try resetting the DB first (drop and recreate the database, then `npm start`) before reporting.
 
 ### Suggesting features
 - Use the **Feature request** template.

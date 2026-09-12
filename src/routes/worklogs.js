@@ -114,8 +114,8 @@ function summary(req, res, user) {
     FROM users u
     LEFT JOIN work_logs w ON w.user_id = u.id
     LEFT JOIN employees e ON e.user_id = u.id
-    GROUP BY u.id
-    HAVING entries > 0
+    GROUP BY u.id, e.first_name, e.last_name
+    HAVING COUNT(w.id) > 0
     ORDER BY total_hours DESC`;
   db.all(sql, [], (err, rows) => {
     if (err) return sendJson(res, 500, { success: false, message: 'Ошибка базы данных' });

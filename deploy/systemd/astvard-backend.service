@@ -22,14 +22,13 @@ ExecStart=/usr/bin/node /srv/astvard/server.js
 Restart=on-failure
 RestartSec=5s
 
-# The site needs its own directory, its data directory and the network.
-# /srv/astvard-data holds db.sqlite: outside the checkout, where `git reset --hard`
-# and a stray `git clean` cannot reach it.
+# Writable: only its own directory, for uploads. The database is not a file any
+# more — it lives in the Postgres of this machine and is reached over the network.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/astvard /srv/astvard-data
+ReadWritePaths=/srv/astvard
 # Reading the Valheim server's log is how a -public 0 server's status is known;
 # it is somebody else's directory, so read-only and nothing more.
 ReadOnlyPaths=/srv/valheim/logs

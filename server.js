@@ -484,6 +484,14 @@ const server = http.createServer(async (req, res) => {
 // Only auto-listen when run directly (`node server.js` / npm start). When
 // required from a test file, require.main !== module, so tests can bind
 // their own ephemeral port via server.listen(0) instead.
+// Один отказавший запрос не должен уносить весь сайт. По умолчанию Node падает от
+// необработанного отказа промиса — для веб-сервера это худший исход: страница
+// перестаёт отвечать целиком из-за одной ошибки в одном обработчике. Пишем в лог и
+// продолжаем; молча глотать нельзя, иначе следы теряются.
+process.on('unhandledRejection', (err) => {
+  logger.error('Необработанный отказ промиса:', err && err.message ? err.message : err);
+});
+
 if (require.main === module) {
   // Кто-то должен уметь отвечать на заявки, иначе сайт бесполезен. Ждём готовности
   // базы: на свежей она в этот момент ещё создаётся.

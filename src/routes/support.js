@@ -137,7 +137,9 @@ module.exports = function handleSupport(req, res, user, parsedUrl, method) {
              (SELECT m3.sender_role FROM support_messages m3 WHERE m3.ticket_id = support_messages.ticket_id ORDER BY m3.id DESC LIMIT 1) as last_sender_role,
              (SELECT m5.user_id FROM support_messages m5 WHERE m5.ticket_id = support_messages.ticket_id AND m5.sender_role NOT IN ('Admin','Superadmin') ORDER BY m5.id ASC LIMIT 1) as owner_user_id
       FROM support_messages
-      GROUP BY ticket_id
+      -- Postgres требует в GROUP BY все неагрегированные колонки: ticket_id тут
+      -- не первичный ключ, и name с email сами по себе из него не следуют.
+      GROUP BY ticket_id, name, email
       ORDER BY last_activity DESC
     `;
     db.all(query, [], (err, rows) => {
