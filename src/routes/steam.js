@@ -118,6 +118,23 @@ async function complete(req, res, sessionUser) {
   }
 
   if (owner) {
+    // An account can carry the placeholder name: the bootstrap creates the owner's
+    // row before anyone has logged in, and Steam is asked for the persona name then
+    // — it may be private, slow or simply down. That is how the site ended up
+    // greeting its owner as «Викинг 08760». Only the placeholder is replaced; a name
+    // somebody chose is theirs, and renaming it behind their back would be rude.
+    if (owner.username === fallbackNickname(steamId)) {
+      const persona = await fetchPersonaName(steamId);
+      if (persona && persona !== owner.username) {
+        try {
+          await run('UPDATE users SET username = ? WHERE id = ?', [persona, owner.id]);
+          owner.username = persona;
+        } catch (err) {
+          // Taken by somebody else — the placeholder is not worth a failed login.
+          logger.warn(`Ник из Steam не занять: ${err.message}`);
+        }
+      }
+    }
     return startSession(req, res, owner, '/cabinet.html');
   }
 
