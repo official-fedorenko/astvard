@@ -54,7 +54,10 @@ function renderWhitelist(user) {
   }
 
   lines.push('<p class="error" id="whitelist-error"></p>');
-  lines.push('<p class="muted">Сменил аккаунт Steam? <a class="link-muted" href="/api/auth/steam">Привязать другой</a> — доступ придётся запросить заново.</p>');
+  lines.push(`<div class="card-footer">
+    <span class="muted">Сменил аккаунт Steam? Доступ придётся запросить заново.</span>
+    <a class="btn btn-sm btn-ghost" href="/api/auth/steam">Привязать другой</a>
+  </div>`);
 
   card.innerHTML = lines.join('');
 

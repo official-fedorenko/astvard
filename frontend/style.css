@@ -118,6 +118,16 @@ h3 {
   margin: 24px 0 8px;
 }
 
+/* A line that ends a card: a few words and the control they are about. The words
+   stay words, the action stays a button — neither is dressed up as the other. */
+.card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
 /* Buttons inside a table cell: they wrap on a phone instead of widening the table. */
 .row-actions {
   display: flex;
