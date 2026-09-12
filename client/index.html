@@ -3,12 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Загрузка...</title>
+  <!-- Заголовок подменяет app.js из настроек сайта; этот нужен тем, кто
+       разметку только читает и скриптов не выполняет — поисковикам и мессенджерам. -->
+  <title>Astvard — игровые серверы</title>
+  <meta name="description" content="Наши серверы, доступ к ним и всё, что вокруг игры. Вход по списку.">
+
+  <!-- Превью ссылки. Картинка растровая и по абсолютному адресу намеренно:
+       SVG в превью не понимает ни Telegram, ни Discord, а относительный путь
+       часть сборщиков не разворачивает. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Astvard">
+  <meta property="og:title" content="Astvard — игровые серверы">
+  <meta property="og:description" content="Наши серверы, доступ к ним и всё, что вокруг игры. Вход по списку.">
+  <meta property="og:url" content="https://astvard.online/">
+  <meta property="og:image" content="https://astvard.online/img/astvard-og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Astvard — игровые серверы">
+  <meta name="twitter:card" content="summary_large_image">
+
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%238a2be2'/%3E%3Cstop offset='100%25' stop-color='%2300d2ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='42' fill='url(%23g)'/%3E%3Ctext x='50' y='63' font-size='46' text-anchor='middle' fill='white' font-family='system-ui,sans-serif' font-weight='700'%3EA%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="/img/astvard-mark.svg" type="image/svg+xml">
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     /* На мобильных чип пользователя открывает меню; отдельную кнопку
@@ -71,7 +89,7 @@
   <header class="topbar">
     <a href="/" class="topbar__brand">
       <div class="topbar__icon">
-        <i data-lucide="compass" class="logo-icon"></i>
+        <img src="/img/astvard-mark.svg" alt="" width="34" height="34">
       </div>
       <span class="topbar__name"><strong id="siteName">Astvard</strong></span>
     </a>

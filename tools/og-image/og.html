@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0}
+  html,body{width:1200px;height:630px;overflow:hidden}
+  body{background:#030307;font-family:Inter,'Segoe UI',system-ui,sans-serif;color:#f8fafc;position:relative}
+
+  /* Две колонки вместо подложки поверх картинки: знак больше ничем не гасится. */
+  .art{position:absolute;right:0;top:0;width:600px;height:630px;
+       background:url('../../client/img/astvard-hero.svg') center / 132% auto no-repeat}
+  /* мягкий стык колонок, чтобы не было вертикальной границы */
+  .seam{position:absolute;right:600px;top:0;width:260px;height:630px;
+        background:linear-gradient(90deg,#030307 0%,rgba(3,3,7,0) 100%);z-index:2}
+  .seam2{position:absolute;right:440px;top:0;width:160px;height:630px;
+         background:linear-gradient(90deg,#030307 0%,rgba(3,3,7,0) 100%)}
+
+  .text{position:relative;z-index:3;padding:0 0 0 76px;height:630px;
+        display:flex;flex-direction:column;justify-content:center;width:660px}
+  .badge{align-self:flex-start;display:inline-flex;align-items:center;gap:10px;
+         background:rgba(0,210,255,.12);border:1px solid rgba(0,210,255,.28);color:#00d2ff;
+         font-size:18px;font-weight:600;padding:9px 20px;border-radius:100px;
+         letter-spacing:.06em;text-transform:uppercase;margin-bottom:32px}
+  h1{font-size:92px;font-weight:900;letter-spacing:-3px;line-height:1;
+     background:linear-gradient(135deg,#fff 30%,#94a3b8 100%);-webkit-background-clip:text;
+     -webkit-text-fill-color:transparent;margin-bottom:20px}
+  p{font-size:28px;color:#94a3b8;line-height:1.45;margin-bottom:40px}
+  .host{align-self:flex-start;display:inline-flex;align-items:center;gap:13px;
+        font-size:24px;font-weight:700;color:#f8fafc}
+  .host i{width:10px;height:10px;border-radius:50%;background:#4ade80;box-shadow:0 0 14px #4ade80}
+  .edge{position:absolute;left:0;right:0;bottom:0;height:5px;z-index:4;
+        background:linear-gradient(90deg,#8a2be2,#00d2ff)}
+</style></head><body>
+  <div class="art"></div>
+  <div class="seam2"></div>
+  <div class="seam"></div>
+  <div class="text">
+    <div class="badge">Вход по списку</div>
+    <h1>ASTVARD</h1>
+    <p>Игровые серверы: доступ, статус<br>и всё, что вокруг игры.</p>
+    <div class="host"><i></i>astvard.online</div>
+  </div>
+  <div class="edge"></div>
+</body></html>
