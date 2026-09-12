@@ -898,16 +898,23 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     .rune-hours { flex: 0 0 11em; text-align: right; }
 }
 
-/* Постройка, открытая игрокам: её может поставить не только админ. */
-.build-open {
+/* Кому постройка доступна в игре. Метка стоит у каждой, а не только у открытых:
+   молчание читается как «бери и строй», а на деле почти всё ставит админ. */
+.build-mark {
     display: inline-block;
     margin-left: 8px;
     padding: 2px 8px;
     border-radius: 20px;
-    background: var(--accent-purple-dim);
-    color: var(--text-primary);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.4px;
+}
+.build-open {
+    background: var(--accent-purple-dim);
+    color: var(--text-primary);
+}
+.build-admin {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
 }

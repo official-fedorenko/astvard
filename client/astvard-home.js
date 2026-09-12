@@ -135,7 +135,9 @@
           </div>
           <span class="server-meta">
             ${escape(b.pieces)} ${plural(b.pieces, 'деталь', 'детали', 'деталей')}
-            ${b.for_players ? '<span class="build-open">открыта игрокам</span>' : ''}
+            ${b.for_players
+              ? '<span class="build-mark build-open">открыта игрокам</span>'
+              : '<span class="build-mark build-admin">ставит админ</span>'}
           </span>
         </article>`).join('')
       : '<p class="server-meta">Общих построек пока нет.</p>';
