@@ -1,6 +1,14 @@
 node_modules/
 .env
+.env.local
 *.log
+
+# Панель: база, загрузки и черновики
+db.sqlite
+uploads/
+.gemini/
+scratch.txt
+temp_cabinet.js
 
 # C# build output
 bin/

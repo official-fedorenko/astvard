@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Загрузка...</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%238a2be2'/%3E%3Cstop offset='100%25' stop-color='%2300d2ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='42' fill='url(%23g)'/%3E%3Ctext x='50' y='63' font-size='46' text-anchor='middle' fill='white' font-family='system-ui,sans-serif' font-weight='700'%3EA%3C/text%3E%3C/svg%3E">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* На мобильных чип пользователя открывает меню; отдельную кнопку
+       «Панель» прячем — админ-панель доступна пунктом меню. */
+    #navUserCaret { display: none; }
+    .guest-mobile-only { display: none; }
+    @media (max-width: 768px) {
+      #authNav #navAdminPanel { display: none !important; }
+      #cabinetLink { cursor: pointer; }
+      #navUserCaret { display: inline-flex; align-items: center; }
+      /* Гость: две ссылки → одна кнопка «Вход» с модалкой */
+      .guest-desktop-only { display: none !important; }
+      .guest-mobile-only { display: inline-flex; align-items: center; gap: 6px; }
+    }
+    .profile-menu-overlay {
+      display: none; position: fixed; inset: 0; z-index: 2000;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+      align-items: flex-start; justify-content: center;
+    }
+    .profile-menu-overlay.open { display: flex; }
+    .profile-menu {
+      margin-top: 64px; width: min(340px, 92vw);
+      background: #17171f; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+      animation: pmIn .16s ease;
+    }
+    @keyframes pmIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+    .profile-menu-head {
+      display: flex; align-items: center; gap: 12px;
+      padding: 16px 18px; border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .profile-menu-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: linear-gradient(135deg, #8a2be2, #00d2ff);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; color: #fff; flex-shrink: 0;
+    }
+    .profile-menu-name { font-weight: 700; color: #f2f2f7; font-size: 15px; }
+    .profile-menu-role { font-size: 12px; color: #a0a0ab; }
+    .profile-menu-item {
+      display: flex; align-items: center; gap: 12px; width: 100%;
+      padding: 14px 18px; background: none; border: none; cursor: pointer;
+      color: #f2f2f7; font-size: 15px; font-family: 'Inter', sans-serif;
+      text-align: left; text-decoration: none; transition: background 0.15s;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .profile-menu-item:last-child { border-bottom: none; }
+    .profile-menu-item:hover { background: rgba(255,255,255,0.05); }
+    .profile-menu-item i { width: 18px; height: 18px; flex-shrink: 0; color: #a0a0ab; }
+    .profile-menu-item.danger { color: #ff4a6e; }
+    .profile-menu-item.danger i { color: #ff4a6e; }
+  </style>
+</head>
+<body>
+  
+  <div class="blob-bg"></div>
+  <div class="blob-bg blob-2"></div>
+
+  <!-- TOP HEADER BAR -->
+  <header class="topbar">
+    <a href="/" class="topbar__brand">
+      <div class="topbar__icon">
+        <i data-lucide="compass" class="logo-icon"></i>
+      </div>
+      <span class="topbar__name"><strong id="siteName">Мой Блог</strong></span>
+    </a>
+    
+    <div class="topbar__right">
+      <!-- Guest links (shown when not logged in) -->
+      <div id="guestNav" style="display:flex;align-items:center;gap:16px;">
+        <a href="/register.html" class="nav-btn-link guest-desktop-only">Регистрация</a>
+        <a href="/login.html" class="admin-link guest-desktop-only">Войти <i data-lucide="arrow-right"></i></a>
+        <button type="button" id="guestMenuBtn" class="admin-link guest-mobile-only" style="cursor:pointer;font-family:inherit;">Аккаунт <i data-lucide="chevron-down" style="width:14px;height:14px;"></i></button>
+      </div>
+      <!-- Auth links (shown when logged in) -->
+      <div id="authNav" style="display:none;align-items:center;gap:12px;">
+        <a href="/cabinet.html" class="admin-link" id="cabinetLink">
+          <i data-lucide="user"></i>
+          <span id="navUsername">Кабинет</span>
+          <span id="navUserCaret"><i data-lucide="chevron-down" style="width:14px;height:14px;"></i></span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Мобильное меню входа/регистрации (гость) -->
+  <div class="profile-menu-overlay" id="guestMenuOverlay">
+    <div class="profile-menu" role="menu" aria-label="Вход">
+      <a href="/login.html" class="profile-menu-item" role="menuitem"><i data-lucide="log-in"></i> Войти</a>
+      <a href="/register.html" class="profile-menu-item" role="menuitem"><i data-lucide="user-plus"></i> Регистрация</a>
+    </div>
+  </div>
+
+  <!-- Мобильное меню профиля (тап по нику в шапке) -->
+  <div class="profile-menu-overlay" id="profileMenuOverlay">
+    <div class="profile-menu" role="menu" aria-label="Меню профиля">
+      <div class="profile-menu-head">
+        <div class="profile-menu-avatar" id="pmAvatar">?</div>
+        <div>
+          <div class="profile-menu-name" id="pmName">...</div>
+          <div class="profile-menu-role" id="pmRole"></div>
+        </div>
+      </div>
+      <a href="/" class="profile-menu-item" role="menuitem"><i data-lucide="home"></i> На сайт</a>
+      <a href="/admin/" class="profile-menu-item" role="menuitem" id="pmAdmin" style="display:none;"><i data-lucide="settings"></i> Админ-панель</a>
+      <a href="/cabinet.html" class="profile-menu-item" role="menuitem"><i data-lucide="user"></i> Профиль</a>
+      <button type="button" class="profile-menu-item danger" role="menuitem" id="pmLogout"><i data-lucide="log-out"></i> Выход</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <nav class="sidebar__nav">
+        <p class="sidebar__section-label">Разделы</p>
+        <ul class="sidebar__menu">
+          <li>
+            <a href="#home" class="sidebar__link active" onclick="switchSection('home')">
+              <span class="sidebar__link-icon"><i data-lucide="home"></i></span>
+              <span>Главная</span>
+            </a>
+          </li>
+          <li>
+            <a href="#about" class="sidebar__link" onclick="switchSection('about')">
+              <span class="sidebar__link-icon"><i data-lucide="info"></i></span>
+              <span>О компании</span>
+            </a>
+          </li>
+          <li>
+            <a href="#contact" class="sidebar__link" onclick="switchSection('contact')">
+              <span class="sidebar__link-icon"><i data-lucide="mail"></i></span>
+              <span>Обратная связь</span>
+            </a>
+          </li>
+        </ul>
+
+        <div id="sidebarRegisterBlock">
+          <p class="sidebar__section-label">Активность</p>
+          <ul class="sidebar__menu">
+            <li>
+              <a href="/register.html" class="sidebar__link">
+                <span class="sidebar__link-icon"><i data-lucide="user-plus"></i></span>
+                <span>Создать аккаунт</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- SIDEBAR TOGGLE FOR MOBILE -->
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle navigation">
+      <i data-lucide="menu" id="toggleIcon"></i>
+    </button>
+
+    <!-- CONTENT AREA -->
+    <main class="content">
+      <!-- HERO -->
+      <section class="hero" id="home">
+        <div class="hero__badge">
+          <i data-lucide="sparkles" style="width: 14px; height: 14px; color: var(--accent-cyan);"></i> 
+          Интеллектуальная платформа
+        </div>
+        <h1 class="hero__title" id="heroTitle">Добро пожаловать в блог</h1>
+        <p class="hero__subtitle" id="heroSubtitle">Последние новости, обзоры и статьи от ведущих экспертов индустрии.</p>
+        <div class="hero__actions">
+          <a href="/register.html" class="btn btn--primary" id="heroRegisterBtn">Создать аккаунт</a>
+          <a href="#articles-section" class="btn btn--ghost">Читать статьи</a>
+        </div>
+      </section>
+
+      <!-- ARTICLES SECTION -->
+      <section class="section" id="articles-section">
+        <h2 class="section__title">Последние статьи</h2>
+        <p class="section__subtitle">Самые свежие мысли и полезные материалы</p>
+        
+        <div class="articles-grid" id="articlesGrid">
+          <!-- Skeleton loader -->
+          <div class="article-card skeleton"></div>
+          <div class="article-card skeleton"></div>
+          <div class="article-card skeleton"></div>
+        </div>
+      </section>
+
+      <!-- Article modal (for better public reading experience) -->
+      <div id="articleModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:9999; align-items:center; justify-content:center; padding:20px;">
+        <div style="background:#111; max-width:820px; width:100%; border-radius:20px; border:1px solid var(--border-color); max-height:92vh; overflow:hidden; display:flex; flex-direction:column;">
+          <div style="padding:20px 24px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,.02);">
+            <h2 id="articleModalTitle" style="margin:0; font-size:22px; font-weight:700;"></h2>
+            <button onclick="closeArticleModal()" style="background:none; border:none; color:#fff; font-size:28px; cursor:pointer; line-height:1; padding:0 8px;">&times;</button>
+          </div>
+          <div id="articleModalContent" style="padding:24px 28px; overflow:auto; flex:1; line-height:1.7; font-size:15px; color:#ddd;"></div>
+          <div style="padding:16px 24px; border-top:1px solid var(--border-color); text-align:right; background:rgba(0,0,0,.2);">
+            <button onclick="closeArticleModal()" class="btn" style="background:#222; border:1px solid var(--border-color);">Закрыть</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ABOUT SECTION -->
+      <section class="section section--alt" id="about">
+        <h2 class="section__title" id="aboutTitle">О нашем блоге</h2>
+        <p class="section__subtitle" id="aboutSubtitle">Кто мы и для чего создали эту платформу</p>
+        
+        <div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;">
+          <div class="card" style="border-top: 4px solid var(--accent-purple);">
+            <div class="card__icon"><i data-lucide="edit-3"></i></div>
+            <h3 class="card__title" id="aboutCard1Title">Пишем о главном</h3>
+            <p class="card__text" id="aboutCard1Text">Публикуем материалы о веб-разработке, дизайне интерфейсов, системном администрировании и автоматизации процессов.</p>
+          </div>
+          <div class="card" style="border-top: 4px solid var(--accent-cyan);">
+            <div class="card__icon"><i data-lucide="shield-check"></i></div>
+            <h3 class="card__title" id="aboutCard2Title">Проверенный контент</h3>
+            <p class="card__text" id="aboutCard2Text">Все публикации проходят модерацию экспертами, чтобы вы получали только качественную и актуальную информацию.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- CONTACT SECTION -->
+      <section class="section" id="contact">
+        <h2 class="section__title" id="contactTitle">Обратная связь</h2>
+        <p class="section__subtitle" id="contactSubtitle">Остались вопросы или хотите предложить сотрудничество?</p>
+        
+        <div class="contact-grid">
+          <div class="contact-info">
+            <div class="contact-item">
+              <span class="contact-item__icon"><i data-lucide="mail" style="color: var(--accent-cyan)"></i></span>
+              <div>
+                <strong>Электронная почта</strong>
+                <p id="contactEmail">info@example.com</p>
+              </div>
+            </div>
+            <div class="contact-item">
+              <span class="contact-item__icon"><i data-lucide="map-pin" style="color: var(--accent-purple)"></i></span>
+              <div>
+                <strong>Наш офис</strong>
+                <p id="contactAddress">г. Вильнюс, ул. Разработчиков, д. 42</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+            <div id="supportAuthPrompt" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 20px; padding: 40px 30px; text-align: center; backdrop-filter: var(--glass-blur); max-width: 450px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+              <div style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, rgba(138,43,226,0.1), rgba(0,210,255,0.1)); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                <i data-lucide="message-square" style="width: 24px; height: 24px; stroke: var(--accent-cyan);"></i>
+              </div>
+              <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">Обратная связь и поддержка</h3>
+              <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 24px;" id="supportPromptText">
+                Чтобы написать в службу поддержки или оставить обратную связь, пожалуйста, авторизуйтесь в вашем личном кабинете.
+              </p>
+              <div id="supportActionButtons" style="display: flex; gap: 12px; justify-content: center;">
+                <a href="/login.html" class="btn btn--primary" style="text-decoration: none; padding: 12px 24px;">Войти</a>
+                <a href="/register.html" class="btn" style="text-decoration: none; border: 1px solid var(--border-color); color: #fff; padding: 12px 24px; background: transparent; transition: background 0.2s;">Регистрация</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer__inner">
+      <span class="footer__copy">&copy; <span id="currentYear"></span> <span id="footerSiteName">Мой Блог</span>. Все права защищены.</span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+  <script>
+    // Гостевое меню входа/регистрации (мобильные)
+    (function () {
+      const btn = document.getElementById('guestMenuBtn');
+      const overlay = document.getElementById('guestMenuOverlay');
+      if (!btn || !overlay) return;
+      btn.addEventListener('click', () => overlay.classList.add('open'));
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') overlay.classList.remove('open'); });
+    })();
+
+    // Сайдбар тогглер
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const toggleIcon = document.getElementById('toggleIcon');
+    
+    sidebarToggle.addEventListener('click', (e) => {
+      e.stopPropagation(); // не даём этому же клику сразу закрыть меню обработчиком ниже
+      sidebar.classList.toggle('open');
+      const isOpen = sidebar.classList.contains('open');
+      toggleIcon.setAttribute('data-lucide', isOpen ? 'x' : 'menu');
+      lucide.createIcons();
+    });
+
+    // Клик вне открытого мобильного меню (и не по самой кнопке-бургеру) — закрывает его.
+    document.addEventListener('click', (e) => {
+      if (!sidebar.classList.contains('open')) return;
+      if (sidebar.contains(e.target) || sidebarToggle.contains(e.target)) return;
+      sidebar.classList.remove('open');
+      toggleIcon.setAttribute('data-lucide', 'menu');
+      lucide.createIcons();
+    });
+
+    // Навигация (fixed: reliable active state + smooth scroll to sections)
+    function switchSection(id) {
+      const links = document.querySelectorAll('.sidebar__link');
+      links.forEach(l => l.classList.remove('active'));
+
+      // Activate matching link by href (more reliable than event.currentTarget in onclick)
+      const targetHref = '#' + id;
+      const activeLink = Array.from(links).find(l =>
+        l.getAttribute('href') === targetHref ||
+        l.getAttribute('href') === targetHref + '-section'
+      );
+      if (activeLink) {
+        activeLink.classList.add('active');
+      }
+
+      // Smooth scroll to section
+      const section = document.getElementById(id);
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      sidebar.classList.remove('open');
+      toggleIcon.setAttribute('data-lucide', 'menu');
+      lucide.createIcons();
+    }
+  </script>
+</body>
+</html>

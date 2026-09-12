@@ -4,7 +4,7 @@
     {
       "name": "astvard-backend",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["--env-file=.env", "backend/server.js"],
+      "runtimeArgs": ["server.js"],
       "port": 3001
     }
   ]

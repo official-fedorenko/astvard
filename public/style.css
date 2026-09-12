@@ -1,0 +1,1572 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* === UAB Diamantas — Diamond / Electrical identity ===
+     "Diamantas" (лит.) = бриллиант. Тема: глубокий навигационный
+     сапфировый фон + бриллиантово-синий→ледяной циан как «грани камня»
+     + электрический янтарь как искра энергии (электромонтаж). */
+  --bg-main: 220 38% 9%;
+  --bg-card: 220 32% 13%;
+  --bg-sidebar: 221 42% 7%;
+  --border-color: 218 25% 22%;
+
+  --text-primary: 210 40% 98%;
+  --text-secondary: 214 22% 68%;
+  --text-muted: 215 15% 48%;
+
+  /* --accent-purple = основной брендовый цвет (сохранено имя переменной,
+     значение — бриллиантово-сапфировый синий). Используется по всей панели. */
+  --accent-purple: 214 96% 58%;
+  --accent-cyan: 189 94% 52%;
+  --accent-amber: 38 96% 56%;   /* электрическая «искра» / энергия */
+  --accent-green: 152 65% 46%;
+  --accent-red: 350 82% 58%;
+
+  --font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --border-radius-sm: 8px;
+  --border-radius-md: 14px;
+  --border-radius-lg: 20px;
+}
+
+/* Light Theme Variables (Optional Switch) */
+[data-theme="light"] {
+  --bg-main: 210 20% 98%;
+  --bg-card: 0 0% 100%;
+  --bg-sidebar: 210 30% 95%;
+  --border-color: 210 20% 88%;
+  
+  --text-primary: 224 25% 12%;
+  --text-secondary: 215 15% 40%;
+  --text-muted: 215 10% 60%;
+
+  --accent-purple: 214 90% 50%;
+  --accent-cyan: 189 88% 42%;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: hsl(var(--bg-main));
+  color: hsl(var(--text-primary));
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--bg-main));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-color));
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent-purple));
+}
+
+/* Auth Pages (Login Layout) */
+.auth-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+  background: radial-gradient(circle at 10% 20%, hsl(var(--accent-purple) / 0.15) 0%, transparent 40%),
+              radial-gradient(circle at 90% 80%, hsl(var(--accent-cyan) / 0.15) 0%, transparent 40%);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: hsl(var(--bg-card) / 0.7);
+  border: 1px solid hsl(var(--border-color));
+  backdrop-filter: blur(16px);
+  padding: 40px;
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.auth-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, hsl(var(--accent-purple)), hsl(var(--accent-cyan)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+
+.auth-header p {
+  color: hsl(var(--text-secondary));
+  font-size: 14px;
+}
+
+/* Admin Dashboard Layout */
+.app-container {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  /* Фиксируем высоту окна: сайдбар и контент прокручиваются независимо
+     (на мобильных сбрасывается — см. медиазапросы ниже). */
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar */
+aside.sidebar {
+  background-color: hsl(var(--bg-sidebar));
+  border-right: 1px solid hsl(var(--border-color));
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  padding: 24px;
+  overflow: hidden; /* прокручивается только список меню (.nav-list) */
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 40px;
+  color: hsl(var(--text-primary));
+}
+
+.brand-icon {
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(135deg, hsl(var(--accent-purple)), hsl(var(--accent-cyan)));
+  /* Огранённый «бриллиант» — ромб со срезанной верхушкой */
+  clip-path: polygon(50% 0%, 85% 33%, 50% 100%, 15% 33%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 0 14px hsl(var(--accent-cyan) / 0.45);
+}
+
+.brand-name {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.brand-name b {
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.brand-name small {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: hsl(var(--accent-cyan));
+}
+
+.nav-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-grow: 1;
+  /* Собственная прокрутка меню, независимо от контента справа.
+     min-height:0 нужен, чтобы flex-элемент мог сжиматься и включать скролл. */
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+
+.nav-item a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: hsl(var(--text-secondary));
+  text-decoration: none;
+  border-radius: var(--border-radius-sm);
+  font-weight: 500;
+  transition: var(--transition-smooth);
+}
+
+.nav-item a:hover, .nav-item.active a {
+  background-color: hsl(var(--bg-card));
+  color: hsl(var(--text-primary));
+  box-shadow: inset 3px 0 0 hsl(var(--accent-purple));
+}
+
+.nav-item.active a {
+  background: linear-gradient(90deg, hsl(var(--accent-purple) / 0.15), transparent);
+}
+
+.sidebar-footer {
+  padding-top: 20px;
+  border-top: 1px solid hsl(var(--border-color));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background-color: hsl(var(--accent-purple));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  border: 2px solid hsl(var(--border-color));
+}
+
+.user-details h4 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.user-details span {
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+}
+
+/* Кнопка-бургер — только для мобильной раскладки (по умолчанию скрыта). */
+.nav-burger {
+  display: none;
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.nav-burger i { width: 22px; height: 22px; }
+
+.logout-btn {
+  background: none;
+  border: none;
+  color: hsl(var(--text-secondary));
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+}
+
+.logout-btn:hover {
+  background-color: hsl(var(--accent-red) / 0.15);
+  color: hsl(var(--accent-red));
+}
+
+/* Main Content Area */
+main.main-content {
+  padding: 40px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  /* Контент прокручивается сам по себе внутри фиксированной высоты окна. */
+  height: 100vh;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Единый заголовок раздела: сверху — название и описание, снизу — вся
+   навигация (кнопки и фильтры) в один ряд с переносом. */
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.page-title h2 {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.page-title p {
+  color: hsl(var(--text-secondary));
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+/* Cards & Grid Layout */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.card {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-md);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition-smooth);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-color: hsl(var(--accent-purple) / 0.5);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.card-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
+.purple-glow {
+  background-color: hsl(var(--accent-purple) / 0.15);
+  color: hsl(var(--accent-purple));
+}
+
+.cyan-glow {
+  background-color: hsl(var(--accent-cyan) / 0.15);
+  color: hsl(var(--accent-cyan));
+}
+
+.green-glow {
+  background-color: hsl(var(--accent-green) / 0.15);
+  color: hsl(var(--accent-green));
+}
+
+.card-title {
+  font-size: 14px;
+  color: hsl(var(--text-secondary));
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.card-value {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+/* Analytics section with SVG Chart */
+.chart-container {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-md);
+  padding: 24px;
+  margin-bottom: 32px;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.chart-svg {
+  width: 100%;
+  height: 250px;
+  overflow: visible;
+}
+
+.chart-path {
+  fill: none;
+  stroke: url(#chart-gradient);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0px 8px 8px hsl(var(--accent-purple) / 0.3));
+  animation: drawChart 1.5s ease-out forwards;
+}
+
+.chart-area {
+  fill: url(#area-gradient);
+  opacity: 0.15;
+}
+
+.chart-grid {
+  stroke: hsl(var(--border-color) / 0.5);
+  stroke-width: 1;
+  stroke-dasharray: 4;
+}
+
+.chart-text {
+  fill: hsl(var(--text-muted));
+  font-size: 11px;
+  font-family: var(--font-family);
+}
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: hsl(var(--text-secondary));
+}
+
+.form-control {
+  width: 100%;
+  background-color: hsl(var(--bg-main));
+  border: 1px solid hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+  padding: 12px 16px;
+  font-size: 14px;
+  border-radius: var(--border-radius-sm);
+  outline: none;
+  transition: var(--transition-smooth);
+  font-family: var(--font-family);
+}
+
+.form-control:focus {
+  border-color: hsl(var(--accent-purple));
+  box-shadow: 0 0 0 3px hsl(var(--accent-purple) / 0.15);
+}
+
+/* Улучшения для настроек */
+#settingsContainerSite .form-group label,
+#settingsContainerCards .form-group label {
+  font-size: 13px;
+}
+#settingsContainerSite textarea.form-control,
+#settingsContainerCards textarea.form-control {
+  font-family: inherit;
+  line-height: 1.5;
+}
+/* Простой красивый чекбокс для boolean настроек */
+#settingsContainerSite input[type="checkbox"],
+#settingsContainerCards input[type="checkbox"] {
+  accent-color: hsl(var(--accent-purple));
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+/* Button Styles */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: hsl(var(--accent-purple));
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--border-radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  text-decoration: none;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px hsl(var(--accent-purple) / 0.3);
+  background-color: hsl(var(--accent-purple) / 0.9);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  border: 1px solid hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+}
+
+.btn-secondary:hover {
+  background-color: hsl(var(--border-color) / 0.3);
+  box-shadow: none;
+  transform: none;
+}
+
+.btn-danger {
+  background-color: hsl(var(--accent-red));
+}
+
+.btn-danger:hover {
+  background-color: hsl(var(--accent-red) / 0.9);
+  box-shadow: 0 8px 16px hsl(var(--accent-red) / 0.3);
+}
+
+/* Пометка обязательных полей в формах */
+.required-mark {
+  color: hsl(var(--accent-red));
+  margin-left: 2px;
+}
+
+/* Пикер бренда: триггер-виджет вместо обычного текстового поля */
+.brand-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.brand-picker-trigger img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.brand-picker-placeholder {
+  color: hsl(var(--text-muted));
+}
+
+/* Выпадающая панель выбора бренда */
+.brand-picker-dropdown {
+  position: fixed;
+  z-index: 2000;
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  width: 300px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+.brand-picker-search {
+  padding: 10px;
+  border-bottom: 1px solid hsl(var(--border-color));
+}
+.brand-picker-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+.brand-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.brand-picker-item:hover {
+  background: hsl(var(--border-color) / 0.3);
+}
+.brand-picker-item img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.brand-picker-add {
+  border-top: 1px solid hsl(var(--border-color));
+  padding: 10px;
+  display: flex;
+  gap: 6px;
+}
+.brand-picker-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Тип топлива авто: чекбоксы вместо select — можно выбрать несколько */
+.fuel-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.fuel-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  font-size: 14px;
+  user-select: none;
+  transition: border-color .15s ease, background .15s ease;
+}
+.fuel-checkbox:hover { border-color: hsl(var(--accent-purple)); }
+.fuel-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: hsl(var(--accent-purple));
+  cursor: pointer;
+}
+.fuel-checkbox:has(input:checked) {
+  border-color: hsl(var(--accent-purple));
+  background: hsl(var(--accent-purple) / 0.1);
+}
+
+/* Settings section tabs (Настройка сайта / карточек / системы) */
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.settings-tab-btn {
+  padding: 10px 18px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsl(var(--border-color));
+  background: hsl(var(--bg-card));
+  color: hsl(var(--text-muted));
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.settings-tab-btn:hover {
+  color: hsl(var(--text-primary));
+  border-color: hsl(var(--accent-purple));
+}
+.settings-tab-btn.active {
+  background: hsl(var(--accent-purple));
+  border-color: hsl(var(--accent-purple));
+  color: #fff;
+}
+
+/* Test Employees & Test Tools Boxes */
+.test-box {
+  padding-top: 20px;
+  border-top: 1px solid hsl(var(--border-color));
+  display: none;
+}
+
+.test-box.visible {
+  display: block;
+}
+
+#testEmployeesBox {
+  margin-top: 28px;
+}
+
+#testToolsBox {
+  margin-top: 20px;
+}
+
+#clearToolsCatalogBox {
+  margin-top: 20px;
+}
+
+#clearCatalogModelsBox {
+  margin-top: 20px;
+}
+
+.test-box-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--text-primary));
+}
+
+#testEmployeesBox .test-box-title {
+  margin-bottom: 8px;
+}
+
+#testToolsBox .test-box-title {
+  margin-bottom: 12px;
+}
+
+.test-box-buttons {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+#testEmployeesBox .test-box-buttons {
+  gap: 10px;
+}
+
+#testToolsBox .test-box-buttons {
+  gap: 8px;
+}
+
+.test-box-buttons .btn,
+.test-box-buttons .btn-secondary {
+  flex: 1;
+  min-width: 140px;
+}
+
+.test-box-description {
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+/* Mobile: buttons stack vertically */
+@media (max-width: 768px) {
+  #testEmployeesBox .test-box-buttons {
+    gap: 8px;
+  }
+
+  #testToolsBox .test-box-buttons {
+    gap: 6px;
+  }
+
+  .test-box-buttons .btn,
+  .test-box-buttons .btn-secondary {
+    flex: 1 1 100%;
+    min-width: 0;
+    font-size: 13px;
+    padding: 10px 16px;
+  }
+
+  .test-box-buttons span {
+    display: inline;
+  }
+}
+
+@media (max-width: 480px) {
+  #testEmployeesBox {
+    margin-top: 16px;
+  }
+
+  #testToolsBox {
+    margin-top: 16px;
+  }
+
+  #clearToolsCatalogBox {
+    margin-top: 16px;
+  }
+
+  #clearCatalogModelsBox {
+    margin-top: 16px;
+  }
+
+  .test-box {
+    padding-top: 16px;
+  }
+
+  #testEmployeesBox .test-box-title {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  #testToolsBox .test-box-title {
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+
+  #testEmployeesBox .test-box-buttons {
+    gap: 6px;
+  }
+
+  #testToolsBox .test-box-buttons {
+    gap: 6px;
+  }
+
+  .test-box-buttons .btn,
+  .test-box-buttons .btn-secondary {
+    padding: 10px 12px;
+    font-size: 12px;
+    min-height: 44px;
+    gap: 6px;
+  }
+
+  .test-box-buttons i {
+    width: 16px;
+    height: 16px;
+  }
+
+  .test-box-description {
+    font-size: 11px;
+    margin-top: 6px;
+  }
+}
+
+/* Table / CRUD UI */
+.table-container {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  margin-top: 20px;
+}
+
+/* Wraps the <table> itself so wide tables scroll horizontally on narrow
+   screens instead of being clipped by .table-container's overflow:hidden
+   (which exists only to clip the thead background to the rounded corners). */
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* Replaces the inline-styled button rows in page headers (Articles/Media
+   sections) so they can wrap instead of overflowing on narrow screens. */
+.page-header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1px solid hsl(var(--border-color));
+}
+/* Нет кнопок/фильтров — не рисуем разделитель. */
+.page-header-actions:empty { display: none; }
+
+.table-toolbar {
+  padding: 20px 24px;
+  border-bottom: 1px solid hsl(var(--border-color));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.table-search {
+  max-width: 320px;
+  width: 100%;
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+table.data-table th {
+  background-color: hsl(var(--bg-sidebar));
+  padding: 16px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--text-secondary));
+  border-bottom: 1px solid hsl(var(--border-color));
+}
+
+table.data-table td {
+  padding: 16px 24px;
+  border-bottom: 1px solid hsl(var(--border-color));
+  font-size: 14px;
+  color: hsl(var(--text-primary));
+}
+
+table.data-table tbody tr {
+  transition: var(--transition-smooth);
+}
+
+table.data-table tbody tr:hover {
+  background-color: hsl(var(--border-color) / 0.15);
+}
+
+/* ---- Адаптив таблиц: на телефоне строка -> компактная карточка ----
+   Таблице добавляется класс .cards-mobile. На узких экранах шапка и часть
+   колонок прячутся: строка становится кликабельной карточкой (обычно ФИО +
+   статус). Полная информация открывается в модалке по тапу, поэтому влезает
+   на любой ширине. Ячейки, которые НЕ показываем в свёрнутом виде, помечаются
+   классом .mobile-hidden; действия (.no-label) на телефоне тоже скрыты. */
+@media (max-width: 640px) {
+  .data-table.cards-mobile thead { display: none; }
+  .data-table.cards-mobile,
+  .data-table.cards-mobile tbody { display: block; width: 100%; }
+
+  .data-table.cards-mobile tbody tr {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: auto;
+    border: 1px solid hsl(var(--border-color));
+    border-radius: 12px;
+    margin: 10px 12px;
+    padding: 4px 14px;
+    background: hsl(var(--bg-main));
+    cursor: pointer;
+  }
+  .data-table.cards-mobile tbody tr:active { background: hsl(var(--accent-purple) / 0.08); }
+
+  /* Стрелка-подсказка, что карточка открывается */
+  .data-table.cards-mobile tbody tr::after {
+    content: '›';
+    color: hsl(var(--text-muted));
+    font-size: 22px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .data-table.cards-mobile tbody tr.empty-row::after { content: none; }
+
+  .data-table.cards-mobile td {
+    display: block;
+    border: none;
+    padding: 12px 0;
+  }
+  /* Первая видимая ячейка (ФИО) тянется, остальные — по содержимому */
+  .data-table.cards-mobile td.mobile-primary { flex: 1; min-width: 0; }
+
+  /* Прячем всё, что не нужно в свёрнутой карточке */
+  .data-table.cards-mobile td.mobile-hidden,
+  .data-table.cards-mobile td.no-label,
+  .data-table.cards-mobile .hide-mobile { display: none; }
+
+  /* Пустое состояние */
+  .data-table.cards-mobile td.empty-state { text-align: center; width: 100%; }
+
+  .table-scroll { overflow-x: visible; }
+}
+
+.badge {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-success {
+  background-color: hsl(var(--accent-green) / 0.15);
+  color: hsl(var(--accent-green));
+}
+
+.badge-warning {
+  background-color: hsl(var(--accent-cyan) / 0.15);
+  color: hsl(var(--accent-cyan));
+}
+
+.badge-danger {
+  background-color: hsl(var(--accent-red) / 0.15);
+  color: hsl(var(--accent-red));
+}
+
+/* === Модалка «Выдать инструмент»: карточка инструмента + пикер сотрудников === */
+.issue-tool-card {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid hsl(var(--border-color));
+  border-radius: 14px;
+  background: hsl(var(--bg-main));
+  margin-bottom: 18px;
+}
+.issue-tool-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+}
+.issue-tool-thumb.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--text-muted));
+}
+.issue-tool-meta { min-width: 0; }
+.issue-tool-meta .t-name { font-weight: 700; font-size: 16px; color: hsl(var(--text-primary)); }
+.issue-tool-meta .t-sub { font-size: 13px; color: hsl(var(--text-secondary)); margin-top: 2px; }
+.issue-tool-meta .t-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.issue-tool-meta .t-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: hsl(var(--accent-purple) / 0.12);
+  color: hsl(var(--accent-purple));
+}
+
+.emp-picker {
+  border: 1px solid hsl(var(--border-color));
+  border-radius: 12px;
+  overflow: hidden;
+}
+.emp-picker-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.emp-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-top: 1px solid hsl(var(--border-color));
+  transition: background 0.15s;
+}
+.emp-pick-item:first-child { border-top: none; }
+.emp-pick-item:hover { background: hsl(var(--accent-purple) / 0.08); }
+.emp-pick-item.selected { background: hsl(var(--accent-purple) / 0.16); }
+.emp-pick-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, hsl(var(--accent-purple)), hsl(var(--accent-cyan)));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.emp-pick-info { min-width: 0; flex: 1; }
+.emp-pick-name { font-weight: 600; font-size: 14px; color: hsl(var(--text-primary)); }
+.emp-pick-sub { font-size: 12px; color: hsl(var(--text-muted)); }
+.emp-pick-check { color: hsl(var(--accent-cyan)); flex-shrink: 0; }
+.emp-pick-empty { padding: 18px; text-align: center; color: hsl(var(--text-muted)); font-size: 13px; }
+
+.dup-warn {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: hsl(var(--accent-red));
+}
+.form-control.input-dup {
+  border-color: hsl(var(--accent-red)) !important;
+  box-shadow: 0 0 0 3px hsl(var(--accent-red) / 0.12);
+}
+
+.action-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  background: none;
+  border: 1px solid hsl(var(--border-color));
+  color: hsl(var(--text-secondary));
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.action-btn:hover {
+  background-color: hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+}
+
+.action-btn.edit:hover {
+  border-color: hsl(var(--accent-purple));
+  color: hsl(var(--accent-purple));
+  background-color: hsl(var(--accent-purple) / 0.1);
+}
+
+.action-btn.delete:hover {
+  border-color: hsl(var(--accent-red));
+  color: hsl(var(--accent-red));
+  background-color: hsl(var(--accent-red) / 0.1);
+}
+
+/* File Upload Manager & Media Library */
+.upload-zone {
+  border: 2px dashed hsl(var(--border-color));
+  border-radius: var(--border-radius-md);
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  background-color: hsl(var(--bg-card) / 0.4);
+  transition: var(--transition-smooth);
+  margin-bottom: 32px;
+}
+
+.upload-zone:hover, .upload-zone.dragover {
+  border-color: hsl(var(--accent-purple));
+  background-color: hsl(var(--accent-purple) / 0.05);
+}
+
+.upload-zone svg {
+  margin-bottom: 16px;
+  color: hsl(var(--text-secondary));
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.media-item {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  position: relative;
+  transition: var(--transition-smooth);
+}
+
+.media-item:hover {
+  transform: scale(1.03);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.media-preview {
+  height: 150px;
+  width: 100%;
+  background-color: hsl(var(--bg-main));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.media-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-info {
+  padding: 12px;
+}
+
+.media-title {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 11px;
+  color: hsl(var(--text-muted));
+}
+
+.media-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border: none;
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: var(--transition-smooth);
+}
+
+.media-item:hover .media-delete {
+  opacity: 1;
+}
+
+.media-delete:hover {
+  background-color: hsl(var(--accent-red));
+}
+
+/* Modals / Overlays */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 20px;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: var(--transition-smooth);
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  width: 100%;
+  max-width: 600px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.4);
+  transform: translateY(20px);
+  transition: var(--transition-smooth);
+  overflow: hidden;
+}
+
+.modal form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.modal-overlay.active .modal {
+  transform: translateY(0);
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid hsl(var(--border-color));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: hsl(var(--text-secondary));
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid hsl(var(--border-color));
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Custom CSS Keyframes & Animations */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes drawChart {
+  from {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+  }
+  to {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* SPA Section Toggles */
+.app-section {
+  display: none;
+}
+.app-section.active {
+  display: block;
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 2000;
+}
+
+.toast {
+  background-color: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border-color));
+  border-left: 4px solid hsl(var(--accent-purple));
+  color: hsl(var(--text-primary));
+  padding: 16px 20px;
+  border-radius: var(--border-radius-sm);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transform: translateX(120%);
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  min-width: 280px;
+}
+
+.toast.show {
+  transform: translateX(0);
+}
+
+.toast.success {
+  border-left-color: hsl(var(--accent-green));
+}
+
+.toast.error {
+  border-left-color: hsl(var(--accent-red));
+}
+
+/* Responsive Rules */
+@media (max-width: 1024px) {
+  .app-container {
+    grid-template-columns: 1fr;
+    /* Сброс независимой прокрутки: сайдбар сверху, страница скроллится целиком. */
+    height: auto;
+    overflow: visible;
+  }
+
+  aside.sidebar {
+    height: auto;
+    position: relative;
+    border-right: none;
+    border-bottom: 1px solid hsl(var(--border-color));
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    overflow: visible;
+  }
+
+  .brand {
+    margin-bottom: 0;
+  }
+
+  /* Бургер-меню: пункты — выпадающий вертикальный список под верхней панелью. */
+  .nav-burger { display: inline-flex; }
+
+  .nav-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    flex-grow: 0;
+    min-height: auto;
+    margin: 0;
+    padding: 8px;
+    background: hsl(var(--bg-sidebar));
+    border-bottom: 1px solid hsl(var(--border-color));
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.4);
+    max-height: calc(100vh - 72px);
+    overflow-y: auto;
+  }
+  aside.sidebar.menu-open .nav-list { display: flex; }
+
+  .nav-item a {
+    justify-content: flex-start;
+    padding: 12px 16px;
+  }
+
+  main.main-content {
+    height: auto;
+    overflow-y: visible;
+  }
+
+  .sidebar-footer {
+    border-top: none;
+    padding-top: 0;
+    gap: 8px;
+  }
+  
+  .user-info {
+    display: none;
+  }
+  
+  main.main-content {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .page-header-actions {
+    width: 100%;
+  }
+
+  main.main-content {
+    padding: 16px;
+  }
+
+  table.data-table th,
+  table.data-table td {
+    padding: 12px 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  aside.sidebar {
+    padding: 12px 16px;
+  }
+
+  .page-title h2 {
+    font-size: 22px;
+  }
+
+  .card-value {
+    font-size: 26px;
+  }
+
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .modal {
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+  }
+  .modal-footer {
+    flex-wrap: wrap;
+  }
+  .modal-footer .btn,
+  .modal-footer .btn-secondary {
+    flex: 1;
+  }
+
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+  .toast {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+
+/* Мобильные: поле ввода с font-size < 16px заставляет iOS зумить при фокусе.
+   Держим 16px, чтобы экран не приближался сам. text-size-adjust не даёт
+   браузеру масштабировать текст при повороте. Ручной зум пользователю
+   остаётся доступен (user-scalable не запрещаем). */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ==== Заявления: карточка строки ==== */
+.req-desc { display: flex; gap: 12px; align-items: flex-start; }
+.req-desc-photo {
+  width: 44px; height: 44px; border-radius: 8px; object-fit: cover;
+  flex-shrink: 0; border: 1px solid hsl(var(--border-color));
+}
+.req-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; color: hsl(var(--text-primary)); }
+.req-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.req-chip {
+  font-size: 12px; line-height: 1.4;
+  background: hsl(var(--bg-main)); border: 1px solid hsl(var(--border-color));
+  border-radius: 6px; padding: 3px 9px; color: hsl(var(--text-primary));
+}
+.req-chip-label { color: hsl(var(--text-muted)); margin-right: 3px; }
+
+/* Единые кнопки действий в «Заявлениях»: Одобрить / Отклонить / Обоснование —
+   один размер и форма, различаются только цветом по смыслу. */
+.req-action {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 14px; font-size: 12px; font-weight: 600; line-height: 1;
+  border-radius: 8px; border: 1px solid transparent; cursor: pointer;
+  transition: all 0.15s; white-space: nowrap;
+  min-width: 112px; /* одинаковая ширина всех трёх кнопок */
+}
+.req-action--green {
+  background: hsl(var(--accent-green) / 0.15); color: hsl(var(--accent-green));
+  border-color: hsl(var(--accent-green) / 0.45);
+}
+.req-action--green:hover {
+  background: hsl(var(--accent-green) / 0.25);
+  box-shadow: 0 0 0 3px hsl(var(--accent-green) / 0.12);
+}
+.req-action--red {
+  background: hsl(var(--accent-red) / 0.12); color: hsl(var(--accent-red));
+  border-color: hsl(var(--accent-red) / 0.4);
+}
+.req-action--red:hover {
+  background: hsl(var(--accent-red) / 0.22);
+  box-shadow: 0 0 0 3px hsl(var(--accent-red) / 0.12);
+}
+.req-action:disabled { cursor: not-allowed; opacity: 0.85; box-shadow: none; }
+.req-action:disabled:hover { box-shadow: none; }
+/* ==== Модальные диалоги (замена нативных alert/confirm/prompt) ==== */
+.ui-dialog-overlay {
+  position: fixed; inset: 0; z-index: 3000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.ui-dialog-overlay.open { opacity: 1; }
+.ui-dialog {
+  width: 100%; max-width: 420px;
+  background: hsl(var(--bg-card)); border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-lg); padding: 22px 24px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.4);
+  transform: translateY(12px); transition: transform 0.15s ease;
+}
+.ui-dialog-overlay.open .ui-dialog { transform: translateY(0); }
+.ui-dialog__title { font-size: 16px; font-weight: 700; color: hsl(var(--text-primary)); margin-bottom: 8px; }
+.ui-dialog__msg { font-size: 14px; line-height: 1.55; color: hsl(var(--text-primary)); white-space: pre-wrap; }
+.ui-dialog__input { margin-top: 14px; width: 100%; }
+.ui-dialog__actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.ui-dialog__btn {
+  padding: 8px 18px; font-size: 13px; font-weight: 600; line-height: 1;
+  border-radius: 8px; border: 1px solid transparent; cursor: pointer; transition: all 0.15s;
+}
+.ui-dialog__btn--cancel {
+  background: transparent; border-color: hsl(var(--border-color)); color: hsl(var(--text-primary));
+}
+.ui-dialog__btn--cancel:hover { background: hsl(var(--border-color) / 0.3); }
+.ui-dialog__btn--ok {
+  background: hsl(var(--accent-purple)); color: #fff;
+}
+.ui-dialog__btn--ok:hover { background: hsl(var(--accent-purple) / 0.9); }
+.ui-dialog__btn--danger { background: hsl(var(--accent-red)); }
+.ui-dialog__btn--danger:hover { background: hsl(var(--accent-red) / 0.9); }

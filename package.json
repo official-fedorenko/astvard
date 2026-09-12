@@ -1,0 +1,42 @@
+{
+  "name": "vanilla-admin-panel",
+  "version": "0.3.0-beta",
+  "description": "Лёгкая админ-панель + CMS + личный кабинет на чистом Node.js (без фреймворков) + SQLite. Сильная защита от ботов при регистрации.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "admin-panel",
+    "cms",
+    "vanilla-js",
+    "node-js",
+    "sqlite",
+    "no-framework",
+    "self-hosted",
+    "blog",
+    "personal-cabinet"
+  ],
+  "author": "official-fedorenko",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/official-fedorenko/vanilla-admin-panel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/official-fedorenko/vanilla-admin-panel/issues"
+  },
+  "homepage": "https://github.com/official-fedorenko/vanilla-admin-panel#readme",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "qrcode": "^1.5.4",
+    "sanitize-html": "2.17.5",
+    "sqlite3": "5.1.7"
+  }
+}
