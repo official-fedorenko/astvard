@@ -1,10 +1,12 @@
 const { sendJson, getJsonBody, logAction } = require('../utils');
 const { db, verifyPassword, hashPassword } = require('../../db');
+const { nicknameError } = require('../nickname');
 
 function getMe(req, res, user) {
   db.get(
     `SELECT id, username, email, role, account_type, avatar_url, created_at,
-            steam_id, steam_id_verified, whitelist_status, whitelist_note
+            steam_id, steam_id_verified, whitelist_status, whitelist_note,
+            password_hash IS NOT NULL AS has_password
      FROM users WHERE id = ?`,
     [user.id],
     (err, row) => {
@@ -173,11 +175,22 @@ async function setVehiclePhoto(req, res, user) {
   }
 }
 
-// Обновление профиля пользователя (email, пароль, avatar_url)
+/**
+ * Профиль игрока: ник, почта и пароль.
+ *
+ * Аккаунт заводится входом через Steam и живёт без почты и пароля — на сервер
+ * пускают по номеру Steam. Всё остальное здесь необязательно и добавляется по
+ * желанию: почта — чтобы было куда написать, пароль — чтобы войти, когда Steam
+ * недоступен.
+ *
+ * Отсюда и правило про текущий пароль: спрашиваем его только у того, у кого
+ * пароль уже есть. Требовать «текущий» у человека, который задаёт первый,
+ * означало бы не дать задать его вовсе.
+ */
 async function updateProfile(req, res, user) {
   try {
     const body = await getJsonBody(req);
-    const { email, password, currentPassword, avatar_url } = body;
+    const { username, email, password, currentPassword, avatar_url } = body;
 
     db.get("SELECT * FROM users WHERE id = ?", [user.id], (err, dbUser) => {
       if (err || !dbUser) {
@@ -187,9 +200,24 @@ async function updateProfile(req, res, user) {
       const fields = [];
       const values = [];
 
-      if (email && email !== dbUser.email) {
-        fields.push('email = ?');
-        values.push(email);
+      if (typeof username === 'string' && username.trim() && username.trim() !== dbUser.username) {
+        const problem = nicknameError(username);
+        if (problem) return sendJson(res, 400, { success: false, message: problem });
+        fields.push('username = ?');
+        values.push(username.trim());
+      }
+
+      if (typeof email === 'string' && email.trim()) {
+        // Приводим к нижнему регистру: иначе Ivan@mail.ru и ivan@mail.ru — два
+        // разных адреса для базы и один для почтового сервера.
+        const clean = email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+          return sendJson(res, 400, { success: false, message: 'Почта выглядит неправильно' });
+        }
+        if (clean !== dbUser.email) {
+          fields.push('email = ?');
+          values.push(clean);
+        }
       }
 
       if (avatar_url) {
@@ -198,15 +226,18 @@ async function updateProfile(req, res, user) {
       }
 
       if (password) {
-        if (!currentPassword) {
-          return sendJson(res, 400, { success: false, message: 'Для смены пароля укажите текущий пароль' });
-        }
         if (password.length < 8) {
           return sendJson(res, 400, { success: false, message: 'Пароль должен быть минимум 8 символов' });
         }
-        const ok = verifyPassword(currentPassword, dbUser.password_hash);
-        if (!ok) {
-          return sendJson(res, 400, { success: false, message: 'Неверный текущий пароль' });
+        // Пароль уже есть — меняет его только тот, кто знает прежний: кука могла
+        // остаться на чужом экране.
+        if (dbUser.password_hash) {
+          if (!currentPassword) {
+            return sendJson(res, 400, { success: false, message: 'Для смены пароля укажите текущий' });
+          }
+          if (!verifyPassword(currentPassword, dbUser.password_hash)) {
+            return sendJson(res, 400, { success: false, message: 'Неверный текущий пароль' });
+          }
         }
         fields.push('password_hash = ?');
         values.push(hashPassword(password));
@@ -223,14 +254,22 @@ async function updateProfile(req, res, user) {
         values,
         function (updateErr) {
           if (updateErr) {
-            const msg = updateErr.message.includes('UNIQUE') ? 'Такой email уже используется' : 'Ошибка сохранения профиля';
+            const text = String(updateErr.message);
+            const msg = text.includes('users_username_key') || text.includes('username')
+              ? 'Такой ник уже занят'
+              : (text.includes('UNIQUE') || text.includes('email')
+                ? 'Такая почта уже используется'
+                : 'Ошибка сохранения профиля');
             return sendJson(res, 400, { success: false, message: msg });
           }
           logAction(user.username, 'Обновил свой профиль');
-          // Вернём свежие данные
-          db.get("SELECT id, username, email, role, avatar_url, created_at FROM users WHERE id = ?", [user.id], (e2, fresh) => {
-            sendJson(res, 200, { success: true, message: 'Профиль обновлён', user: fresh });
-          });
+          db.get(
+            "SELECT id, username, email, role, avatar_url, created_at, password_hash IS NOT NULL AS has_password FROM users WHERE id = ?",
+            [user.id],
+            (e2, fresh) => {
+              sendJson(res, 200, { success: true, message: 'Профиль обновлён', user: fresh });
+            }
+          );
         }
       );
     });

@@ -22,9 +22,15 @@ process.env.TRUST_PROXY = 'true';
 // с боевого сервера. Путь читается при загрузке маршрута, поэтому задаётся до
 // require('../server').
 process.env.VALHEIM_MOD_CONFIG = require('node:path').join(__dirname, 'fixtures', 'valheim-config');
+// Списки доступа пишутся в папку сохранений игрового сервера. В тестах это своя
+// временная папка: настоящую трогать нельзя, а проверять надо именно запись.
+const os = require('node:os');
+const fsSync = require('node:fs');
+const SAVES_DIR = fsSync.mkdtempSync(require('node:path').join(os.tmpdir(), 'astvard-saves-'));
+process.env.VALHEIM_SAVES_DIR = SAVES_DIR;
 
 const server = require('../server');
-const { db, pool, dbReady, seedDefaults } = require('../db');
+const { db, pool, dbReady, seedDefaults, hashPassword } = require('../db');
 const { totp } = require('../src/totp');
 
 let baseUrl;
@@ -210,44 +216,6 @@ test('check-username reports a fresh username as available', async () => {
   assert.strictEqual(json.available, true);
 });
 
-test('register rejects honeypot-filled submissions as bot traffic', async () => {
-  const { status, json } = await api('/api/auth/register', {
-    method: 'POST', ip: '10.0.3.1',
-    body: {
-      username: 'botuser', email: 'bot@example.com', password: 'password123',
-      website: 'http://spam.example' // honeypot field a real user would never fill in
-    }
-  });
-  assert.strictEqual(status, 400);
-  assert.strictEqual(json.success, false);
-});
-
-test('register creates the account and logs the user in when validation passes', async () => {
-  const { status, json, cookie } = await api('/api/auth/register', {
-    method: 'POST', ip: '10.0.3.2',
-    body: {
-      username: 'freshtestuser', email: 'freshtestuser@example.com', password: 'password123',
-      botNum1: 5, botNum2: 3, botOp: '+', botAnswer: 8
-    }
-  });
-  assert.strictEqual(status, 200);
-  assert.strictEqual(json.success, true);
-  assert.strictEqual(json.user.role, 'User');
-  assert.ok(cookie && cookie.startsWith('session='));
-});
-
-test('register rejects a duplicate username', async () => {
-  const { status, json } = await api('/api/auth/register', {
-    method: 'POST', ip: '10.0.3.3',
-    body: {
-      username: 'freshtestuser', email: 'someoneelse@example.com', password: 'password123',
-      botNum1: 2, botNum2: 2, botOp: '+', botAnswer: 4
-    }
-  });
-  assert.strictEqual(status, 409);
-  assert.strictEqual(json.success, false);
-});
-
 test('full 2FA setup + login flow works end-to-end', async () => {
   const login1 = await api('/api/auth/login', {
     method: 'POST', ip: '10.0.5.1',
@@ -348,14 +316,19 @@ test('public tool card respects GLOBAL visibility settings and enable switch', a
 });
 
 test('worklogs: user adds own entry, sees it; admin sees summary; user is forbidden from summary', async () => {
-  // Регистрируем свежего пользователя (у дефолтного `user` включена 2FA
-  // предыдущим тестом, поэтому берём чистый аккаунт без 2FA).
-  const reg = await api('/api/auth/register', {
+  // Свежий пользователь заводится прямо в базе: формы регистрации в портале нет,
+  // аккаунт появляется входом через Steam. У дефолтного `user` предыдущий тест
+  // включил 2FA, поэтому нужен чистый.
+  await new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'User')",
+      ['worker_wl', 'worker_wl@example.com', hashPassword('password123')],
+      (err) => (err ? reject(err) : resolve())
+    );
+  });
+  const reg = await api('/api/auth/login', {
     method: 'POST', ip: '10.20.1.1',
-    body: {
-      username: 'worker_wl', email: 'worker_wl@example.com', password: 'password123',
-      botNum1: 4, botNum2: 3, botOp: '+', botAnswer: 7
-    }
+    body: { username: 'worker_wl', password: 'password123' }
   });
   assert.strictEqual(reg.status, 200);
   const uc = reg.cookie;
@@ -441,4 +414,87 @@ test('game info: руны и постройки читаются из файло
 
   // Главное: наружу не уходит ни один SteamID — ни из рун, ни из «#from».
   assert.ok(!JSON.stringify(res.json).includes('76561'), 'номеров Steam в ответе нет');
+});
+
+// === Списки доступа доезжают до игрового сервера ===
+test('списки доступа пишутся в папку сервера, а пустой permittedlist не пишется', async () => {
+  const path = require('node:path');
+  const readList = (name) => {
+    try { return fsSync.readFileSync(path.join(SAVES_DIR, name), 'utf8'); } catch { return null; }
+  };
+
+  await new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO users (username, role, steam_id, steam_id_verified, whitelist_status,
+                          whitelist_decided_at, server_admin)
+       VALUES (?, 'User', ?, 1, 'approved', now(), 1)`,
+      ['Ярл', '76561198000000900'],
+      (err) => (err ? reject(err) : resolve())
+    );
+  });
+
+  const admin = await api('/api/auth/login', {
+    method: 'POST', ip: '10.30.1.1', body: { username: 'superadmin', password: '1234qwer' }
+  });
+  assert.strictEqual(admin.status, 200);
+
+  const applied = await api('/api/admin/whitelist/apply', { method: 'POST', cookie: admin.cookie });
+  assert.strictEqual(applied.status, 200);
+  assert.strictEqual(applied.json.result.permitted.written, true);
+
+  assert.match(readList('permittedlist.txt'), /^V_76561198000000900$/m, 'в списке доступа — номер с префиксом V_');
+  const admins = readList('adminlist.txt');
+  // Обе формы: ZNet.PlayerIsAdmin сравнивает id сырым и видит только ту, что прислал клиент.
+  assert.match(admins, /^V_76561198000000900$/m);
+  assert.match(admins, /^Steam_76561198000000900$/m);
+
+  // Снимаем у всех доступ: пустой permittedlist.txt для игры значит «пускать всех»,
+  // поэтому файл обязан остаться прежним.
+  await new Promise((resolve, reject) => {
+    db.run("UPDATE users SET whitelist_status = 'none'", [], (err) => (err ? reject(err) : resolve()));
+  });
+  const again = await api('/api/admin/whitelist/apply', { method: 'POST', cookie: admin.cookie });
+  assert.strictEqual(again.status, 200);
+  assert.strictEqual(again.json.result.permitted.written, false);
+  assert.match(readList('permittedlist.txt'), /76561198000000900/, 'прежний список цел');
+});
+
+test('автоприём заявки выдаёт доступ сразу и обновляет список сервера', async () => {
+  const path = require('node:path');
+  await new Promise((resolve, reject) => {
+    db.run("UPDATE settings SET value = 'true' WHERE key = 'whitelist_auto_approve'", [],
+      (err) => (err ? reject(err) : resolve()));
+  });
+  await new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO users (username, email, password_hash, role, steam_id, steam_id_verified)
+       VALUES (?, ?, ?, 'User', ?, 1)`,
+      ['Скальди', 'skaldi@example.com', hashPassword('password123'), '76561198000000901'],
+      (err) => (err ? reject(err) : resolve())
+    );
+  });
+
+  const player = await api('/api/auth/login', {
+    method: 'POST', ip: '10.30.2.1', body: { username: 'Скальди', password: 'password123' }
+  });
+  assert.strictEqual(player.status, 200);
+
+  const asked = await api('/api/cabinet/whitelist/request', {
+    method: 'POST', cookie: player.cookie, body: { note: 'Пустите, я тихий' }
+  });
+  assert.strictEqual(asked.status, 200);
+  assert.strictEqual(asked.json.auto, true, 'заявка принята автоматически');
+
+  const me = await api('/api/cabinet/me', { cookie: player.cookie });
+  assert.strictEqual(me.json.user.whitelist_status, 'approved');
+  assert.match(
+    fsSync.readFileSync(path.join(SAVES_DIR, 'permittedlist.txt'), 'utf8'),
+    /^V_76561198000000901$/m,
+    'номер уехал на сервер сам, без кнопки'
+  );
+
+  await new Promise((resolve, reject) => {
+    db.run("UPDATE settings SET value = 'false' WHERE key = 'whitelist_auto_approve'", [],
+      (err) => (err ? reject(err) : resolve()));
+  });
 });

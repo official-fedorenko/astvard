@@ -92,6 +92,9 @@ ensure_env VALHEIM_LOG_FILE /srv/valheim/logs/server.log
 # The mod's own files: player runes and the shared builds. The site only reads
 # them; the game server writes them and owns them.
 ensure_env VALHEIM_MOD_CONFIG /srv/valheim/server/BepInEx/config
+# The game server's save folder: the two access lists live there, and the panel
+# writes them itself so that a grant in the browser reaches the game.
+ensure_env VALHEIM_SAVES_DIR /srv/valheim/saves
 ensure_env SUPERADMIN_STEAM_ID "${SUPERADMIN_STEAM_ID:-}"
 chown -R "$SITE_USER:$SITE_USER" "$DIR"
 chmod 600 "$DIR/.env"
@@ -140,6 +143,24 @@ SQL
   psql_q "REVOKE ALL ON DATABASE $POSTGRES_DB FROM PUBLIC" >/dev/null
 else
   echo "   POSTGRES_CONTAINER не задан — считаю, что роль и база заведены заранее"
+fi
+
+say "Списки доступа игрового сервера"
+# The panel writes permittedlist.txt and adminlist.txt straight into the game's save
+# folder — the game re-reads them within about ten seconds, so granting access in the
+# browser reaches the server without anyone copying a file by hand. That needs the
+# site user in the game's group and the folder group-writable; nothing else there is
+# touched, and both files stay readable by the game as before.
+VALHEIM_SAVES=${VALHEIM_SAVES_DIR:-/srv/valheim/saves}
+if [ -d "$VALHEIM_SAVES" ] && getent group valheim >/dev/null 2>&1; then
+  usermod -aG valheim "$SITE_USER"
+  chmod g+w "$VALHEIM_SAVES"
+  for f in permittedlist.txt adminlist.txt; do
+    [ -f "$VALHEIM_SAVES/$f" ] && chmod g+w "$VALHEIM_SAVES/$f"
+  done
+  echo "   $SITE_USER пишет списки в $VALHEIM_SAVES"
+else
+  echo "   $VALHEIM_SAVES не найден — списки останутся выгрузкой файлом"
 fi
 
 say "Зависимости"

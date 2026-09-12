@@ -339,6 +339,19 @@ function bindAstvardHandlers() {
       return loadWhitelist();
     }
 
+    // Списки и так уезжают на сервер после каждого решения; кнопка нужна, когда
+    // файлы разъехались с базой — сервер переустановили или файл вернули из копии.
+    if (e.target.closest('#applyListsBtn')) {
+      const res = await fetch('/api/admin/whitelist/apply', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return showToast(data.message || 'Не получилось', 'error');
+      const r = data.result || {};
+      const permitted = r.permitted && r.permitted.written
+        ? `доступ: ${r.permitted.count}`
+        : `доступ не тронут (${r.permitted ? r.permitted.reason : 'нет данных'})`;
+      return showToast(`Списки на сервере обновлены — ${permitted}, админов: ${r.admins ? r.admins.count : 0}`);
+    }
+
     if (e.target.closest('#permittedListBtn')) {
       return downloadList('/api/admin/whitelist/permittedlist', 'permittedlist.txt');
     }

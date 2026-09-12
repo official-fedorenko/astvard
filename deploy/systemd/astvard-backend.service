@@ -22,13 +22,15 @@ ExecStart=/usr/bin/node /srv/astvard/server.js
 Restart=on-failure
 RestartSec=5s
 
-# Writable: only its own directory, for uploads. The database is not a file any
-# more — it lives in the Postgres of this machine and is reached over the network.
+# Writable: its own directory, for uploads, and the game server's save folder —
+# that is where permittedlist.txt and adminlist.txt live, and the panel writes them
+# so that granting access or in-game admin reaches the server by itself. The leading
+# dash keeps the unit starting on a machine that has no game server at all.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/astvard
+ReadWritePaths=/srv/astvard -/srv/valheim/saves
 # The Valheim server's own files: its log is how a -public 0 server's status is
 # known, and the mod's config holds the runes and the shared builds the site
 # shows. Somebody else's directory, so read-only and nothing more.

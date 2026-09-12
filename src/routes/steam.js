@@ -138,6 +138,16 @@ async function complete(req, res, sessionUser) {
     return startSession(req, res, owner, '/cabinet.html');
   }
 
+  // Приём новых игроков — тот же переключатель «Регистрация» в настройках, что
+  // был у прежней формы. Регистрация теперь и есть первый вход через Steam, так
+  // что выключенный переключатель означает ровно одно: незнакомый номер аккаунта
+  // не заводит. Уже заведённые входят по-прежнему — выше по коду.
+  const setting = await get("SELECT value FROM settings WHERE key = 'allow_registration'");
+  if (setting && setting.value === 'false') {
+    return redirectWithError(res, '/login.html',
+      'Приём новых игроков сейчас закрыт. Напиши админу, если тебя ждут на сервере.');
+  }
+
   // First visit through Steam: the account is created here. The persona name is
   // best-effort — a private profile just means the fallback name.
   const persona = await fetchPersonaName(steamId);

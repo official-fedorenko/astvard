@@ -178,6 +178,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // The registration page is gone: an account appears at the first Steam login
+  // (src/routes/steam.js). The address stays alive because it is in people's
+  // history and in old links, and a 404 there reads as "the site is broken"
+  // rather than "there is nothing to fill in any more".
+  if (pathname === '/register.html') {
+    res.writeHead(302, { Location: '/login.html' });
+    return res.end();
+  }
+
   // Game side: the whitelist of the Valheim server and the servers' status. These
   // stand before the public and cabinet blocks because those answer 404 to anything
   // they do not know themselves.

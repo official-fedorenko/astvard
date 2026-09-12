@@ -2383,7 +2383,7 @@ async function loadSettings() {
   // «Настройка сайта», из CARD_GROUPS — в «Настройка карточек» (вкладки
   // раздела «Настройки»).
   const SITE_GROUPS = {
-    'Общие': ['site_name', 'maintenance_mode', 'allow_registration'],
+    'Общие': ['site_name', 'maintenance_mode', 'allow_registration', 'whitelist_auto_approve'],
     'Главная страница': ['hero_title', 'site_description'],
     'О блоге': ['about_title', 'about_subtitle', 'about_card1_title', 'about_card1_text', 'about_card2_title', 'about_card2_text'],
     'Контакты': ['contact_title', 'contact_subtitle', 'contact_email', 'contact_address']
@@ -2425,7 +2425,7 @@ async function loadSettings() {
 
   // Определяем тип контрола по ключу
   function getFieldType(key) {
-    if (['maintenance_mode', 'allow_registration'].includes(key) || PUBLIC_CARD_KEYS.includes(key)) return 'boolean';
+    if (['maintenance_mode', 'allow_registration', 'whitelist_auto_approve'].includes(key) || PUBLIC_CARD_KEYS.includes(key)) return 'boolean';
     if (['site_description', 'about_subtitle', 'about_card1_text', 'about_card2_text', 'contact_subtitle'].includes(key)) return 'textarea';
     if (key === 'contact_email') return 'email';
     return 'text';

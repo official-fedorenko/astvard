@@ -461,6 +461,14 @@
     .btn-save:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 8px 20px rgba(138,43,226,0.3); }
     .btn-save:active { transform: translateY(0); }
     .btn-save:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    /* Подпись под полем: зачем оно и что будет, если не заполнять. */
+    .field-hint {
+      margin-top: 6px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+    }
+
     /* Тот же вид, но ссылкой: у <a> нет браузерного центрирования текста. */
     .btn-save-link { display: block; text-align: center; text-decoration: none; }
     /* Длинный SteamID64 не должен растягивать карточку вбок. */
@@ -656,8 +664,10 @@
           <div class="cbody">
 
           <div class="form-group">
-            <label>Имя пользователя</label>
-            <div class="input-readonly" id="displayUsername">...</div>
+            <label for="usernameInput">Ник на сайте</label>
+            <input type="text" id="usernameInput" class="form-input" maxlength="20"
+                   placeholder="Как тебя звать на сайте">
+            <div class="field-hint" id="usernameHint">Пришёл из Steam при первом входе. Можно сменить.</div>
           </div>
 
           <div class="form-group">
@@ -690,21 +700,25 @@
           </div>
 
           <form id="profileForm">
-            <div class="form-group">
-              <label for="emailInput">Email</label>
-              <input type="email" id="emailInput" placeholder="Ваш email..." required>
-            </div>
-
             <hr class="section-divider">
-            <div class="section-label">Смена пароля (необязательно)</div>
+            <div class="section-label" id="extraLabel">Дополнить аккаунт (необязательно)</div>
+            <div class="field-hint" id="extraHint">
+              На сервер пускают по номеру Steam, так что почта и пароль не нужны. Почта —
+              чтобы было куда написать, пароль — чтобы войти, когда Steam недоступен.
+            </div>
 
             <div class="form-group">
+              <label for="emailInput">Почта</label>
+              <input type="email" id="emailInput" class="form-input" placeholder="Необязательно">
+            </div>
+
+            <div class="form-group" id="currentPasswordGroup">
               <label for="currentPassword">Текущий пароль</label>
-              <input type="password" id="currentPassword" placeholder="Введите текущий пароль...">
+              <input type="password" id="currentPassword" class="form-input" placeholder="Нужен, чтобы сменить пароль">
             </div>
             <div class="form-group">
-              <label for="newPassword">Новый пароль</label>
-              <input type="password" id="newPassword" placeholder="Минимум 8 символов...">
+              <label for="newPassword" id="newPasswordLabel">Новый пароль</label>
+              <input type="password" id="newPassword" class="form-input" placeholder="Минимум 8 символов">
             </div>
 
             <button type="submit" class="btn-save" id="saveBtn">Сохранить изменения</button>
@@ -1519,8 +1533,17 @@
       else if (user.role === 'Admin') roleText = 'Администратор';
       
       document.getElementById('heroRole').textContent = roleText;
-      document.getElementById('displayUsername').textContent = user.username;
-      document.getElementById('emailInput').value = user.email;
+      document.getElementById('usernameInput').value = user.username || '';
+      document.getElementById('emailInput').value = user.email || '';
+
+      // Пароля может не быть вовсе: аккаунт из Steam заводится без него. Тогда и
+      // спрашивать «текущий» не у чего.
+      const hasPassword = !!user.has_password;
+      document.getElementById('currentPasswordGroup').style.display = hasPassword ? '' : 'none';
+      document.getElementById('newPasswordLabel').textContent = hasPassword ? 'Новый пароль' : 'Пароль для входа';
+      document.getElementById('usernameHint').textContent = user.steam_id
+        ? 'Пришёл из Steam при первом входе. Можно сменить.'
+        : 'Под этим именем ты входишь на сайт.';
 
       const isAdminUser = user.role === 'Admin' || user.role === 'Superadmin';
       if (isAdminUser) {
@@ -1582,23 +1605,29 @@
     document.getElementById('profileForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('saveBtn');
+      const username = document.getElementById('usernameInput').value.trim();
       const email = document.getElementById('emailInput').value.trim();
       const currentPassword = document.getElementById('currentPassword').value;
       const newPassword = document.getElementById('newPassword').value;
+      const hasPassword = document.getElementById('currentPasswordGroup').style.display !== 'none';
 
-      if (!email) { showToast('Введите email', 'error'); return; }
-      if (newPassword && newPassword.length < 6) {
-        showToast('Новый пароль слишком короткий (минимум 6 символов)', 'error'); return;
+      if (!username) { showToast('Ник не может быть пустым', 'error'); return; }
+      if (newPassword && newPassword.length < 8) {
+        showToast('Пароль должен быть минимум 8 символов', 'error'); return;
       }
-      if (newPassword && !currentPassword) {
-        showToast('Для смены пароля введите текущий пароль', 'error'); return;
+      if (newPassword && hasPassword && !currentPassword) {
+        showToast('Чтобы сменить пароль, впиши текущий', 'error'); return;
       }
 
       btn.disabled = true;
       btn.textContent = 'Сохраняем...';
 
-      const payload = { email };
-      if (newPassword) { payload.password = newPassword; payload.currentPassword = currentPassword; }
+      const payload = { username };
+      if (email) payload.email = email;
+      if (newPassword) {
+        payload.password = newPassword;
+        if (hasPassword) payload.currentPassword = currentPassword;
+      }
 
       try {
         const res = await fetch('/api/cabinet/profile', {
@@ -1611,6 +1640,7 @@
         if (res.ok && data.success) {
           showToast(data.message || 'Профиль успешно обновлён', 'success');
           document.getElementById('heroEmail').textContent = email;
+          document.getElementById('heroUsername').textContent = username;
           document.getElementById('currentPassword').value = '';
           document.getElementById('newPassword').value = '';
           // Refresh profile to get new avatar if any

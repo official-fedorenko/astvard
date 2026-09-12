@@ -2,6 +2,7 @@ const { db } = require('../../db');
 const { sendJson, getJsonBody, logAction } = require('../utils');
 const { parseSteamId64, toPermittedListId, toAdminListIds } = require('../steamId');
 const { fetchPersonaName, fallbackNickname } = require('../steamProfile');
+const { applyGameLists, applyGameListsQuietly } = require('../gameLists');
 
 const MAX_NOTE_LENGTH = 500;
 
@@ -40,6 +41,13 @@ async function actorOf(sessionUser) {
 
 const isAdmin = (actor) => actor && (actor.role === 'Admin' || actor.role === 'Superadmin');
 
+// Принимать ли заявки самому. Настройка, а не код: у сервера бывают недели, когда
+// пускают всех подряд, и недели, когда каждого смотрят глазами.
+async function autoApproveOn() {
+  const row = await get("SELECT value FROM settings WHERE key = 'whitelist_auto_approve'");
+  return !!row && row.value === 'true';
+}
+
 function grant(userId, actorId) {
   return run(
     `UPDATE users
@@ -70,6 +78,24 @@ async function request(req, res, sessionUser) {
   }
   const note = readNote(body.note, 'Сообщение');
   if (note.error) return sendJson(res, 400, { success: false, message: note.error });
+
+  if (await autoApproveOn()) {
+    // Решение принято заранее, настройкой. Записываем заявку и тут же отвечаем на
+    // неё: в таблице останется видно, что человек просил и когда.
+    await run(
+      `UPDATE users
+       SET whitelist_status = 'approved', whitelist_requested_at = CURRENT_TIMESTAMP,
+           whitelist_request_note = ?, whitelist_note = NULL,
+           whitelist_decided_at = CURRENT_TIMESTAMP, whitelist_decided_by = NULL
+       WHERE id = ?`,
+      [note.note, actor.id]
+    );
+    logAction(actor.username, 'Запросил доступ — принят автоматически');
+    // Список на сервере обновляется сразу: иначе «доступ открыт» на сайте и отказ
+    // в игре разошлись бы ровно в ту минуту, когда человек пошёл заходить.
+    await applyGameListsQuietly('автоприём заявки');
+    return sendJson(res, 200, { success: true, auto: true });
+  }
 
   await run(
     `UPDATE users
@@ -137,6 +163,7 @@ async function add(req, res, actor) {
 
   await grant(user.id, actor.id);
   logAction(actor.username, `Выдал доступ: ${user.username}`);
+  await applyGameListsQuietly('выдача доступа');
   sendJson(res, 201, { success: true, user: await get('SELECT * FROM users WHERE id = ?', [user.id]) });
 }
 
@@ -183,6 +210,7 @@ async function decide(req, res, actor, id) {
 
   const user = await get('SELECT * FROM users WHERE id = ?', [id]);
   logAction(actor.username, `Вайтлист ${status}: ${user ? user.username : id}`);
+  await applyGameListsQuietly(`решение по вайтлисту (${status})`);
   sendJson(res, 200, { success: true, user });
 }
 
@@ -210,7 +238,10 @@ async function setServerAdmin(req, res, actor, id) {
     return sendJson(res, 404, { success: false, message: 'Игрок не найден или у него не привязан Steam' });
   }
   logAction(actor.username, `Админка в игре ${body.server_admin ? 'выдана' : 'снята'}: id ${id}`);
-  sendJson(res, 200, { success: true });
+  // Ради этого всё и делалось: галка в панели сама доезжает до adminlist.txt, и
+  // сервер перечитывает его секунд за десять.
+  const applied = await applyGameListsQuietly('админка в игре');
+  sendJson(res, 200, { success: true, applied: !!applied });
 }
 
 // An empty permittedlist.txt does not mean "nobody in": the server reads it as "let
@@ -244,6 +275,21 @@ async function adminList(req, res) {
   sendText(res, 'adminlist.txt', lines.length ? `${lines.join('\n')}\n` : '');
 }
 
+// Кнопка «Применить на сервере» — на случай, когда файлы разъехались с базой:
+// сервер переустановили, файл вернули из бэкапа, кто-то правил его руками.
+async function applyNow(req, res, actor) {
+  try {
+    const result = await applyGameLists();
+    logAction(actor.username, 'Положил списки доступа на игровой сервер');
+    sendJson(res, 200, { success: true, result });
+  } catch (err) {
+    sendJson(res, 500, {
+      success: false,
+      message: `Не удалось записать списки в ${err.path || 'папку сохранений'}: ${err.code || err.message}`
+    });
+  }
+}
+
 module.exports = async function handleWhitelist(req, res, sessionUser, parsedUrl, method) {
   const pathname = parsedUrl.pathname;
 
@@ -258,6 +304,7 @@ module.exports = async function handleWhitelist(req, res, sessionUser, parsedUrl
 
   if (pathname === '/api/admin/whitelist' && method === 'GET') return list(req, res);
   if (pathname === '/api/admin/whitelist' && method === 'POST') return add(req, res, actor);
+  if (pathname === '/api/admin/whitelist/apply' && method === 'POST') return applyNow(req, res, actor);
   if (pathname === '/api/admin/whitelist/permittedlist' && method === 'GET') return permittedList(req, res);
   if (pathname === '/api/admin/whitelist/adminlist' && method === 'GET') return adminList(req, res);
 

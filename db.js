@@ -214,7 +214,8 @@ const SCHEMA_FILE = path.join(__dirname, 'db', 'schema.sql');
 const DEFAULT_SETTINGS = [
   ['site_name', 'Astvard', 'Название вашего веб-ресурса'],
   ['maintenance_mode', 'false', 'Включить/выключить режим обслуживания'],
-  ['allow_registration', 'true', 'Разрешить самостоятельную регистрацию пользователей'],
+  ['allow_registration', 'true', 'Принимать новых игроков: незнакомый Steam заводит аккаунт при первом входе'],
+  ['whitelist_auto_approve', 'false', 'Принимать заявки на сервер сразу, без решения админа'],
   ['hero_title', 'Astvard — портал игровых серверов', 'Заголовок главного баннера'],
   ['site_description', 'Наши серверы, доступ к ним и всё, что вокруг игры.', 'Описание под заголовком баннера'],
   ['about_title', 'Об Astvard', 'О блоге: Заголовок раздела'],
