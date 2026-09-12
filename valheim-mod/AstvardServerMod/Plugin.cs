@@ -71,6 +71,8 @@ namespace AstvardServerMod
             BindBuildPause(Config);
             BindPlayerRules(Config);
             BindCurrency(Config);
+            BindWorldRates(Config);
+            BindSiteLists(Config);
 
             _harmony = new Harmony("astvard.servermod");
             _harmony.PatchAll();

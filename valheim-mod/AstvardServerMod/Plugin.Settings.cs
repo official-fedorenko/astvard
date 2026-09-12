@@ -75,6 +75,8 @@ namespace AstvardServerMod
                 OpenRulePage(StateRuneMinutes);
             });
 
+            CreateWorldRateWidgets(gui);
+
             RulesHint = MakeText(gui, "");
 
             PlayerCooldownButton = MakeButton(gui, "", () =>
@@ -218,6 +220,7 @@ namespace AstvardServerMod
                 : "Пауза построек: нет");
             SetLabel(AllowedListButton, $"Шаблоны игрокам: {PlayerTemplates.Count}");
             SetLabel(RuneMinutesButton, $"Руна за {RuneTime(_runeMinutes)}");
+            SetLabel(ResourceRateButton, $"Ресурсы: {MultiplierText(ClientResourceMultiplier())}");
 
             for (var i = 0; i < PlayerRules.Length; i++)
                 SetLabel(PlayerRuleButtons[i], RuleLabel(PlayerRules[i]));
@@ -284,11 +287,17 @@ namespace AstvardServerMod
             SetActive(TerrainRulesButton, settings);
             SetActive(FeatureRulesButton, settings);
             SetActive(RuneMinutesButton, settings);
+            SetActive(ResourceRateButton, settings);
 
             var runes = admin && MenuState == StateRuneMinutes;
             SetActive(RuneMinutesHint, runes);
             SetActive(RuneMinutesInput, runes);
             SetActive(RuneMinutesApply, runes);
+
+            var rates = admin && MenuState == StateResourceRate;
+            SetActive(ResourceRateHint, rates);
+            SetActive(ResourceRateInput, rates);
+            SetActive(ResourceRateApply, rates);
 
             var group = MenuState == StateTerrainRules ? RuleGroup.Terrain
                 : MenuState == StateBuildRules ? RuleGroup.Build

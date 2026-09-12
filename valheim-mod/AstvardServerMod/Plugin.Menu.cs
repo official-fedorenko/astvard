@@ -65,6 +65,7 @@ namespace AstvardServerMod
         private const int StatePlayerTemplates = 47; // у игрока: шаблоны сервера, открытые ему
         private const int StatePlayerZone = 48;   // у игрока: его зона автоматики
         private const int StateRuneMinutes = 49;  // сколько минут в игре даёт руну
+        private const int StateResourceRate = 52; // во сколько раз больше ресурсов
         private const int StateWallHeight = 50;   // высота стены по краю пола, из «Заполнить»
         private const int StateBuildSettings = 51; // как ставятся постройки: прилипание, выравнивание, снос
 
@@ -1010,6 +1011,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateTerrainRules || MenuState == StateBuildRules
                          || MenuState == StateFeatureRules) MenuState = StateSettings;
                 else if (MenuState == StateRuneMinutes) MenuState = StateSettings;
+                else if (MenuState == StateResourceRate) MenuState = StateSettings;
                 else if (MenuState == StateSettings) MenuState = StateAdmin;
                 else if (MenuState == StatePlayerTemplates) MenuState = StatePlayerBuild;
                 else if (MenuState == StatePlayerZone) MenuState = StateFeatures;

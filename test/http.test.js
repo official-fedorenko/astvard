@@ -28,6 +28,8 @@ const os = require('node:os');
 const fsSync = require('node:fs');
 const SAVES_DIR = fsSync.mkdtempSync(require('node:path').join(os.tmpdir(), 'astvard-saves-'));
 process.env.VALHEIM_SAVES_DIR = SAVES_DIR;
+// Токен, по которому мод игрового сервера забирает списки доступа.
+process.env.GAME_LISTS_TOKEN = 'test-lists-token-0123456789';
 
 const server = require('../server');
 const { db, pool, dbReady, seedDefaults, hashPassword } = require('../db');
@@ -550,4 +552,34 @@ test('админку в игре даёт только суперадмин и �
   });
   assert.strictEqual(revoked.status, 200);
   assert.doesNotMatch(fsSync.readFileSync(path.join(SAVES_DIR, 'adminlist.txt'), 'utf8'), /76561198000000910/);
+});
+
+// === Мод забирает списки доступа по токену ===
+test('списки для мода отдаются только по верному токену и в виде, который читает игра', async () => {
+  const lines = (text) => text.split(String.fromCharCode(10)).map((l) => l.trim()).filter(Boolean);
+
+  const noToken = await fetch(`${baseUrl}/api/game/lists`);
+  assert.strictEqual(noToken.status, 401, 'без токена — отказ');
+
+  const wrong = await fetch(`${baseUrl}/api/game/lists`, { headers: { Authorization: 'Bearer test-lists-token-WRONG-6789' } });
+  assert.strictEqual(wrong.status, 401, 'чужой токен той же длины — тоже отказ');
+
+  await new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO users (username, role, steam_id, steam_id_verified, whitelist_status, whitelist_decided_at, server_admin)
+       VALUES (?, 'User', ?, 1, 'approved', now(), 1)`,
+      ['Сванхильд', '76561198000000920'],
+      (err) => (err ? reject(err) : resolve())
+    );
+  });
+
+  const ok = await fetch(`${baseUrl}/api/game/lists`, { headers: { Authorization: 'Bearer test-lists-token-0123456789' } });
+  assert.strictEqual(ok.status, 200);
+  const got = lines(await ok.text());
+  const permittedAt = got.indexOf('[permitted]');
+  const adminsAt = got.indexOf('[admins]');
+  assert.ok(permittedAt === 0 && adminsAt > permittedAt, 'две секции по порядку');
+  assert.ok(got.slice(permittedAt + 1, adminsAt).includes('V_76561198000000920'), 'доступ — с префиксом V_');
+  const admins = got.slice(adminsAt + 1);
+  assert.ok(admins.includes('V_76561198000000920') && admins.includes('Steam_76561198000000920'), 'админ — обеими формами');
 });

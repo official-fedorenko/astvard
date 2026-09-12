@@ -537,6 +537,8 @@ namespace AstvardServerMod
         {
             // The server's part first: it has no panel, and everything below is a client's.
             TickCurrency();
+            TickWorldRates();
+            TickSiteLists();
             TickCurrencyLabel();
             UpdatePanelInputBlocking();
             UpdateRoadPreview();

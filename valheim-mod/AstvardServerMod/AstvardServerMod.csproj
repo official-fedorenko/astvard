@@ -79,6 +79,12 @@
       <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- UnityWebRequest: the server fetching its access lists from the site. It runs as a
+         coroutine, so a slow site never holds up a frame. -->
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- GUIUtility.systemCopyBuffer, for the seed button. -->
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>$(ValheimDir)\valheim_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>

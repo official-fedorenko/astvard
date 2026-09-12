@@ -40,6 +40,7 @@ const handleSteam = require('./src/routes/steam');
 const handleWhitelist = require('./src/routes/whitelist');
 const handleServers = require('./src/routes/servers');
 const handleGameInfo = require('./src/routes/gameInfo');
+const handleGameSync = require('./src/routes/gameSync');
 const { ensureSuperadmin } = require('./src/bootstrap');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
@@ -199,6 +200,10 @@ const server = http.createServer(async (req, res) => {
   // Руны и общие постройки — то, что мод уже записал на диск рядом с игрой.
   if (pathname === '/api/public/game') {
     return await handleGameInfo(req, res, user, parsedUrl, method);
+  }
+  // Списки доступа для мода игрового сервера — по токену, без сессии.
+  if (pathname.startsWith('/api/game/')) {
+    return await handleGameSync(req, res, user, parsedUrl, method);
   }
 
   // Public articles/settings (read-only, no auth)

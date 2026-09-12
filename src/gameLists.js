@@ -118,4 +118,4 @@ async function applyGameListsQuietly(reason) {
   }
 }
 
-module.exports = { applyGameLists, applyGameListsQuietly, SAVES_DIR };
+module.exports = { applyGameLists, applyGameListsQuietly, permittedLines, adminLines, SAVES_DIR };
