@@ -25,8 +25,23 @@
         никнейм в таблице — он приходит из Steam. Не тот человек — отклони запись.
       </p>
 
+      <h3>Заявки</h3>
       <div class="table-scroll">
-        <table id="whitelist-table">
+        <table id="requests-table">
+          <thead>
+            <tr>
+              <th>Никнейм</th><th>Steam ID</th><th>Статус</th><th>Сообщение</th>
+              <th>Когда</th><th>Админка</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3>Доступ на сервер</h3>
+      <p class="muted" id="access-count"></p>
+      <div class="table-scroll">
+        <table id="access-table">
           <thead>
             <tr>
               <th>Никнейм</th><th>Steam ID</th><th>Статус</th><th>Сообщение</th>
@@ -53,6 +68,8 @@
 
     <section>
       <h2>Пользователи</h2>
+      <p class="muted" id="roles-summary"></p>
+      <p class="error" id="users-error"></p>
       <div class="table-scroll">
         <table id="users-table">
           <thead>

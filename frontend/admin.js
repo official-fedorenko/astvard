@@ -1,7 +1,9 @@
 const ROLES = ['player', 'admin', 'superadmin'];
 
 const WHITELIST_LABELS = {
-  none: 'не привязан',
+  // The table holds everyone who linked Steam, so 'none' is about access, not about
+  // Steam: "не привязан" here would be about the one thing that is definitely true.
+  none: 'нет доступа',
   pending: 'ждёт решения',
   approved: 'одобрен',
   rejected: 'отклонён',
@@ -11,20 +13,16 @@ const WHITELIST_LABELS = {
 // action, so a plain admin is not shown a checkbox that would answer 403.
 let isSuperadmin = false;
 
-async function loadWhitelist() {
-  const { requests } = await apiFetch('/api/admin/whitelist');
-  const tbody = document.querySelector('#whitelist-table tbody');
-  if (requests.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="muted">Заявок пока нет.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = requests.map((r) => {
-    const when = r.whitelist_requested_at || r.whitelist_decided_at;
-    const adminCell = isSuperadmin
-      ? `<label class="admin-toggle"><input type="checkbox" class="wl-server-admin"
-           data-id="${escapeHtml(r.id)}" ${r.server_admin ? 'checked' : ''}> в игре</label>`
-      : (r.server_admin ? 'да' : '—');
-    return `
+// Two tables out of one list, because they are read at different moments: заявки
+// are what someone has to answer today, доступ is who can get onto the server right
+// now. Mixed in one table the pending rows kept sinking under the granted ones.
+function renderRow(r, actions) {
+  const when = r.whitelist_decided_at || r.whitelist_requested_at;
+  const adminCell = isSuperadmin
+    ? `<label class="admin-toggle"><input type="checkbox" class="wl-server-admin"
+         data-id="${escapeHtml(r.id)}" ${r.server_admin ? 'checked' : ''}> в игре</label>`
+    : (r.server_admin ? 'да' : '—');
+  return `
     <tr>
       <td>${escapeHtml(r.nickname)}</td>
       <td>
@@ -35,14 +33,43 @@ async function loadWhitelist() {
       <td class="muted">${r.whitelist_request_note ? escapeHtml(r.whitelist_request_note) : '—'}</td>
       <td>${when ? new Date(when).toLocaleString() : '—'}</td>
       <td>${adminCell}</td>
-      <td>
-        <button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-primary wl-approve">Одобрить</button>
-        <button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-ghost wl-reject">Отклонить</button>
-      </td>
+      <td class="row-actions">${actions}</td>
     </tr>`;
-  }).join('');
+}
 
-  tbody.querySelectorAll('.wl-server-admin').forEach((box) => {
+function fill(tbody, rows, emptyText) {
+  tbody.innerHTML = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="7" class="muted">${emptyText}</td></tr>`;
+}
+
+async function loadWhitelist() {
+  const { people } = await apiFetch('/api/admin/whitelist');
+
+  const pending = people.filter((r) => r.whitelist_status === 'pending');
+  const rest = people.filter((r) => r.whitelist_status !== 'pending');
+
+  fill(
+    document.querySelector('#requests-table tbody'),
+    pending.map((r) => renderRow(r, `
+      <button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-primary wl-approve">Одобрить</button>
+      <button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-ghost wl-reject">Отклонить</button>`)),
+    'Новых заявок нет.'
+  );
+
+  fill(
+    document.querySelector('#access-table tbody'),
+    rest.map((r) => renderRow(r, r.whitelist_status === 'approved'
+      ? `<button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-danger wl-revoke">Забрать доступ</button>`
+      : `<button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-primary wl-approve">Выдать доступ</button>`)),
+    'Никто ещё не привязал Steam.'
+  );
+
+  document.getElementById('access-count').textContent =
+    `Доступ открыт: ${people.filter((r) => r.whitelist_status === 'approved').length}`
+    + ` из ${people.length} привязавших Steam.`;
+
+  document.querySelectorAll('.wl-server-admin').forEach((box) => {
     box.addEventListener('change', async () => {
       try {
         await apiFetch(`/api/admin/whitelist/${box.dataset.id}/server-admin`, {
@@ -57,16 +84,26 @@ async function loadWhitelist() {
     });
   });
 
-  tbody.querySelectorAll('.wl-approve').forEach((btn) => {
+  document.querySelectorAll('.wl-approve').forEach((btn) => {
     btn.addEventListener('click', () => decide(btn.dataset.id, 'approved', null));
   });
-  tbody.querySelectorAll('.wl-reject').forEach((btn) => {
+  document.querySelectorAll('.wl-reject').forEach((btn) => {
     btn.addEventListener('click', () => {
       // The player is shown this line, so it is worth a word. Cancel means cancel;
       // an empty note is fine.
       const note = window.prompt('Причина отказа (увидит игрок, можно оставить пустым):');
       if (note === null) return;
       decide(btn.dataset.id, 'rejected', note);
+    });
+  });
+  // Taking access away kicks whoever is on the server as soon as the list is put
+  // back, so it asks first.
+  document.querySelectorAll('.wl-revoke').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = btn.closest('tr');
+      const who = row ? row.firstElementChild.textContent.trim() : 'игрока';
+      if (!window.confirm(`Забрать доступ у ${who}? Он пропадёт из permittedlist.txt, и админка в игре тоже снимется.`)) return;
+      decide(btn.dataset.id, 'none', null);
     });
   });
 }
@@ -111,10 +148,22 @@ async function loadServerList(path, emptyMessage) {
 async function loadUsers() {
   const { users } = await apiFetch('/api/admin/users');
   const tbody = document.querySelector('#users-table tbody');
-  tbody.innerHTML = users.map((u) => `
+
+  const named = (role) => users.filter((u) => u.role === role).map((u) => u.nickname);
+  const supers = named('superadmin');
+  const admins = named('admin');
+  document.getElementById('roles-summary').textContent =
+    `Суперадмины: ${supers.length ? supers.join(', ') : 'нет'}. `
+    + `Админы: ${admins.length ? admins.join(', ') : 'нет'}. `
+    + `Всего аккаунтов: ${users.length}.`;
+
+  const rank = (u) => ROLES.length - ROLES.indexOf(u.role);
+  const sorted = [...users].sort((a, b) => rank(a) - rank(b) || a.nickname.localeCompare(b.nickname));
+
+  tbody.innerHTML = sorted.map((u) => `
     <tr>
       <td>${escapeHtml(u.nickname)}</td>
-      <td>${escapeHtml(u.email)}</td>
+      <td>${u.email ? escapeHtml(u.email) : '<span class="muted">через Steam</span>'}</td>
       <td>
         <select data-id="${escapeHtml(u.id)}" class="role-select">
           ${ROLES.map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
@@ -125,11 +174,22 @@ async function loadUsers() {
   `).join('');
 
   tbody.querySelectorAll('.role-select').forEach((sel) => {
+    // What the select shows has to be what the server agreed to. A refusal — the
+    // rank of superadmin from a plain admin, or your own role — used to leave the
+    // new value sitting in the box as if it had been applied.
+    const was = sel.value;
     sel.addEventListener('change', async () => {
-      await apiFetch(`/api/admin/users/${sel.dataset.id}/role`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role: sel.value }),
-      });
+      document.getElementById('users-error').textContent = '';
+      try {
+        await apiFetch(`/api/admin/users/${sel.dataset.id}/role`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role: sel.value }),
+        });
+        loadUsers();
+      } catch (err) {
+        sel.value = was;
+        document.getElementById('users-error').textContent = err.message;
+      }
     });
   });
 }

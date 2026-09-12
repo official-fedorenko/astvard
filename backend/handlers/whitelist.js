@@ -5,14 +5,17 @@ const { findUserById, findUserBySteamId, createSteamUser } = require('../users')
 const {
   requestWhitelist,
   grantWhitelist,
-  listWhitelistRequests,
+  revokeWhitelist,
+  listWhitelistPeople,
   decideWhitelist,
   listApprovedSteamIds,
   setServerAdmin,
   listServerAdmins,
 } = require('../whitelist');
 
-const VALID_DECISIONS = ['approved', 'rejected'];
+// Three things an admin can do to a row: let in, refuse a request, take access
+// back. 'none' is the last one — see revokeWhitelist for why it is not 'rejected'.
+const VALID_DECISIONS = ['approved', 'rejected', 'none'];
 const MAX_NOTE_LENGTH = 500;
 
 function readNote(value, field) {
@@ -146,8 +149,8 @@ async function getAdminList(req, res) {
 }
 
 async function getRequests(req, res) {
-  const requests = await listWhitelistRequests();
-  sendJson(res, 200, { requests });
+  const people = await listWhitelistPeople();
+  sendJson(res, 200, { people });
 }
 
 async function decide(req, res, params) {
@@ -158,7 +161,7 @@ async function decide(req, res, params) {
     return sendJson(res, 400, { error: 'Некорректный запрос' });
   }
   if (!VALID_DECISIONS.includes(body.status)) {
-    return sendJson(res, 400, { error: 'Решение: approved или rejected' });
+    return sendJson(res, 400, { error: 'Решение: approved, rejected или none' });
   }
 
   const id = Number(params.id);
@@ -172,7 +175,19 @@ async function decide(req, res, params) {
   }
   const note = decided.note;
 
-  const user = await decideWhitelist({ userId: id, status: body.status, note, actorId: req.user.sub });
+  // Letting someone in goes through grantWhitelist, which asks only for a steam_id:
+  // an admin hands access to a player who never applied as often as he answers an
+  // application, and decideWhitelist refuses a row that never asked on purpose.
+  // Refusing stays with decideWhitelist and keeps that guard — there is nothing to
+  // refuse where nothing was asked.
+  let user;
+  if (body.status === 'approved') {
+    user = await grantWhitelist({ userId: id, actorId: req.user.sub });
+  } else if (body.status === 'none') {
+    user = await revokeWhitelist({ userId: id, actorId: req.user.sub });
+  } else {
+    user = await decideWhitelist({ userId: id, status: body.status, note, actorId: req.user.sub });
+  }
   if (!user) {
     return sendJson(res, 404, { error: 'Заявка не найдена' });
   }

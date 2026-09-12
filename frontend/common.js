@@ -44,7 +44,10 @@ function renderNav(el, user) {
     }
     links.push('<button type="button" class="link-button" id="logout">Выйти</button>');
   } else {
-    links.push('<a href="/login.html">Вход</a>', '<a href="/register.html">Регистрация</a>');
+    links.push(
+      '<a href="/login.html">Вход</a>',
+      '<a class="btn btn-sm btn-primary" href="/register.html">Регистрация</a>'
+    );
   }
   el.innerHTML = links.join(' · ');
 

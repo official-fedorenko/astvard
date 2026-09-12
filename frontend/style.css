@@ -106,6 +106,19 @@ h2 {
   color: #e8e6f0;
 }
 
+h3 {
+  color: #e8e6f0;
+  font-size: 15px;
+  margin: 24px 0 8px;
+}
+
+/* Buttons inside a table cell: they wrap on a phone instead of widening the table. */
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .card {
   background: #14131c;
   border: 1px solid #201f2b;
