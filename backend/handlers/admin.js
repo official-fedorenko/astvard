@@ -88,11 +88,14 @@ async function postServer(req, res) {
   } catch {
     return sendJson(res, 400, { error: 'Некорректный запрос' });
   }
-  const { name, host, port } = body;
+  const { name, host, port, probe = 'a2s' } = body;
   if (!name || !host || !Number.isInteger(port)) {
     return sendJson(res, 400, { error: 'name, host, port обязательны' });
   }
-  const server = await createServer({ name, host, port });
+  if (probe !== 'a2s' && probe !== 'valheim-log') {
+    return sendJson(res, 400, { error: 'Неизвестный способ проверки статуса' });
+  }
+  const server = await createServer({ name, host, port, probe });
   await refreshServerStatus(server);
   sendJson(res, 201, { server });
 }

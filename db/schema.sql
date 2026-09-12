@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS servers (
   name           TEXT NOT NULL,
   host           TEXT NOT NULL,
   port           INTEGER NOT NULL,
+  -- How this server's status is checked. 'a2s' asks it over the network; a
+  -- Valheim server with -public 0 answers nothing there, so 'valheim-log' reads the
+  -- heartbeat out of the log file the server on this machine writes.
+  probe          TEXT NOT NULL DEFAULT 'a2s' CHECK (probe IN ('a2s', 'valheim-log')),
   is_online      BOOLEAN,
   players        INTEGER,
   max_players    INTEGER,
@@ -67,6 +71,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS whitelist_request_note TEXT;
 -- column existed, and claiming Steam vouched for it would be a guess.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS steam_id_verified BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS server_admin BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS probe TEXT NOT NULL DEFAULT 'a2s'
+  CHECK (probe IN ('a2s', 'valheim-log'));
 
 -- Steam accounts have neither of these; see the comment on the columns above.
 -- DROP NOT NULL on a column that is already nullable does nothing, so this is

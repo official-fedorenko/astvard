@@ -36,8 +36,8 @@ async function loadWhitelist() {
       <td>${when ? new Date(when).toLocaleString() : '—'}</td>
       <td>${adminCell}</td>
       <td>
-        <button data-id="${escapeHtml(r.id)}" class="wl-approve">Одобрить</button>
-        <button data-id="${escapeHtml(r.id)}" class="wl-reject">Отклонить</button>
+        <button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-primary wl-approve">Одобрить</button>
+        <button data-id="${escapeHtml(r.id)}" class="btn btn-sm btn-ghost wl-reject">Отклонить</button>
       </td>
     </tr>`;
   }).join('');
@@ -144,7 +144,7 @@ async function loadServers() {
       <td class="status ${s.is_online ? 'online' : 'offline'}">${s.is_online ? '● online' : '○ offline'}</td>
       <td>${s.is_online && s.players !== null ? `${s.players}/${s.max_players}` : '—'}</td>
       <td>${s.last_checked_at ? new Date(s.last_checked_at).toLocaleTimeString() : '—'}</td>
-      <td><button data-id="${escapeHtml(s.id)}" class="delete-server">Удалить</button></td>
+      <td><button data-id="${escapeHtml(s.id)}" class="btn btn-sm btn-danger delete-server">Удалить</button></td>
     </tr>
   `).join('');
 
@@ -165,6 +165,7 @@ document.getElementById('add-server-form').addEventListener('submit', async (e) 
       name: form.name.value,
       host: form.host.value,
       port: Number(form.port.value),
+      probe: form.probe.value,
     }),
   });
   form.reset();
@@ -209,6 +210,7 @@ document.getElementById('add-entry-form').addEventListener('submit', async (e) =
     window.location.href = '/';
     return;
   }
+  renderNav(document.getElementById('nav'), user);
   isSuperadmin = user.role === 'superadmin';
   loadWhitelist();
   loadUsers();

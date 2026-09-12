@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1><a href="/">Astvard</a></h1>
-    <nav><a href="/cabinet.html">Кабинет</a></nav>
+    <nav id="nav"></nav>
   </header>
   <main class="wide">
     <section>
@@ -17,7 +17,7 @@
 
       <form id="add-entry-form" class="inline-form">
         <input type="text" name="steam_id" placeholder="SteamID64 или ссылка на профиль" required>
-        <button type="submit">Добавить в вайтлист</button>
+        <button type="submit" class="btn btn-primary">Добавить в вайтлист</button>
       </form>
       <p class="error" id="add-entry-error"></p>
       <p class="muted">
@@ -38,8 +38,10 @@
       </div>
 
       <div class="card">
-        <button id="permittedlist-btn">Собрать permittedlist.txt</button>
-        <button id="adminlist-btn">Собрать adminlist.txt</button>
+        <div class="btn-row">
+          <button id="permittedlist-btn" class="btn btn-ghost">Собрать permittedlist.txt</button>
+          <button id="adminlist-btn" class="btn btn-ghost">Собрать adminlist.txt</button>
+        </div>
         <p class="error" id="permittedlist-error"></p>
         <pre id="permittedlist-out" hidden></pre>
         <p id="permittedlist-hint" class="muted" hidden>
@@ -67,9 +69,13 @@
         <input type="text" name="name" placeholder="Название" required>
         <input type="text" name="host" placeholder="Хост/IP" required>
         <input type="number" name="port" placeholder="Порт" required>
-        <button type="submit">Добавить</button>
+        <select name="probe">
+          <option value="a2s">Статус: запрос к серверу</option>
+          <option value="valheim-log">Статус: лог Valheim на этой машине</option>
+        </select>
+        <button type="submit" class="btn btn-primary">Добавить</button>
       </form>
-      <button id="refresh-btn">Обновить статус</button>
+      <div class="btn-row"><button id="refresh-btn" class="btn btn-ghost">Обновить статус</button></div>
       <div class="table-scroll">
         <table id="servers-table">
           <thead>
