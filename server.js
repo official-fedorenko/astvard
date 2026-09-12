@@ -36,6 +36,9 @@ const handleTestTools = require('./src/routes/testTools');
 const handleBackup = require('./src/routes/backup');
 const handleTwoFactor = require('./src/routes/twoFactor');
 const handleAuth = require('./src/routes/auth');
+const handleSteam = require('./src/routes/steam');
+const handleWhitelist = require('./src/routes/whitelist');
+const handleServers = require('./src/routes/servers');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
 
@@ -173,9 +176,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Game side: the whitelist of the Valheim server and the servers' status. These
+  // stand before the public and cabinet blocks because those answer 404 to anything
+  // they do not know themselves.
+  if (pathname === '/api/public/servers' || pathname.startsWith('/api/admin/servers')) {
+    return handleServers(req, res, user, parsedUrl, method);
+  }
+  if (pathname.startsWith('/api/admin/whitelist') || pathname === '/api/cabinet/whitelist/request') {
+    return handleWhitelist(req, res, user, parsedUrl, method);
+  }
+
   // Public articles/settings (read-only, no auth)
   if (pathname.startsWith('/api/public/')) {
     return handlePublic(req, res, parsedUrl, method);
+  }
+
+  // Steam sign-in stands before the auth block on purpose: everything under
+  // /api/auth/ otherwise ends in handleAuth, which answers 404 to what it does not
+  // know. Both of its paths are browser redirects, not JSON calls.
+  if (pathname.startsWith('/api/auth/steam')) {
+    return handleSteam(req, res, user, parsedUrl, method);
   }
 
   // Auth (login/2FA/register/logout/me)
@@ -452,6 +472,14 @@ const server = http.createServer(async (req, res) => {
 // required from a test file, require.main !== module, so tests can bind
 // their own ephemeral port via server.listen(0) instead.
 if (require.main === module) {
+  // Раз в 30 секунд спрашиваем серверы об их состоянии. Первый опрос — сразу,
+  // чтобы страница не ждала полминуты после перезапуска.
+  const STATUS_POLL_INTERVAL_MS = 30_000;
+  const pollStatus = () => handleServers.refreshAllServers()
+    .catch((err) => logger.error('Опрос серверов не удался:', err.message));
+  pollStatus();
+  setInterval(pollStatus, STATUS_POLL_INTERVAL_MS);
+
   server.listen(PORT, () => {
     console.log(`Админка успешно запущена на http://localhost:${PORT}`);
     console.log('='.repeat(70));
