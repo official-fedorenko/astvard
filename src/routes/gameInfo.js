@@ -1,5 +1,6 @@
 const path = require('node:path');
 const { db } = require('../../db');
+const logger = require('../logger');
 const { sendJson } = require('../utils');
 const {
   readRunes,
@@ -21,22 +22,31 @@ const all = (sql, params = []) => new Promise((resolve, reject) => {
   db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
 });
 
+// Файл рун копится годами и не чистится, так что список номеров в нём —
+// величина неизвестная. Один запрос с IN на все сразу однажды упрётся в предел
+// параметров Postgres, поэтому спрашиваем пачками.
+const NAME_LOOKUP_CHUNK = 500;
+
 /**
- * Ник на сайте по номеру Steam. Игрок, которого у нас нет, остаётся под именем
- * своего персонажа — оно и так видно всем на сервере, а вот номер наружу не
- * уходит ни в каком виде: страница открыта всему интернету.
+ * Ник на сайте по номеру Steam. Номер наружу не уходит ни в каком виде: он нужен
+ * только чтобы узнать своего игрока, а страница открыта всему интернету.
  */
 async function namesBySteamId(steamIds) {
-  if (!steamIds.length) return new Map();
-  const placeholders = steamIds.map(() => '?').join(', ');
-  const rows = await all(
-    `SELECT steam_id, username FROM users WHERE steam_id IN (${placeholders})`,
-    steamIds
-  );
-  return new Map(rows.map((r) => [String(r.steam_id), r.username]));
+  const found = new Map();
+  for (let i = 0; i < steamIds.length; i += NAME_LOOKUP_CHUNK) {
+    const chunk = steamIds.slice(i, i + NAME_LOOKUP_CHUNK);
+    if (!chunk.length) continue;
+    const placeholders = chunk.map(() => '?').join(', ');
+    const rows = await all(
+      `SELECT steam_id, username FROM users WHERE steam_id IN (${placeholders})`,
+      chunk
+    );
+    rows.forEach((r) => found.set(String(r.steam_id), r.username));
+  }
+  return found;
 }
 
-async function gameInfo(req, res) {
+async function gameInfoBody(res) {
   const [purses, builds, minutesPerRune] = await Promise.all([
     readRunes(RUNES_FILE),
     readSharedTemplates(TEMPLATES_DIR),
@@ -51,14 +61,15 @@ async function gameInfo(req, res) {
   // задним числом неоткуда. Поэтому цифра честно называется «примерно».
   const players = purses.map((p) => {
     const seconds = p.runes * minutesPerRune * 60 + p.seconds;
+    const known = names.has(p.steamId);
     return {
-      name: names.get(p.steamId) || p.character || 'Викинг',
-      character: p.character || null,
+      // Имя показывается только своим: ник на сайте человек дал нам сам. Имя
+      // персонажа чужого игрока видно на сервере, но это не повод писать его на
+      // странице, открытой всему интернету, — так же решает и список серверов.
+      name: known ? names.get(p.steamId) : 'Гость',
       runes: p.runes,
       hours: Math.round((seconds / 3600) * 10) / 10,
-      // Свой ли это человек на сайте — видно по тому, нашлось ли имя. Полезно
-      // для строки «этого игрока у нас нет», а номер для этого не нужен.
-      known: names.has(p.steamId)
+      known
     };
   }).sort((a, b) => b.runes - a.runes || b.hours - a.hours || a.name.localeCompare(b.name, 'ru'));
 
@@ -71,12 +82,25 @@ async function gameInfo(req, res) {
     },
     builds: builds.map((b) => ({
       name: b.name,
-      category: b.category || 'Без категории',
+      // Мод показывает такой шаблон в «Разном» — пусть и на сайте называется так же.
+      category: b.category || 'Разное',
       author: b.author || null,
       pieces: b.pieces,
       for_players: b.forPlayers
     }))
   });
+}
+
+// Раздел «Наш сервер» переживёт отсутствие данных — страница это умеет, — но не
+// переживёт запроса, который не ответил. Ошибку здесь ловим у себя, чтобы она
+// стала пятисоткой, а не повисшим соединением.
+async function gameInfo(req, res) {
+  try {
+    await gameInfoBody(res);
+  } catch (err) {
+    logger.error('[game] не собрать сведения о сервере:', err.message);
+    sendJson(res, 500, { success: false, message: 'Сведения о сервере сейчас недоступны' });
+  }
 }
 
 module.exports = async function handleGameInfo(req, res, sessionUser, parsedUrl, method) {

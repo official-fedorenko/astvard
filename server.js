@@ -182,14 +182,14 @@ const server = http.createServer(async (req, res) => {
   // stand before the public and cabinet blocks because those answer 404 to anything
   // they do not know themselves.
   if (pathname === '/api/public/servers' || pathname.startsWith('/api/admin/servers')) {
-    return handleServers(req, res, user, parsedUrl, method);
+    return await handleServers(req, res, user, parsedUrl, method);
   }
   if (pathname.startsWith('/api/admin/whitelist') || pathname === '/api/cabinet/whitelist/request') {
-    return handleWhitelist(req, res, user, parsedUrl, method);
+    return await handleWhitelist(req, res, user, parsedUrl, method);
   }
   // Руны и общие постройки — то, что мод уже записал на диск рядом с игрой.
   if (pathname === '/api/public/game') {
-    return handleGameInfo(req, res, user, parsedUrl, method);
+    return await handleGameInfo(req, res, user, parsedUrl, method);
   }
 
   // Public articles/settings (read-only, no auth)

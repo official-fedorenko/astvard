@@ -424,15 +424,19 @@ test('game info: руны и постройки читаются из файло
   assert.strictEqual(ours.hours, 2.7);
 
   const guest = players.find(p => !p.known);
-  assert.strictEqual(guest.name, 'Gость-Neznakomyi', 'чужой — под именем персонажа');
+  assert.strictEqual(guest.name, 'Гость', 'чужого игрока не называем: имя персонажа он нам не давал');
+  assert.ok(!('character' in guest), 'имени персонажа в ответе нет вовсе');
 
   const builds = res.json.builds;
-  assert.strictEqual(builds.length, 2, 'папка deleted — корзина мода, её не показываем');
+  const names = builds.map(b => b.name).sort();
+  assert.deepStrictEqual(names, ['Дом на холме', 'Кузница'],
+    'показываем только разобранное админом: без корзины deleted, без присланного игроком (#from) и без файлов без #name');
   const house = builds.find(b => b.name === 'Дом на холме');
   assert.strictEqual(house.category, 'Дома');
   assert.strictEqual(house.author, 'Skald-Testovyi');
   assert.strictEqual(house.pieces, 3);
   assert.strictEqual(house.for_players, true);
+  // «#players no» — это «не открыта»: мод судит по значению, а не по наличию строки.
   assert.strictEqual(builds.find(b => b.name === 'Кузница').for_players, false);
 
   // Главное: наружу не уходит ни один SteamID — ни из рун, ни из «#from».

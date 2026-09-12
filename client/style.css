@@ -804,10 +804,15 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .server-meta {
     margin-top: auto;
     padding-top: 14px;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 12.5px;
     line-height: 1.5;
 }
+
+/* Название постройки пишет игрок, и оно бывает одним длинным словом: без
+   переноса такое имя уезжает за край карточки и молча обрезается. */
+.build-card .article-title,
+.build-card .article-date { overflow-wrap: anywhere; }
 
 /* Адрес сервера — единственная строка на странице, которую нельзя перенести по
    пробелу: точки в имени хоста местом переноса не считаются, и длинный адрес
@@ -873,14 +878,9 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     word-break: break-word;
 }
 
-.rune-guest {
-    font-weight: 400;
-    font-size: 12px;
-    color: var(--text-muted);
-}
-
 .rune-count {
-    flex: 0 0 auto;
+    flex: 0 0 6em;
+    text-align: right;
     color: var(--accent-cyan);
     font-weight: 700;
     font-size: 14px;
@@ -889,11 +889,13 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 /* Часы — уточнение к рунам, и на узком экране им место на своей строке. */
 .rune-hours {
     flex: 1 1 100%;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 12.5px;
 }
+/* На широком экране часы стоят в той же строке, и обе числовые колонки держат
+   край: иначе список выглядит таблицей, которая не сошлась. */
 @media (min-width: 641px) {
-    .rune-hours { flex: 0 0 auto; }
+    .rune-hours { flex: 0 0 11em; text-align: right; }
 }
 
 /* Постройка, открытая игрокам: её может поставить не только админ. */

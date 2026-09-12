@@ -1,0 +1,3 @@
+# astvard shared template
+#category Дома
+wood_wall;0.0;0.0;0.0;0.0;0.0;0.0;1.0

@@ -112,7 +112,7 @@
       ? `<ol class="rune-board">${players.map((p, i) => `
           <li class="rune-row">
             <span class="rune-place">${i + 1}</span>
-            <span class="rune-name">${escape(p.name)}${p.known ? '' : ' <span class="rune-guest">гость</span>'}</span>
+            <span class="rune-name">${escape(p.name)}</span>
             <span class="rune-count">${escape(p.runes)} ${plural(p.runes, 'руна', 'руны', 'рун')}</span>
             <span class="rune-hours">${escape(hoursLabel(p.hours))}</span>
           </li>`).join('')}</ol>`
@@ -127,7 +127,7 @@
 
     buildsBox.innerHTML = builds.length
       ? builds.map((b) => `
-        <article class="article-card">
+        <article class="article-card build-card">
           <span class="article-date">${escape(b.category)}</span>
           <h3 class="article-title">${escape(b.name)}</h3>
           <div class="article-content">

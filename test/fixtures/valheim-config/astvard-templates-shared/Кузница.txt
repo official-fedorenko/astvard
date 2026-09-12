@@ -2,6 +2,6 @@
 #name Кузница
 #category Переработка
 #author Skald-Testovyi
-#from 76561198000000101
+#players no
 forge;0.0;0.0;0.0;0.0;0.0;0.0;1.0
 piece_workbench;1.0;0.0;0.0;0.0;0.0;0.0;1.0
