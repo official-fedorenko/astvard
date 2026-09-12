@@ -11,7 +11,7 @@ const logger = require('./src/logger');
 
 // === Modular route handlers (light split from monolithic server.js) ===
 const { sendJson } = require('./src/utils');
-const { getSessionUser } = require('./src/session');
+const { getCurrentUser } = require('./src/session');
 const handleDashboard = require('./src/routes/dashboard');
 const handleArticles = require('./src/routes/articles');
 const handleMedia = require('./src/routes/media');
@@ -162,7 +162,7 @@ const server = http.createServer(async (req, res) => {
   // Basic global error boundary for uncaught errors in handlers
   try {
 
-  const user = getSessionUser(req);
+  const user = await getCurrentUser(req);
 
   // Maintenance mode — affects public visitors (admins always have access)
   const isMaintenance = cachedSettings['maintenance_mode'] === 'true';
