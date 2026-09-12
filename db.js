@@ -354,6 +354,32 @@ const MIGRATIONS = [
         )
       `, () => {});
     }
+  },
+  {
+    version: 21,
+    description: 'Steam sign-in and the game whitelist: SteamID on users, email/password optional, servers table',
+    up: () => {
+      // Users are handled by ensureUsersGameColumns() instead of here: a migration
+      // records itself as applied the moment it is issued, and this one has to open
+      // a PRAGMA first, so a crash in between left the version written and the work
+      // undone — after which it would never run again. The ensure function runs at
+      // every start and is safe to repeat.
+      db.run(`
+        CREATE TABLE IF NOT EXISTS servers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          host TEXT NOT NULL,
+          port INTEGER NOT NULL,
+          probe TEXT NOT NULL DEFAULT 'a2s',
+          is_online INTEGER,
+          players INTEGER,
+          max_players INTEGER,
+          last_checked_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE (host, port)
+        )
+      `, () => {});
+    }
   }
 ];
 
@@ -459,6 +485,72 @@ function ensureCatalogModelsSpecsColumn() {
 // TABLE requests в той же миграционной последовательности, иногда
 // «отмечается применённым», но колонку не добавляет. Без неё падает
 // отметка получения одобренного заказа инструмента/авто.
+// Аккаунт из Steam не имеет ни email, ни пароля, а в исходной схеме обе колонки
+// были обязательными. SQLite не умеет снимать NOT NULL, поэтому таблица
+// перестраивается: внешние ключи здесь не включены (PRAGMA foreign_keys), и
+// именно поэтому DROP/RENAME безопасны.
+//
+// Функция, а не миграция: миграция отмечается выполненной в тот же миг, когда
+// выдана, а тут сначала нужен ответ PRAGMA — падение между этим оставило бы базу
+// старой навсегда. Эта же проверка идёт при каждом старте и повторов не боится.
+function ensureUsersGameColumns() {
+  db.all("PRAGMA table_info(users)", [], (err, cols) => {
+    if (err || !cols || cols.length === 0) return;
+    if (cols.some((c) => c.name === 'steam_id')) {
+      db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_steam_id ON users(steam_id)", () => {});
+      return;
+    }
+
+    logger.info('[db] Перестраиваю users: email и пароль станут необязательными');
+    db.serialize(() => {
+      db.run('BEGIN');
+      db.run(`
+        CREATE TABLE users_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT UNIQUE NOT NULL,
+          email TEXT UNIQUE,
+          password_hash TEXT,
+          role TEXT NOT NULL DEFAULT 'User',
+          account_type TEXT NOT NULL DEFAULT 'client',
+          avatar_url TEXT,
+          two_factor_secret TEXT,
+          two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          steam_id TEXT,
+          steam_id_verified INTEGER NOT NULL DEFAULT 0,
+          whitelist_status TEXT NOT NULL DEFAULT 'none',
+          whitelist_requested_at DATETIME,
+          whitelist_decided_at DATETIME,
+          whitelist_decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          whitelist_note TEXT,
+          whitelist_request_note TEXT,
+          server_admin INTEGER NOT NULL DEFAULT 0,
+          CHECK ((email IS NOT NULL AND password_hash IS NOT NULL) OR steam_id IS NOT NULL)
+        )
+      `, () => {});
+      db.run(`
+        INSERT INTO users_new
+          (id, username, email, password_hash, role, account_type, avatar_url,
+           two_factor_secret, two_factor_enabled, created_at)
+        SELECT id, username, email, password_hash, role, account_type, avatar_url,
+               two_factor_secret, two_factor_enabled, created_at
+        FROM users
+      `, () => {});
+      db.run('DROP TABLE users', () => {});
+      db.run('ALTER TABLE users_new RENAME TO users', () => {});
+      db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_steam_id ON users(steam_id)", () => {});
+      db.run('COMMIT', (commitErr) => {
+        if (commitErr) {
+          logger.error('[db] Перестройка users не удалась:', commitErr.message);
+          db.run('ROLLBACK', () => {});
+        } else {
+          logger.info('[db] users перестроена');
+        }
+      });
+    });
+  });
+}
+
 function ensureRequestsReceivedAtColumn() {
   db.all("PRAGMA table_info(requests)", (err, rows) => {
     if (err || !rows) return;
@@ -481,14 +573,51 @@ db.serialize(() => {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
+      -- Обе пустые у того, кто пришёл через Steam: OpenID отдаёт SteamID64 и
+      -- больше ничего, а выдуманный адрес — ложь в колонке. Что строка остаётся
+      -- досягаемой, следит CHECK внизу.
+      email TEXT UNIQUE,
+      password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'User',
       account_type TEXT NOT NULL DEFAULT 'client',
       avatar_url TEXT,
       two_factor_secret TEXT,
       two_factor_enabled INTEGER NOT NULL DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+      -- Игровая часть: номер Steam и ответ по вайтлисту сервера. steam_id_verified
+      -- отличает номер, за который расписался сам Steam, от вписанного админом.
+      steam_id TEXT,
+      steam_id_verified INTEGER NOT NULL DEFAULT 0,
+      whitelist_status TEXT NOT NULL DEFAULT 'none',
+      whitelist_requested_at DATETIME,
+      whitelist_decided_at DATETIME,
+      whitelist_decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      whitelist_note TEXT,
+      whitelist_request_note TEXT,
+      -- Права в игре (adminlist.txt). Это не роль на сайте: одно про портал,
+      -- другое про сервер, и совпадать они не обязаны.
+      server_admin INTEGER NOT NULL DEFAULT 0,
+
+      CHECK ((email IS NOT NULL AND password_hash IS NOT NULL) OR steam_id IS NOT NULL)
+    )
+  `);
+
+  // Игровые серверы и их состояние. probe — чем спрашивать: 'a2s' по сети или
+  // 'valheim-log' из лога сервера на этой же машине (закрытый сервер на A2S молчит).
+  db.run(`
+    CREATE TABLE IF NOT EXISTS servers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      host TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      probe TEXT NOT NULL DEFAULT 'a2s',
+      is_online INTEGER,
+      players INTEGER,
+      max_players INTEGER,
+      last_checked_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (host, port)
     )
   `);
 
@@ -814,8 +943,9 @@ db.serialize(() => {
       const stmt = db.prepare("INSERT INTO articles (title, content, status) VALUES (?, ?, ?)");
       stmt.run("Добро пожаловать в новую админку!", "Это демонстрационная статья, созданная автоматически для проверки работы CRUD панели.", "published");
       stmt.run("Черновик важной публикации", "Контент этой статьи еще не готов для публикации.", "draft");
-      stmt.finalize(resolveDbReady);
+      stmt.finalize(() => { ensureUsersGameColumns(); resolveDbReady(); });
     } else {
+      ensureUsersGameColumns();
       resolveDbReady();
     }
   });
