@@ -13,8 +13,63 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-a {
+/* ── Ссылки ───────────────────────────────────────────────────────────────
+   Вид выбирается не по красоте, а по тому, что произойдёт по нажатию:
+
+   <a>                      уходит на другой адрес. Подчёркивание — её обещание,
+                            и снимать его без причины нельзя: подчёркнутый текст
+                            это единственное, по чему ссылку видно внутри абзаца.
+   <a class="link-muted">   та же ссылка в служебной строке, рядом с .muted
+   <a class="link-plain">   ссылка, которой нельзя выглядеть ссылкой: логотип
+   <a class="btn …">        ссылка-кнопка: ведёт по адресу, но для игрока это
+                            действие («Войти через Steam»), значит и выглядит
+                            кнопкой — варианты ниже, в разделе кнопок
+   <button class="link-button">  наоборот: действие, которому вид кнопки не нужен
+                            («Выйти» в шапке). Остаётся <button> ради клавиатуры.
+
+   Два правила о весе селекторов, на которых это уже ломалось:
+   :not(.btn) обязателен — без него a:hover перекрашивал бы текст ссылки-кнопки на
+   наведении, потому что он весомее, чем .btn-primary; а :where() обнуляет вес всего,
+   что внутри, и без него базовое a:not(.btn) (вес 0,1,1) побеждало .link-plain
+   (0,1,0) — логотип в шапке становился фиолетовым и подчёркнутым. */
+:where(a:not(.btn), .link) {
   color: #8b7cf6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  /* Подчёркивание тише самого текста: строка остаётся читаемой. */
+  text-decoration-color: rgba(139, 124, 246, 0.45);
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+
+:where(a:not(.btn), .link):hover,
+.link-button:hover {
+  color: #a996ff;
+  text-decoration-color: currentColor;
+}
+
+/* Клавиатура должна быть видна и на ссылке, не только на кнопке. */
+:where(a:not(.btn), .link):focus-visible {
+  outline: 2px solid #8b7cf6;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.link-muted {
+  color: #a8a5b8;
+  text-decoration-color: #3a3850;
+}
+
+.link-muted:hover {
+  color: #e8e6f0;
+}
+
+.link-plain {
+  color: inherit;
+  text-decoration: none;
+}
+
+.link-plain:hover {
+  color: inherit;
 }
 
 header {
@@ -29,11 +84,6 @@ header h1 {
   margin: 0;
   font-size: 22px;
   letter-spacing: 0.02em;
-}
-
-header h1 a {
-  color: inherit;
-  text-decoration: none;
 }
 
 header nav a,
