@@ -2681,7 +2681,7 @@ function renderFullLogs(filterQuery = '') {
   tbody.innerHTML = '';
   
   const filtered = fullLogsList.filter(l => 
-    l.user.toLowerCase().includes(filterQuery) || 
+    l.username.toLowerCase().includes(filterQuery) || 
     l.action.toLowerCase().includes(filterQuery)
   );
 
@@ -2695,12 +2695,12 @@ function renderFullLogs(filterQuery = '') {
     const dateStr = new Date(l.created_at).toLocaleString('ru-RU');
     tr.onclick = mobileRowTap(() => showRowDetail('Запись лога', [
       ['Дата', dateStr],
-      ['Пользователь', `<span class="badge badge-warning">${escapeHtml(l.user)}</span>`, true],
+      ['Пользователь', `<span class="badge badge-warning">${escapeHtml(l.username)}</span>`, true],
       ['Действие', l.action]
     ]));
     tr.innerHTML = `
       <td class="mobile-hidden" style="color: hsl(var(--text-muted)); font-size: 13px;">${dateStr}</td>
-      <td class="mobile-hidden"><span class="badge badge-warning">${escapeHtml(l.user)}</span></td>
+      <td class="mobile-hidden"><span class="badge badge-warning">${escapeHtml(l.username)}</span></td>
       <td class="mobile-primary" style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(l.action)}</td>
     `;
     tbody.appendChild(tr);
