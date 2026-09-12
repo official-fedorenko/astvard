@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" width="800" height="520" fill="none">
+  <defs>
+    <linearGradient id="heroFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8a2be2"/>
+      <stop offset="1" stop-color="#00d2ff"/>
+    </linearGradient>
+    <linearGradient id="heroFacet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="heroGlowPurple" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#8a2be2" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#8a2be2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="heroGlowCyan" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#00d2ff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#00d2ff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- A tight core behind the mark. The hero lays its own dark gradient over all
+         of this, and without the core the mark came out washed grey-violet. -->
+    <radialGradient id="heroCore" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4c1d95" stop-opacity="0.85"/>
+      <stop offset="0.55" stop-color="#8a2be2" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#8a2be2" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Rings fade towards the left, where the hero's own gradient covers the art
+         anyway. Painting them evenly made the left edge look cut off. -->
+    <linearGradient id="heroRing" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00d2ff" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#8a2be2" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#00d2ff" stop-opacity="0.75"/>
+    </linearGradient>
+    <clipPath id="heroMarkClip">
+      <path clip-rule="evenodd" d="
+        M50 5 L93 36 L50 97 L7 36 Z
+        M47 24 L53 24 L68 66 L60.5 66 L57.1 56.5 L42.9 56.5 L39.5 66 L32 66 Z
+        M50 36.6 L54.8 50 L45.2 50 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- glow -->
+  <ellipse cx="520" cy="250" rx="330" ry="300" fill="url(#heroGlowPurple)"/>
+  <ellipse cx="560" cy="300" rx="230" ry="210" fill="url(#heroGlowCyan)"/>
+  <ellipse cx="520" cy="250" rx="175" ry="195" fill="url(#heroCore)"/>
+
+  <!-- concentric wards, the mark's own silhouette repeated outwards -->
+  <g stroke="url(#heroRing)" fill="none" stroke-linejoin="round">
+    <path d="M520 -50 L740 250 L520 550 L300 250 Z" stroke-width="1" opacity="0.30"/>
+    <path d="M520 25 L685 250 L520 475 L355 250 Z" stroke-width="1.4" opacity="0.55"/>
+    <path d="M520 100 L630 250 L520 400 L410 250 Z" stroke-width="1.6" opacity="0.85"/>
+  </g>
+
+  <!-- our servers: nodes sitting on the middle ward, tied back to the centre -->
+  <g stroke="#00d2ff" stroke-width="1" opacity="0.28">
+    <path d="M520 250 L594 126"/>
+    <path d="M520 250 L627 329"/>
+    <path d="M520 250 L437 362"/>
+    <path d="M520 250 L404 182"/>
+  </g>
+  <g fill="#00d2ff">
+    <path d="M594 118 L602 126 L594 134 L586 126 Z" opacity="0.95"/>
+    <path d="M627 321 L635 329 L627 337 L619 329 Z" opacity="0.8"/>
+    <path d="M437 354 L445 362 L437 370 L429 362 Z" opacity="0.7"/>
+    <path d="M404 174 L412 182 L404 190 L396 182 Z" opacity="0.6"/>
+  </g>
+
+  <!-- dust -->
+  <g fill="#ffffff">
+    <circle cx="700" cy="150" r="1.6" opacity="0.35"/>
+    <circle cx="742" cy="392" r="1.2" opacity="0.25"/>
+    <circle cx="336" cy="120" r="1.2" opacity="0.18"/>
+    <circle cx="662" cy="60"  r="1.8" opacity="0.28"/>
+    <circle cx="470" cy="470" r="1.4" opacity="0.22"/>
+    <circle cx="290" cy="330" r="1.2" opacity="0.14"/>
+  </g>
+
+  <!-- the mark itself -->
+  <g transform="translate(420 150) scale(2)">
+    <g clip-path="url(#heroMarkClip)">
+      <rect width="100" height="100" fill="url(#heroFill)"/>
+      <path d="M50 5 L93 36 L7 36 Z" fill="url(#heroFacet)"/>
+    </g>
+  </g>
+</svg>
