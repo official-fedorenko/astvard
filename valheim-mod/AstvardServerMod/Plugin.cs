@@ -161,6 +161,67 @@ namespace AstvardServerMod
         }
 
         /// <summary>
+        /// Hands the admin powers back without leaving the server.
+        ///
+        /// Only restarting the game used to do this. An admin who wanted to see the panel
+        /// the way a player sees it - or just not to have force delete one misclick away -
+        /// had no way out. The server is not told: it never keeps a grant, it only answers
+        /// asks, so «Админка» on the root page is still the way back in.
+        ///
+        /// The flag is not the whole of it. God mode, debug fly and free building live on
+        /// the Player and outlive it - m_debugMode only opens the Z and B keys, it does not
+        /// close what they switched on - and so do a forced weather and wind. A projection
+        /// already in hand was priced when it was picked up: MarkPlayerCopy says nothing for
+        /// an admin, so a copy taken as admin and clicked down afterwards would go up free
+        /// and past the players' rules. So everything being shown is dropped. A road already
+        /// being laid is left to finish: it was allowed when it started, and stopping it
+        /// would leave half a road behind.
+        /// </summary>
+        internal static void LeaveAdmin()
+        {
+            if (!IsAdminUnlocked) return;
+
+            IsAdminUnlocked = false;
+            _adminNonce = 0;
+            // MayAskAdmin stays as the server last said: nothing about our right to ask has
+            // changed, and it is what draws «Админка» for the way back.
+
+            var player = Player.m_localPlayer;
+            if (player != null)
+            {
+                if (player.InGodMode()) player.SetGodMode(false);
+                if (player.IsDebugFlying()) player.ToggleDebugFly();
+                player.SetNoPlacementCost(false);
+            }
+            Player.m_debugMode = false;
+
+            var env = EnvMan.instance;
+            if (env != null)
+            {
+                // Called directly rather than through ResetWeather and ResetWind: both of
+                // those put a message up, and nothing may have been forced at all. The game
+                // ignores an empty environment that is already empty.
+                env.SetForceEnvironment("");
+                if (env.m_debugWind) env.ResetDebugWind();
+            }
+
+            if (IsPlacing) CancelPlacement();
+            ClearBuildAsk();
+            CancelBridge();
+            if (RoadAwaitingEnd && !_roadLaying) CancelRoad();
+            CancelFencePreview();
+            CancelAreaPreview();
+            if (_wallPreviewing) CancelWallPreview();
+
+            MenuState = StateRoot;
+            RefreshMenu();
+
+            Log.LogInfo("[AstvardServerMod] Admin mode left.");
+            Chat.instance?.AddString("Astvard: админ-кнопки выключены.");
+            player?.Message(MessageHud.MessageType.Center, "Админка выключена");
+        }
+
+        /// <summary>
         /// Client side: whether this server counts this player as an admin at all. Until it
         /// says so, «Админка» is not drawn - there is nothing behind it for a player, and a
         /// button that answers every press with silence is worse than no button.

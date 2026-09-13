@@ -83,6 +83,8 @@ namespace AstvardServerMod
 
         internal static GameObject AdminAskButton;
 
+        internal static GameObject AdminLeaveButton;
+
         internal static GameObject RadiusInput;
 
         internal static GameObject HeightInput;
@@ -195,6 +197,10 @@ namespace AstvardServerMod
                 MenuState = StateAdmin;
                 RefreshMenu();
             });
+
+            // Right under «Админ-меню», and only while that one is shown: the way out of
+            // what «Админка» switched on, short of restarting the game.
+            AdminLeaveButton = MakeButton(gui, "Выйти из админки", LeaveAdmin);
 
             // Everyone sees this one, because whether you may press it is not a
             // question the client can answer - it asks the server, which decides from
@@ -1254,6 +1260,7 @@ namespace AstvardServerMod
             SetActive(InfoText, MenuState == StateRoot && IsInfoShown);
             SetActive(SeedCopyButton, MenuState == StateRoot && IsInfoShown);
             SetActive(ActivateButton, admin && MenuState == StateRoot);
+            SetActive(AdminLeaveButton, admin && MenuState == StateRoot);
             SetActive(AdminAskButton, !admin && MayAskAdmin && MenuState == StateRoot);
 
             // Everything below is open to every player, not just admins.
