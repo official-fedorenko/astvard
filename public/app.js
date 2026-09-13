@@ -689,6 +689,8 @@ function loadSectionData(hash) {
     loadWhitelist();
   } else if (hash === 'servers') {
     loadServersSection();
+  } else if (hash === 'builds') {
+    loadBuildsSection();
   } else if (hash === 'dashboard') {
     loadDashboardStats();
   } else if (hash === 'employees') {

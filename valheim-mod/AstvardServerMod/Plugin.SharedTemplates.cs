@@ -18,8 +18,17 @@ namespace AstvardServerMod
             public string Author;
             public int Pieces;
 
-            /// <summary>An admin has opened it to players: it shows in their «Постройки».</summary>
+            /// <summary>
+            /// This client may build it: it is open to every player, or to this one by name.
+            /// What a player's «Постройки» lists.
+            /// </summary>
             public bool ForPlayers;
+
+            /// <summary>Open to every player, whoever this client is - what an admin's switch shows.</summary>
+            public bool ForAll;
+
+            /// <summary>How many players it is open to by name.</summary>
+            public int Listed;
         }
 
         private const string SharedFolder = "astvard-templates-shared";
@@ -102,6 +111,8 @@ namespace AstvardServerMod
                 };
                 if (!string.IsNullOrEmpty(author)) lines.Add("#author " + author);
                 if (before != null && before.ForPlayers) lines.Add(PlayersHeader);
+                if (before != null && before.AllowedPlayers.Count > 0)
+                    lines.Add(SiteSync.AllowHeader + " " + SiteSync.JoinIds(before.AllowedPlayers));
                 lines.AddRange(body.Split('\n'));
 
                 System.IO.File.WriteAllLines(path, lines);
@@ -171,6 +182,7 @@ namespace AstvardServerMod
                 return;
             }
 
+            QueueSiteBuildsChange(SiteSync.TemplateAllLine(name, allow));
             BroadcastSharedList();
         }
 
@@ -283,7 +295,7 @@ namespace AstvardServerMod
 
         private static void ReplySharedList(long target)
         {
-            var packed = new System.Text.StringBuilder();
+            var templates = new List<BlueprintTemplate>();
 
             try
             {
@@ -291,14 +303,7 @@ namespace AstvardServerMod
                 foreach (var path in System.IO.Directory.GetFiles(SharedDir, "*.txt"))
                 {
                     var template = ReadTemplate(path);
-                    if (template == null) continue;
-
-                    if (packed.Length > 0) packed.Append('\n');
-                    packed.Append(template.Name).Append(FieldSeparator)
-                          .Append(template.Category).Append(FieldSeparator)
-                          .Append(template.Author).Append(FieldSeparator)
-                          .Append(template.Pieces).Append(FieldSeparator)
-                          .Append(template.ForPlayers ? "1" : "0");
+                    if (template != null) templates.Add(template);
                 }
             }
             catch (System.Exception ex)
@@ -307,7 +312,50 @@ namespace AstvardServerMod
                 return;
             }
 
-            ZRoutedRpc.instance?.InvokeRoutedRPC(target, RpcTplList, packed.ToString());
+            // Who a template is open to depends on who is asking now, so the list is packed
+            // per peer instead of once for everybody: a player named on a template must see
+            // it, and nobody else must learn whose names are on it.
+            var net = ZNet.instance;
+            if (target != 0L)
+            {
+                var peer = net != null ? net.GetPeer(target) : null;
+                SendSharedList(target, templates,
+                    peer != null && peer.m_socket != null ? peer.m_socket.GetHostName() : "local");
+                return;
+            }
+
+            if (net == null) return;
+            foreach (var peer in net.GetPeers())
+            {
+                if (peer == null || peer.m_socket == null) continue;
+                SendSharedList(peer.m_uid, templates, peer.m_socket.GetHostName());
+            }
+
+            // A host playing on its own server is not among its peers.
+            if (!net.IsDedicated()) OnTemplateList(0L, PackSharedList(templates, "local"));
+        }
+
+        private static void SendSharedList(long target, List<BlueprintTemplate> templates, string who)
+        {
+            ZRoutedRpc.instance?.InvokeRoutedRPC(target, RpcTplList, PackSharedList(templates, who));
+        }
+
+        private static string PackSharedList(List<BlueprintTemplate> templates, string who)
+        {
+            var packed = new System.Text.StringBuilder();
+            foreach (var template in templates)
+            {
+                if (packed.Length > 0) packed.Append('\n');
+                packed.Append(template.Name).Append(FieldSeparator)
+                      .Append(template.Category).Append(FieldSeparator)
+                      .Append(template.Author).Append(FieldSeparator)
+                      .Append(template.Pieces).Append(FieldSeparator)
+                      .Append(OpenTo(template, who) ? "1" : "0").Append(FieldSeparator)
+                      .Append(template.ForPlayers ? "1" : "0").Append(FieldSeparator)
+                      .Append(template.AllowedPlayers.Count);
+            }
+
+            return packed.ToString();
         }
 
         private static void OnTemplateGet(long sender, string name)
@@ -345,6 +393,9 @@ namespace AstvardServerMod
                     int pieces;
                     int.TryParse(parts[3], out pieces);
 
+                    var listed = 0;
+                    if (parts.Length > 6) int.TryParse(parts[6], out listed);
+
                     SharedTemplates.Add(new SharedTemplate
                     {
                         Name = parts[0],
@@ -352,6 +403,9 @@ namespace AstvardServerMod
                         Author = parts[2],
                         Pieces = pieces,
                         ForPlayers = parts.Length > 4 && parts[4] == "1",
+                        // A server a build older than this sends no sixth field: open was open to all.
+                        ForAll = parts.Length > 5 ? parts[5] == "1" : parts.Length > 4 && parts[4] == "1",
+                        Listed = listed,
                     });
                 }
             }

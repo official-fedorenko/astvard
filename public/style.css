@@ -1703,3 +1703,29 @@ table.data-table code { white-space: nowrap; }
     bottom: auto;
   }
 }
+
+/* ==== Builds for players (section «Постройки», public/astvard.js) ====
+   A rule is a row of three: what it is, its controls, and whether the server has it
+   yet. Below 768px the three stack, the controls wrapping at the width they get. */
+.builds-sync { margin: 0 0 8px; }
+.rule-list { display: flex; flex-direction: column; }
+.rule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr) minmax(0, 0.9fr);
+  gap: 10px 16px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid hsl(var(--border-color));
+}
+.rule-row:last-child { border-bottom: none; }
+.rule-title { font-weight: 600; }
+.rule-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rule-controls .form-control { width: auto; min-width: 0; }
+.rule-controls select.form-control { flex: 0 1 150px; }
+.rule-controls .rule-number { flex: 0 1 100px; }
+.rule-state { text-align: right; }
+.build-players { display: flex; flex-wrap: wrap; gap: 8px; max-height: 50vh; overflow-y: auto; }
+@media (max-width: 768px) {
+  .rule-row { grid-template-columns: minmax(0, 1fr); }
+  .rule-state { text-align: left; }
+}

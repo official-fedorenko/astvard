@@ -17,6 +17,8 @@
       with no game installed.
     -->
     <Compile Include="..\AstvardServerMod\Geometry.cs" Link="Geometry.cs" />
+    <!-- The text the mod and the site exchange about player builds: no game needed either. -->
+    <Compile Include="..\AstvardServerMod\SiteSync.cs" Link="SiteSync.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -133,8 +133,10 @@ const HEADERS = {
  *   страницу любому, у кого есть вайтлист;
  * - шаблонов без `#name`: имя файла — это имя на диске, и на сайте ему не место.
  */
-async function readSharedTemplates(dirPath) {
-  return cached(`templates:${dirPath}`, async () => {
+// includeSubmitted: the admin page lists what players sent in as well; the public page
+// never does.
+async function readSharedTemplates(dirPath, { includeSubmitted = false } = {}) {
+  return cached(`templates:${dirPath}:${includeSubmitted}`, async () => {
     let entries;
     try {
       entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -169,7 +171,7 @@ async function readSharedTemplates(dirPath) {
         continue;
       }
 
-      const template = { name: '', category: '', author: '', pieces: 0, forPlayers: false };
+      const template = { name: '', category: '', author: '', pieces: 0, forPlayers: false, allowed: [] };
       let submitted = false;
 
       for (const raw of text.split(/\r?\n/)) {
@@ -183,6 +185,8 @@ async function readSharedTemplates(dirPath) {
           // судить надо по значению, иначе плашка «открыта игрокам» появится там,
           // где никто ничего не открывал.
           if (key === '#players') template.forPlayers = value === 'yes';
+          // The players it is open to by name, as the mod writes them from the site.
+          if (key === '#allow') template.allowed = value.split(',').map((id) => id.trim()).filter((id) => /^\d{17}$/.test(id));
           if (key === '#from') submitted = true;
           const header = HEADERS[key];
           // Пустое значение мод пропускает и поле не трогает — так же и здесь,
@@ -196,7 +200,8 @@ async function readSharedTemplates(dirPath) {
         if (line.split(';').length >= 8) template.pieces += 1;
       }
 
-      if (submitted || !template.name || template.pieces === 0) continue;
+      if (!template.name || template.pieces === 0 || (submitted && !includeSubmitted)) continue;
+      template.submitted = submitted;
       templates.push(template);
     }
     return templates;

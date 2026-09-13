@@ -126,3 +126,23 @@ test('постройки: длинные заголовки обрезаются
 
   assert.deepStrictEqual(await readSharedTemplates(path.join(dir, 'нет-папки')), []);
 });
+
+test('постройки: кому открыта по имени читается из «#allow», присланное — только по просьбе', async () => {
+  const dir = tempDir('templates-allow');
+  const shared = path.join(dir, 'shared');
+  write(shared, 'Мост.txt',
+    '# astvard shared template\n#allow 76561198000000002, 76561198000000001,не-номер\n#name Мост\n#category Мосты\n'
+    + 'wood_beam;0;0;0;0;0;0;1\n');
+  write(shared, 'Прислано.txt',
+    '# astvard shared template\n#name Изба игрока\n#category Дома\n#from 76561198000000102\n'
+    + 'wood_wall;0;0;0;0;0;0;1\n');
+
+  const open = await readSharedTemplates(shared);
+  assert.deepStrictEqual(open.map((t) => t.name), ['Мост']);
+  assert.deepStrictEqual(open[0].allowed, ['76561198000000002', '76561198000000001']);
+  assert.strictEqual(open[0].forPlayers, false);
+
+  const all = await readSharedTemplates(shared, { includeSubmitted: true });
+  assert.deepStrictEqual(all.map((t) => t.name).sort(), ['Изба игрока', 'Мост']);
+  assert.strictEqual(all.find((t) => t.name === 'Изба игрока').submitted, true);
+});

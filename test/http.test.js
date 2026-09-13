@@ -732,3 +732,157 @@ test('Метрика и коды подтверждения встают, тол
   assert.ok(!(await res.text()).includes('mc.yandex.ru'), 'без номера счётчика нет');
   assert.ok(!res.headers.get('content-security-policy').includes('mc.yandex.ru'));
 });
+
+// ---------------------------------------------------------------- builds for players
+
+const TAB = String.fromCharCode(9);
+const LF = String.fromCharCode(10);
+const buildRow = (...fields) => fields.join(TAB);
+const MOD_AUTH = { Authorization: 'Bearer test-lists-token-0123456789' };
+
+const BUILD_META = [
+  buildRow('meta', 'floor', 'Пол', 'build', 'choice', '0', '0', '', 'Даром — с паузой между постройками'),
+  buildRow('meta', 'copy', 'Копирование', 'build', 'choicelimit', '1', '64', 'радиус', ''),
+  buildRow('meta', 'clear', 'Снос', 'terrain', 'toggle', '0', '0', '', ''),
+  buildRow('meta', 'pause', 'Пауза между постройками', 'build', 'number', '0', '1440', 'мин', '')
+];
+
+async function resetBuilds() {
+  await pool.query('DELETE FROM game_build_rules');
+  await pool.query('DELETE FROM game_build_rule_meta');
+  await pool.query('DELETE FROM game_template_access');
+  await pool.query('INSERT INTO game_build_sync (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
+  await pool.query('UPDATE game_build_sync SET revision = 0, seeded = false, mod_seen_at = NULL, mod_applied_revision = 0');
+}
+
+async function modPull(rev) {
+  const res = await fetch(`${baseUrl}/api/game/builds?rev=${rev}`, { headers: MOD_AUTH });
+  return { status: res.status, lines: (await res.text()).split(LF).filter(Boolean) };
+}
+
+async function modPush(lines) {
+  const res = await fetch(`${baseUrl}/api/game/builds`, {
+    method: 'POST',
+    headers: { ...MOD_AUTH, 'Content-Type': 'text/plain; charset=utf-8' },
+    body: lines.join(LF) + LF
+  });
+  return { status: res.status, lines: (await res.text()).split(LF).filter(Boolean) };
+}
+
+async function loginAs(username, password, ip) {
+  const login = await api('/api/auth/login', { method: 'POST', ip, body: { username, password } });
+  assert.strictEqual(login.status, 200, `вход ${username}`);
+  return login.cookie;
+}
+
+test('постройки: без токена — отказ, а пустой сайт просит у мода его состояние', async () => {
+  await resetBuilds();
+
+  assert.strictEqual((await fetch(`${baseUrl}/api/game/builds?rev=0`)).status, 401);
+  const noToken = await fetch(`${baseUrl}/api/game/builds`, { method: 'POST', body: buildRow('kind', 'change') + LF });
+  assert.strictEqual(noToken.status, 401);
+
+  const pull = await modPull(0);
+  assert.strictEqual(pull.status, 200);
+  assert.deepStrictEqual(pull.lines, [buildRow('revision', '0'), buildRow('seed', 'needed')]);
+
+  // Изменение из игры до засева накладывать не на что: сайт просит засеять.
+  const early = await modPush([buildRow('kind', 'change'), buildRow('rule', 'floor', '1', '')]);
+  assert.strictEqual(early.status, 409);
+  assert.ok(early.lines.includes(buildRow('seed', 'needed')));
+
+  assert.strictEqual((await modPush([buildRow('rule', 'floor', '1', '')])).status, 400, 'без строки kind — отказ');
+});
+
+test('постройки: засев от мода, правка на сайте и правка из игры — действует последняя', async () => {
+  await resetBuilds();
+  const cookie = await loginAs('superadmin', '1234qwer', '10.50.1.1');
+
+  // Мод при старте описывает свои правила; нечитаемая строка не валит остальные.
+  assert.strictEqual((await modPush([buildRow('kind', 'hello'), buildRow('meta', 'BAD'), ...BUILD_META])).status, 200);
+
+  let push = await modPush([buildRow('kind', 'seed'),
+    buildRow('rule', 'floor', '2', ''), buildRow('rule', 'copy', '2', '20'),
+    buildRow('rule', 'clear', '0', ''), buildRow('rule', 'pause', '5', ''),
+    buildRow('tpl', 'Дом на холме', '1', '76561198000000901,мусор')]);
+  assert.deepStrictEqual(push.lines, [buildRow('revision', '1')]);
+
+  push = await modPush([buildRow('kind', 'seed'), buildRow('rule', 'floor', '0', '')]);
+  assert.deepStrictEqual(push.lines, [buildRow('revision', '1'), 'ignored'], 'второй засев ничего не меняет');
+
+  let pull = await modPull(0);
+  assert.ok(pull.lines.includes(buildRow('rule', 'floor', '2', '')));
+  assert.ok(pull.lines.includes(buildRow('rule', 'copy', '2', '20')));
+  assert.ok(pull.lines.includes(buildRow('tpl', 'Дом на холме', '1', '76561198000000901')), 'мусор из списка игроков выброшен');
+  assert.deepStrictEqual((await modPull(1)).lines, [buildRow('revision', '1'), 'unchanged']);
+
+  // Сайт закрывает пол; неверные значения ревизию не тратят.
+  let r = await api('/api/admin/builds/rules/floor', { method: 'PATCH', cookie, body: { value: 0 } });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.json.revision, 2);
+  r = await api('/api/admin/builds/rules/floor', { method: 'PATCH', cookie, body: { value: 5 } });
+  assert.strictEqual(r.status, 400);
+  r = await api('/api/admin/builds/rules/copy', { method: 'PATCH', cookie, body: { value: 1, limit: 500 } });
+  assert.strictEqual(r.status, 400, 'радиус больше, чем знает мод');
+  r = await api('/api/admin/builds/rules/nosuch', { method: 'PATCH', cookie, body: { value: 1 } });
+  assert.strictEqual(r.status, 404);
+
+  let view = await api('/api/admin/builds', { cookie });
+  assert.strictEqual(view.status, 200);
+  assert.strictEqual(view.json.rules.length, 4, 'правила — ровно те, что описал мод');
+  const floor = view.json.rules.find((x) => x.key === 'floor');
+  assert.strictEqual(floor.value, 0);
+  assert.strictEqual(floor.applied, false, 'сервер это ещё не забирал');
+  assert.strictEqual(view.json.rules.find((x) => x.key === 'pause').applied, true);
+
+  // В игре админ снова открыл пол — уже после сайта — и снял «всем» с дома.
+  push = await modPush([buildRow('kind', 'change'), buildRow('rule', 'floor', '1', ''), buildRow('tplall', 'Дом на холме', '0')]);
+  assert.deepStrictEqual(push.lines, [buildRow('revision', '3')]);
+
+  pull = await modPull(1);
+  assert.ok(pull.lines.includes(buildRow('rule', 'floor', '1', '')), 'правка из игры новее правки на сайте');
+  assert.ok(pull.lines.includes(buildRow('tpl', 'Дом на холме', '0', '76561198000000901')),
+    'переключатель в игре не трогает выбранных игроков');
+
+  await modPull(3);
+  view = await api('/api/admin/builds', { cookie });
+  assert.strictEqual(view.json.sync.mod_applied_revision, 3);
+  assert.ok(view.json.rules.every((x) => x.applied), 'всё применено, когда мод сказал ревизию 3');
+  assert.strictEqual(view.json.rules.find((x) => x.key === 'floor').updated_by, 'game');
+});
+
+test('постройки: кому открыта постройка решает админ сайта, игроку раздел закрыт', async () => {
+  const cookie = await loginAs('superadmin', '1234qwer', '10.50.1.2');
+  const view = await api('/api/admin/builds', { cookie });
+
+  const house = view.json.templates.find((t) => t.name === 'Дом на холме');
+  assert.ok(house && house.on_server && !house.submitted);
+  assert.deepStrictEqual(house.players.map((p) => p.steam_id), ['76561198000000901']);
+  assert.ok(view.json.templates.some((t) => t.name === 'Реклама от игрока' && t.submitted),
+    'присланное игроком админ тоже видит');
+  assert.ok(!view.json.templates.some((t) => t.name === 'Снесённое'), 'корзины мода в списке нет');
+
+  let r = await api('/api/admin/builds/template', {
+    method: 'PATCH', cookie,
+    body: { name: 'Кузница', players: ['76561198000000902', 'https://steamcommunity.com/profiles/76561198000000901'] }
+  });
+  assert.strictEqual(r.status, 200);
+  const pull = await modPull(0);
+  assert.ok(pull.lines.includes(buildRow('tpl', 'Кузница', '0', '76561198000000901,76561198000000902')),
+    'ссылка на профиль превращается в номер, список — по порядку');
+
+  r = await api('/api/admin/builds/template', { method: 'PATCH', cookie, body: { name: 'Кузница', players: ['12345'] } });
+  assert.strictEqual(r.status, 400);
+  r = await api('/api/admin/builds/template', { method: 'PATCH', cookie, body: { name: 'Нет такой', for_all: true } });
+  assert.strictEqual(r.status, 404);
+  r = await api('/api/admin/builds/template', { method: 'PATCH', cookie, body: { name: 'Кузница', for_all: 'yes' } });
+  assert.strictEqual(r.status, 400);
+
+  await pool.query(
+    `INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'User')`,
+    ['Строитель', 'builder@example.com', hashPassword('builder-pass-123')]
+  );
+  const player = await loginAs('Строитель', 'builder-pass-123', '10.50.1.3');
+  assert.strictEqual((await api('/api/admin/builds', { cookie: player })).status, 403);
+  assert.strictEqual((await api('/api/admin/builds')).status, 401);
+});

@@ -99,6 +99,18 @@ namespace AstvardServerMod
             return peer != null && peer.m_socket != null ? peer.m_socket.GetHostName() : "?";
         }
 
+        /// <summary>
+        /// Whether a player may build this server template: it is open to everyone, or to
+        /// them by name. Asked with the file just read, so a change the site made a moment
+        /// ago counts at the very next click.
+        /// </summary>
+        private static bool OpenTo(BlueprintTemplate template, string who)
+        {
+            if (template == null) return false;
+            if (template.ForPlayers) return true;
+            return !string.IsNullOrEmpty(who) && template.AllowedPlayers.Contains(who);
+        }
+
         private static int WaitFor(string who)
         {
             var pause = PauseMinutes * 60;
@@ -120,7 +132,7 @@ namespace AstvardServerMod
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
 
             var template = ReadTemplate(SharedPath(name));
-            if (template == null || !template.ForPlayers)
+            if (!OpenTo(template, SenderId()))
             {
                 Answer(sender, name, -1);
                 return;
@@ -202,7 +214,7 @@ namespace AstvardServerMod
             else
             {
                 var template = ReadTemplate(SharedPath(name));
-                if (template == null || !template.ForPlayers)
+                if (!OpenTo(template, SenderId()))
                 {
                     Answer(sender, name, -1);
                     return;
@@ -234,6 +246,7 @@ namespace AstvardServerMod
 
             // To everyone; -1 leaves each player's own countdown as it stands.
             ZRoutedRpc.instance?.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcBuildRules, PauseMinutes, -1);
+            QueueSiteBuildsChange(SiteSync.RuleLine(new SiteSync.RuleState { Key = PauseRuleKey, Value = PauseMinutes }));
         }
 
         /// <summary>The pause, and how long the asker has left of it; goes out with every list.</summary>

@@ -39,6 +39,8 @@ namespace AstvardServerMod
                 "Токен для этого адреса — тот же, что GAME_LISTS_TOKEN в .env сайта.");
             _siteListsSeconds = config.Bind("Сайт", "ListsSeconds", 60,
                 "Как часто спрашивать сайт, в секундах, от 10 до 3600.");
+
+            BindSiteBuilds(config);
         }
 
         /// <summary>
@@ -48,6 +50,9 @@ namespace AstvardServerMod
         /// </summary>
         private void TickSiteLists()
         {
+            // The same site and token: what players may build is fetched beside the lists.
+            TickSiteBuilds();
+
             var net = ZNet.instance;
             if (net == null || !net.IsServer() || _siteListsBusy) return;
 

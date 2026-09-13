@@ -149,7 +149,7 @@ namespace AstvardServerMod
         private static bool IsForPlayers(string name)
         {
             var shared = FindShared(name);
-            return shared != null && shared.ForPlayers;
+            return shared != null && shared.ForAll;
         }
 
         /// <summary>
@@ -173,11 +173,24 @@ namespace AstvardServerMod
                 };
                 SharedTemplates.Add(shared);
             }
-            if (shared != null) shared.ForPlayers = allow;
+            if (shared != null)
+            {
+                shared.ForAll = allow;
+                // An admin named on it keeps it in their own list when it stops being open to all.
+                shared.ForPlayers = allow || (shared.Listed > 0 && shared.ForPlayers);
+            }
             RebuildPlayerTemplates();
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                 allow ? $"Разрешено игрокам: {name}" : $"Запрещено игрокам: {name}");
+        }
+
+        /// <summary>What an admin's page says about who may build a server template.</summary>
+        private static string SharedAccessNote(SharedTemplate shared)
+        {
+            if (shared == null) return "";
+            if (shared.ForAll) return $"{NEWLINE}Игрокам: всем.";
+            return shared.Listed > 0 ? $"{NEWLINE}Игрокам: выбранным на сайте ({shared.Listed})." : "";
         }
 
         private static void RebuildPlayerTemplates()
@@ -227,7 +240,7 @@ namespace AstvardServerMod
             SetLabel(TemplatePlayersButton, _editingTemplate != null && IsForPlayers(_editingTemplate.Name)
                 ? "Запретить игрокам"
                 : "Разрешить игрокам");
-            SetLabel(SharedPlayersButton, _selectedShared != null && _selectedShared.ForPlayers
+            SetLabel(SharedPlayersButton, _selectedShared != null && _selectedShared.ForAll
                 ? "Запретить игрокам"
                 : "Разрешить игрокам");
         }

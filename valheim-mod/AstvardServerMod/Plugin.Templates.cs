@@ -22,8 +22,11 @@ namespace AstvardServerMod
             public string[] Lines;
             public int Pieces;
 
-            /// <summary>Server copies only: an admin has opened it to players.</summary>
+            /// <summary>Server copies only: an admin has opened it to every player.</summary>
             public bool ForPlayers;
+
+            /// <summary>Server copies only: the players it is open to by name («#allow»), besides everyone.</summary>
+            public List<string> AllowedPlayers = new List<string>();
 
             /// <summary>Server copies only: sent in by a player, whose platform id this is.</summary>
             public string From;
@@ -128,7 +131,7 @@ namespace AstvardServerMod
                             + (string.IsNullOrEmpty(_selectedShared.Author)
                                 ? ""
                                 : $"{NEWLINE}Выложил: {_selectedShared.Author}")
-                            + (_selectedShared.ForPlayers ? $"{NEWLINE}Игрокам: разрешён." : "");
+                            + SharedAccessNote(_selectedShared);
                 return;
             }
 
@@ -175,7 +178,7 @@ namespace AstvardServerMod
                   + (string.IsNullOrEmpty(_editingTemplate.Author)
                       ? ""
                       : $"{NEWLINE}Автор: {_editingTemplate.Author}")
-                  + (IsForPlayers(_editingTemplate.Name) ? $"{NEWLINE}Игрокам: разрешён." : "");
+                  + SharedAccessNote(FindShared(_editingTemplate.Name));
         }
 
         // ---------------- reading ----------------
@@ -270,6 +273,7 @@ namespace AstvardServerMod
             else if (key == "category") template.Category = value;
             else if (key == "author") template.Author = value;
             else if (key == "players") template.ForPlayers = value == "yes";
+            else if (key == "allow") template.AllowedPlayers = SiteSync.ParseIds(value);
             else if (key == "from") template.From = value;
         }
 

@@ -327,3 +327,50 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
 -- When an article last changed, for sitemap.xml and dateModified. NULL on rows
 -- written before the column: those fall back to created_at.
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+-- What players may build on the game server (src/gameBuilds.js): the mod's rules for
+-- players and who may build each shared template. The mod pulls this by token and
+-- pushes back what an admin changed in game. Every change takes the next revision from
+-- game_build_sync, and that order is what "the last change wins" means.
+CREATE TABLE IF NOT EXISTS game_build_rules (
+      key TEXT PRIMARY KEY,
+      value INTEGER NOT NULL,
+      limit_value INTEGER,
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by TEXT
+    );
+
+-- What each rule is, as the running mod describes it on start: the admin page draws
+-- exactly the rules the server knows.
+CREATE TABLE IF NOT EXISTS game_build_rule_meta (
+      key TEXT PRIMARY KEY,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      title TEXT NOT NULL,
+      grp TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      limit_min INTEGER,
+      limit_max INTEGER,
+      limit_word TEXT,
+      note TEXT
+    );
+
+-- players: SteamID64 numbers, comma separated, the way the mod writes them into «#allow».
+CREATE TABLE IF NOT EXISTS game_template_access (
+      name TEXT PRIMARY KEY,
+      for_all BOOLEAN NOT NULL DEFAULT false,
+      players TEXT NOT NULL DEFAULT '',
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by TEXT
+    );
+
+CREATE TABLE IF NOT EXISTS game_build_sync (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      revision INTEGER NOT NULL DEFAULT 0,
+      seeded BOOLEAN NOT NULL DEFAULT false,
+      mod_seen_at TIMESTAMPTZ,
+      mod_applied_revision INTEGER NOT NULL DEFAULT 0
+    );
+
+INSERT INTO game_build_sync (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

@@ -37,6 +37,12 @@
             <span>Серверы</span>
           </a>
         </li>
+        <li class="nav-item" data-section="builds">
+          <a href="#builds" title="Постройки">
+            <i data-lucide="hammer"></i>
+            <span>Постройки</span>
+          </a>
+        </li>
         <li class="nav-item" data-section="articles">
           <a href="#articles" title="Статьи (CRUD)">
             <i data-lucide="file-text"></i>
@@ -931,6 +937,40 @@
             </table>
           </div>
         </div>
+      </section>
+
+      <section id="section-builds" class="app-section">
+        <div class="page-header">
+          <div class="page-title">
+            <h2>Постройки для игроков</h2>
+            <p>Кому открыты общие постройки и что игрокам можно в игре. Сервер забирает изменения сам за
+               несколько секунд, а изменённое админом в игре приходит сюда — действует последнее</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-secondary" id="buildsRefreshBtn">
+              <i data-lucide="refresh-cw"></i>
+              <span>Обновить</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="muted builds-sync" id="buildsSyncLine">Загрузка…</p>
+
+        <h3 style="margin:24px 0 8px;">Общие постройки</h3>
+        <div class="table-container">
+          <div class="table-scroll">
+            <table class="data-table cards-mobile">
+              <thead>
+                <tr>
+                  <th>Постройка</th><th>Категория</th><th>Деталей</th><th>Кому открыта</th><th>На сервере</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="buildsTemplatesBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="buildsRules"></div>
       </section>
 
       <section id="section-logs" class="app-section">

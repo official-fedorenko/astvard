@@ -86,7 +86,9 @@ async function gameInfoBody(res) {
       category: b.category || 'Разное',
       author: b.author || null,
       pieces: b.pieces,
-      for_players: b.forPlayers
+      for_players: b.forPlayers,
+      // Open to some players by name. Whether, never who: this page is public.
+      for_some: !b.forPlayers && b.allowed.length > 0
     }))
   });
 }

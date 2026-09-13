@@ -41,6 +41,7 @@ const handleWhitelist = require('./src/routes/whitelist');
 const handleServers = require('./src/routes/servers');
 const handleGameInfo = require('./src/routes/gameInfo');
 const handleGameSync = require('./src/routes/gameSync');
+const handleGameBuilds = require('./src/routes/gameBuilds');
 const { ensureSuperadmin } = require('./src/bootstrap');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
@@ -217,6 +218,10 @@ const server = http.createServer(async (req, res) => {
   // they do not know themselves.
   if (pathname === '/api/public/servers' || pathname.startsWith('/api/admin/servers')) {
     return await handleServers(req, res, user, parsedUrl, method);
+  }
+  // What players may build on the game server, and who may build each shared template.
+  if (pathname.startsWith('/api/admin/builds')) {
+    return await handleGameBuilds(req, res, user, parsedUrl, method);
   }
   if (pathname.startsWith('/api/admin/whitelist') || pathname === '/api/cabinet/whitelist/request') {
     return await handleWhitelist(req, res, user, parsedUrl, method);

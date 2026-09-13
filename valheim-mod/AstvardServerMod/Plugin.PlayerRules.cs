@@ -317,16 +317,30 @@ namespace AstvardServerMod
             var rule = FindRule(limit ? key.Substring(0, key.Length - 4) : key);
             if (rule == null) return;
 
-            if (limit)
+            if (limit) SetRuleLimit(rule, value);
+            else SetRuleValue(rule, value);
+
+            Log.LogInfo($"[AstvardServerMod] Player rule {key} = {value} by {SenderName(sender)}.");
+            ZRoutedRpc.instance?.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcPlayerRules, PackPlayerRules());
+            QueueSiteBuildsChange(SiteSync.RuleLine(CurrentRuleState(rule)));
+        }
+
+        /// <summary>
+        /// Puts a value into a rule's config entries, the same way for an admin's switch in
+        /// game and for the site. True when what players get has changed.
+        /// </summary>
+        private static bool SetRuleValue(PlayerRule rule, int value)
+        {
+            var before = ServerRuleValue(rule);
+
+            if (rule.Kind == RuleKind.Choice)
             {
-                if (rule.Limit != null) rule.Limit.Value = ClampLimit(rule, value);
-            }
-            else if (rule.Kind == RuleKind.Choice)
-            {
+                if (rule.Mode == null) return false;
                 rule.Mode.Value = Mathf.Clamp(value, ChoiceClosed, ChoicePaid);
             }
             else if (rule.Kind == RuleKind.ChoiceLimit)
             {
+                if (rule.Open == null) return false;
                 value = Mathf.Clamp(value, ChoiceClosed, ChoicePaid);
                 rule.Open.Value = value != ChoiceClosed;
                 // Shut, it keeps whether it was paid: opened again, it opens as it was.
@@ -334,11 +348,22 @@ namespace AstvardServerMod
             }
             else
             {
+                if (rule.Open == null) return false;
                 rule.Open.Value = value != 0;
             }
 
-            Log.LogInfo($"[AstvardServerMod] Player rule {key} = {value} by {SenderName(sender)}.");
-            ZRoutedRpc.instance?.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcPlayerRules, PackPlayerRules());
+            return ServerRuleValue(rule) != before;
+        }
+
+        private static bool SetRuleLimit(PlayerRule rule, int limit)
+        {
+            if (rule.Limit == null) return false;
+
+            var clamped = ClampLimit(rule, limit);
+            if (rule.Limit.Value == clamped) return false;
+
+            rule.Limit.Value = clamped;
+            return true;
         }
 
         // ---------------- client side ----------------

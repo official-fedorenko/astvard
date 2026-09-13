@@ -451,3 +451,326 @@ function bindAstvardHandlers() {
 }
 
 bindAstvardHandlers();
+
+// === Постройки для игроков ===
+//
+// What the mod on the game server applies to players, kept on the site
+// (src/gameBuilds.js). A change here goes to the database at once and reaches the
+// server on the mod's next pull, a few seconds later; what an admin changes in game
+// comes back the same way. A row says «ждёт сервер» until the mod reports the
+// revision that carries it.
+
+const BUILD_GROUPS = [
+  ['build', 'Постройки для игроков'],
+  ['terrain', 'Рельеф для игроков'],
+  ['features', 'Функции для игроков']
+];
+const BUILD_CHOICES = [[0, 'Нельзя'], [1, 'Даром'], [2, 'Платно']];
+
+// The mod asks every few seconds; two minutes of silence is a stopped server or a
+// site it cannot reach, not a slow one.
+const BUILDS_SILENT_MS = 2 * 60 * 1000;
+
+let buildsState = null;
+let buildsHandlersBound = false;
+
+// quiet: the refresh below; a lost session or a site restart must not raise a toast
+// every ten seconds.
+async function loadBuildsSection({ quiet = false } = {}) {
+  try {
+    const res = await fetch('/api/admin/builds');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return quiet ? undefined : showToast(data.message || 'Не удалось загрузить постройки', 'error');
+    buildsState = data;
+    renderBuilds({ onlyIfChanged: quiet });
+  } catch (err) {
+    if (!quiet) showToast('Не удалось загрузить постройки', 'error');
+  }
+}
+
+// While the section is open it looks again every ten seconds, so «ждёт сервер» turns into
+// «применено» by itself and a change made in game shows up without a click. Not while a
+// number is being typed or the players dialog is open: a redraw would throw that away.
+const BUILDS_REFRESH_MS = 10 * 1000;
+setInterval(() => {
+  const section = document.getElementById('section-builds');
+  if (!section || !section.classList.contains('active') || document.visibilityState !== 'visible') return;
+  const modal = document.getElementById('rowDetailModalOverlay');
+  if (modal && modal.classList.contains('active')) return;
+  const focused = document.activeElement;
+  if (focused && section.contains(focused) && focused.matches('input, select')) return;
+  loadBuildsSection({ quiet: true });
+}, BUILDS_REFRESH_MS);
+
+function buildsSyncText(sync) {
+  if (!sync.mod_seen_at) {
+    return 'Сервер ещё ни разу не приходил сюда за правилами: нужен мод с обменом построек и перезапуск сервера. '
+      + 'До этого изменения копятся здесь и доедут, когда он придёт.';
+  }
+  const seen = astvardDate(sync.mod_seen_at);
+  if (Date.now() - new Date(sync.mod_seen_at).getTime() > BUILDS_SILENT_MS) {
+    return `Сервер последний раз заходил ${seen} — он остановлен или не достаёт до сайта. Изменения дождутся его.`;
+  }
+  return sync.mod_applied_revision < sync.revision
+    ? `Сервер заходил ${seen}. Последние изменения ещё в пути — обычно это секунды.`
+    : `Сервер заходил ${seen}, всё изменённое у него.`;
+}
+
+function buildAppliedBadge(item) {
+  if (!buildsState.sync.mod_seen_at) return '<span class="badge badge-muted">сервер не подключался</span>';
+  return item.applied
+    ? '<span class="badge badge-success">применено</span>'
+    : '<span class="badge badge-warning">ждёт сервер</span>';
+}
+
+function buildAccessBadges(t) {
+  const parts = [];
+  if (t.for_all) parts.push('<span class="badge badge-success">всем игрокам</span>');
+  if (t.players.length) parts.push(`<span class="badge badge-warning">выбранным: ${t.players.length}</span>`);
+  if (!parts.length) parts.push('<span class="badge badge-muted">только админ</span>');
+  return parts.join(' ');
+}
+
+function buildPlayerNames(t) {
+  return t.players.map(p => p.username || `номер ${p.steam_id}`).join(', ');
+}
+
+// Buttons stay on a row whose file the site cannot see: the site keeps who may build
+// it by name, and the mod finds the file by that name whether the site sees it or not.
+function buildTemplateButtons(t, index) {
+  return `<button class="btn btn-sm ${t.for_all ? 'btn-secondary' : ''} build-all" data-index="${index}">${t.for_all ? 'Не для всех' : 'Открыть всем'}</button>`
+    + `<button class="btn btn-sm btn-secondary build-players" data-index="${index}">Кому…</button>`;
+}
+
+// What the tables were last drawn from. The refresh redraws them only when this changes:
+// the server comes by every few seconds, and a row replaced that often vanishes from
+// under a click that happens to land on the redraw.
+let buildsDrawn = '';
+
+function renderBuilds({ onlyIfChanged = false } = {}) {
+  if (!buildsState) return;
+
+  const line = document.getElementById('buildsSyncLine');
+  if (line) line.textContent = buildsSyncText(buildsState.sync);
+
+  const drawn = JSON.stringify([buildsState.templates, buildsState.rules, buildsState.players, !!buildsState.sync.mod_seen_at]);
+  if (onlyIfChanged && drawn === buildsDrawn) return;
+  buildsDrawn = drawn;
+
+  const tbody = document.getElementById('buildsTemplatesBody');
+  if (tbody) {
+    const list = buildsState.templates;
+    tbody.innerHTML = list.length
+      ? list.map((t, i) => `
+        <tr data-index="${i}">
+          <td class="mobile-primary">
+            <strong>${escapeHtml(t.name)}</strong>
+            <div class="row-note">${buildAccessBadges(t)}</div>
+            ${t.on_server ? '' : '<div class="cell-note cell-note-warn">Сайт не видит файл этой постройки: её переименовали или убрали в игре, или сайту не видна папка шаблонов</div>'}
+            ${t.submitted ? '<div class="cell-note">Прислал игрок</div>' : ''}
+          </td>
+          <td class="mobile-hidden">${escapeHtml(t.category || '—')}</td>
+          <td class="mobile-hidden">${t.pieces === null ? '—' : t.pieces}</td>
+          <td class="mobile-hidden">
+            ${buildAccessBadges(t)}
+            ${t.players.length ? `<div class="cell-note">${escapeHtml(buildPlayerNames(t))}</div>` : ''}
+          </td>
+          <td class="mobile-hidden">${buildAppliedBadge(t)}</td>
+          <td class="no-label"><div class="row-actions">${buildTemplateButtons(t, i)}</div></td>
+        </tr>`).join('')
+      : '<tr class="empty-row"><td colspan="6" class="empty-state">Общих построек на сервере пока нет — их выкладывает админ из игры</td></tr>';
+  }
+
+  const box = document.getElementById('buildsRules');
+  if (box) box.innerHTML = renderBuildRules(buildsState.rules);
+}
+
+function renderBuildRules(rules) {
+  if (!rules.length) {
+    return '<h3 style="margin:24px 0 8px;">Правила</h3><div class="table-container"><div class="empty-state">'
+      + 'Список правил присылает мод сервера, когда запускается. Пока сервер с ним не приходил, менять здесь нечего.'
+      + '</div></div>';
+  }
+  return BUILD_GROUPS.map(([group, title]) => {
+    const list = rules.filter(r => r.group === group);
+    if (!list.length) return '';
+    return `<h3 style="margin:24px 0 8px;">${title}</h3>
+      <div class="table-container"><div class="rule-list">${list.map(buildRuleRow).join('')}</div></div>`;
+  }).join('');
+}
+
+function buildRuleControl(r) {
+  const number = (cls, value) => `<input type="number" class="form-control rule-number ${cls}" data-key="${r.key}"`
+    + ` min="${r.min === null ? 0 : r.min}"${r.max === null ? '' : ` max="${r.max}"`} value="${value === null ? '' : value}">`;
+  const unit = r.word ? `<span class="muted">${escapeHtml(r.word)}${r.kind === 'number' ? '' : ', м'}</span>` : '';
+  const choice = () => `<select class="form-control rule-choice" data-key="${r.key}">`
+    + BUILD_CHOICES.map(([v, label]) => `<option value="${v}"${r.value === v ? ' selected' : ''}>${label}</option>`).join('')
+    + '</select>';
+
+  switch (r.kind) {
+    case 'toggle':
+      return `<label class="check-chip"><input type="checkbox" class="rule-open" data-key="${r.key}"${r.value ? ' checked' : ''}> да</label>`;
+    case 'limit':
+      return `<label class="check-chip"><input type="checkbox" class="rule-open" data-key="${r.key}"${r.value ? ' checked' : ''}> можно</label>`
+        + ` ${unit} ${number('rule-limit', r.limit)}`;
+    case 'choice':
+      return choice();
+    case 'choicelimit':
+      return `${choice()} ${unit} ${number('rule-limit', r.limit)}`;
+    default:
+      return `${number('rule-value', r.value)} ${unit}`;
+  }
+}
+
+function buildRuleRow(r) {
+  const who = r.updated_by
+    ? `<div class="cell-note">${escapeHtml(r.updated_by === 'game' ? 'из игры' : r.updated_by)}, ${astvardDate(r.updated_at)}</div>`
+    : '';
+  return `
+    <div class="rule-row" data-key="${r.key}">
+      <div class="rule-info">
+        <div class="rule-title">${escapeHtml(r.title)}</div>
+        ${r.note ? `<div class="cell-note">${escapeHtml(r.note)}</div>` : ''}
+      </div>
+      <div class="rule-controls">${buildRuleControl(r)}</div>
+      <div class="rule-state">${buildAppliedBadge(r)}${who}</div>
+    </div>`;
+}
+
+async function saveBuildRule(key) {
+  const row = document.querySelector(`.rule-row[data-key="${key}"]`);
+  const rule = buildsState && buildsState.rules.find(r => r.key === key);
+  if (!row || !rule) return;
+
+  const body = {};
+  const open = row.querySelector('.rule-open');
+  const choice = row.querySelector('.rule-choice');
+  const value = row.querySelector('.rule-value');
+  const limit = row.querySelector('.rule-limit');
+  if (open) body.value = open.checked ? 1 : 0;
+  if (choice) body.value = Number(choice.value);
+  if (value) body.value = value.value === '' ? null : Number(value.value);
+  if (limit) body.limit = limit.value === '' ? null : Number(limit.value);
+
+  const res = await fetch(`/api/admin/builds/rules/${key}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) showToast(data.message || 'Не получилось', 'error');
+  else showToast(`${rule.title}: сохранено, сервер применит через несколько секунд`);
+  return loadBuildsSection();
+}
+
+async function saveBuildTemplate(t, patch) {
+  const res = await fetch('/api/admin/builds/template', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: t.name, ...patch })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(data.message || 'Не получилось', 'error');
+    return false;
+  }
+  return true;
+}
+
+// The shared row modal, with a checklist for a body: the players with access to the
+// server, and anyone still named on the template who has lost it since.
+function showBuildPlayersDialog(t, index) {
+  const chosen = new Set(t.players.map(p => p.steam_id));
+  const people = buildsState.players.map(p => ({ steam_id: p.steam_id, label: p.username }));
+  for (const p of t.players) {
+    if (!people.some(q => q.steam_id === p.steam_id)) {
+      people.push({ steam_id: p.steam_id, label: p.username ? `${p.username} (без доступа)` : `номер ${p.steam_id}` });
+    }
+  }
+
+  showRowDetail(`Кому открыта «${t.name}»`, [],
+    `<button class="btn btn-sm build-players-save" data-index="${index}">Сохранить</button>`);
+  document.getElementById('rowDetailBody').innerHTML = `
+    <p class="muted" style="margin:0 0 10px;">Отмеченные игроки смогут поставить эту постройку, даже если она не открыта всем.${t.for_all ? ' Сейчас она открыта всем, и список пригодится, когда её закроют.' : ''}</p>
+    ${people.length > 8 ? '<input type="text" class="form-control" id="buildPlayersSearch" placeholder="Поиск по нику..." style="margin-bottom:10px;">' : ''}
+    <div class="build-players" id="buildPlayersList">
+      ${people.length
+        ? people.map(p => `
+          <label class="check-chip build-player" data-name="${escapeHtml(p.label.toLowerCase())}">
+            <input type="checkbox" value="${p.steam_id}"${chosen.has(p.steam_id) ? ' checked' : ''}> ${escapeHtml(p.label)}
+          </label>`).join('')
+        : '<div class="empty-state">Игроков с доступом на сервер пока нет</div>'}
+    </div>`;
+}
+
+function showBuildTemplateDetail(t, index) {
+  showRowDetail(t.name, [
+    ['Категория', t.category || '—'],
+    ['Деталей', t.pieces === null ? '—' : String(t.pieces)],
+    ['Кому открыта', buildAccessBadges(t), true],
+    ['Выбранные', buildPlayerNames(t), 'block'],
+    ['На сервере', buildAppliedBadge(t), true]
+  ], buildTemplateButtons(t, index));
+}
+
+function bindBuildsHandlers() {
+  if (buildsHandlersBound) return;
+  buildsHandlersBound = true;
+
+  document.addEventListener('change', (e) => {
+    const control = e.target.closest('.rule-row .rule-open, .rule-row .rule-choice, .rule-row .rule-value, .rule-row .rule-limit');
+    if (control) saveBuildRule(control.dataset.key);
+  });
+
+  document.addEventListener('input', (e) => {
+    if (e.target.id !== 'buildPlayersSearch') return;
+    const query = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#buildPlayersList .build-player').forEach((el) => {
+      el.style.display = !query || el.dataset.name.includes(query) ? '' : 'none';
+    });
+  });
+
+  document.addEventListener('click', async (e) => {
+    if (e.target.closest('#buildsRefreshBtn')) return loadBuildsSection();
+
+    const templateAt = (el) => buildsState && buildsState.templates[Number(el.dataset.index)];
+
+    const allButton = e.target.closest('.build-all');
+    if (allButton) {
+      const t = templateAt(allButton);
+      if (!t) return;
+      closeRowDetail();
+      if (await saveBuildTemplate(t, { for_all: !t.for_all })) {
+        showToast(t.for_all ? `«${t.name}»: больше не открыта всем` : `«${t.name}»: открыта всем игрокам`);
+      }
+      return loadBuildsSection();
+    }
+
+    const playersButton = e.target.closest('.build-players');
+    if (playersButton) {
+      const t = templateAt(playersButton);
+      if (t) showBuildPlayersDialog(t, Number(playersButton.dataset.index));
+      return;
+    }
+
+    const saveButton = e.target.closest('.build-players-save');
+    if (saveButton) {
+      const t = templateAt(saveButton);
+      if (!t) return;
+      const ids = [...document.querySelectorAll('#buildPlayersList input:checked')].map(input => input.value);
+      if (await saveBuildTemplate(t, { players: ids })) {
+        closeRowDetail();
+        showToast(`«${t.name}»: выбранных игроков — ${ids.length}`);
+      }
+      return loadBuildsSection();
+    }
+
+    // A tap on a folded card, as in the tables above.
+    if (!astvardCardsMode() || e.target.closest('button, a, label, input, select')) return;
+    const row = e.target.closest('#buildsTemplatesBody tr[data-index]');
+    const t = row && templateAt(row);
+    if (t) showBuildTemplateDetail(t, Number(row.dataset.index));
+  });
+}
+
+bindBuildsHandlers();
