@@ -8,9 +8,9 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%232e7bf6'/%3E%3Cstop offset='100%25' stop-color='%2320e0f5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpolygon points='50,6 90,38 50,94 10,38' fill='url(%23g)'/%3E%3Cpolygon points='50,6 90,38 10,38' fill='%23ffffff' fill-opacity='0.18'/%3E%3C/svg%3E">
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- Quill Editor -->
-  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-  <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+  <!-- Quill Editor: server.js lets exactly this path through its CSP, change both together -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@1.3.6/dist/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/quill@1.3.6/dist/quill.min.js"></script>
 </head>
 <body>
   <div class="app-container">

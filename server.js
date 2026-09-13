@@ -132,12 +132,20 @@ reloadSettingsCache();
 // stylesheet was refused and the site fell back to the system font without a word.
 // Metrika's hosts go only to public pages and only once a counter number is set in
 // the panel (sendPublicHtml below) — the admin panel has no business talking to Yandex.
+//
+// Quill, the article editor, is let through by its package path on jsdelivr, not by
+// host. The admin page used to take it from cdn.quilljs.com, which now answers 301 to
+// jsdelivr; a policy judges where a redirect lands, so the editor was refused and
+// articles fell back to a bare textarea. A new Quill version in public/index.html
+// needs this path moved too — test/http.test.js checks the pages against the policy.
+const QUILL_CDN = 'https://cdn.jsdelivr.net/npm/quill@1.3.6/';
+
 function buildCsp({ metrika = false } = {}) {
   const yandex = metrika ? ' https://mc.yandex.ru https://mc.yandex.com https://yastatic.net' : '';
   return [
     "default-src 'self'",
-    `script-src 'self' https://unpkg.com https://cdn.quilljs.com 'unsafe-inline'${yandex}`,
-    "style-src 'self' https://cdn.quilljs.com https://fonts.googleapis.com 'unsafe-inline'",
+    `script-src 'self' https://unpkg.com ${QUILL_CDN} 'unsafe-inline'${yandex}`,
+    `style-src 'self' ${QUILL_CDN} https://fonts.googleapis.com 'unsafe-inline'`,
     `img-src 'self' data: blob:${yandex}`,
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src 'self'${yandex}`,

@@ -733,6 +733,47 @@ test('Метрика и коды подтверждения встают, тол
   assert.ok(!res.headers.get('content-security-policy').includes('mc.yandex.ru'));
 });
 
+// Quill is let through by its exact package path, so bumping the version in the page
+// alone would switch the article editor off without a word in the logs. A redirect
+// that leaves the listed host (what broke it once) is beyond a test without network.
+test('CSP пускает каждый скрипт и стиль, который страницы берут с чужих адресов', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const csp = (await fetch(`${baseUrl}/admin/login.html`)).headers.get('content-security-policy');
+  const allows = (directive, url) => {
+    const sources = csp.split(';').map((part) => part.trim().split(/\s+/))
+      .find(([name]) => name === directive).slice(1);
+    const target = new URL(url);
+    return sources.some((source) => {
+      if (!source.startsWith('https://')) return false;
+      const { origin, pathname } = new URL(source);
+      if (target.origin !== origin) return false;
+      if (pathname === '/') return true;
+      return pathname.endsWith('/') ? target.pathname.startsWith(pathname) : target.pathname === pathname;
+    });
+  };
+
+  const checked = [];
+  for (const dir of ['public', 'client']) {
+    const root = path.join(__dirname, '..', dir);
+    for (const file of fs.readdirSync(root).filter((name) => name.endsWith('.html'))) {
+      const html = fs.readFileSync(path.join(root, file), 'utf8');
+      for (const [, url] of html.matchAll(/<script\b[^>]*\bsrc="(https?:\/\/[^"]+)"/g)) {
+        assert.ok(allows('script-src', url), `${dir}/${file}: ${url}`);
+        checked.push(url);
+      }
+      for (const [tag] of html.matchAll(/<link\b[^>]*>/g)) {
+        const href = /\bhref="(https?:\/\/[^"]+)"/.exec(tag);
+        if (!href || !/\brel="stylesheet"/.test(tag)) continue;
+        assert.ok(allows('style-src', href[1]), `${dir}/${file}: ${href[1]}`);
+        checked.push(href[1]);
+      }
+    }
+  }
+  assert.ok(checked.some((url) => url.includes('quill.min.js')), 'редактор статей среди проверенного');
+  assert.ok(checked.some((url) => url.includes('quill.snow.css')));
+});
+
 // ---------------------------------------------------------------- builds for players
 
 const TAB = String.fromCharCode(9);
