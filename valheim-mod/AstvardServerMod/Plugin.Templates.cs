@@ -190,7 +190,6 @@ namespace AstvardServerMod
             try
             {
                 System.IO.Directory.CreateDirectory(TemplatesDir);
-                SeedBuiltInTemplates();
 
                 foreach (var path in System.IO.Directory.GetFiles(TemplatesDir, "*.txt"))
                 {
@@ -503,37 +502,5 @@ namespace AstvardServerMod
 
         // ---------------- first run ----------------
 
-        /// <summary>
-        /// The templates that used to be compiled in are written out once, so an
-        /// existing setup keeps everything it had and the arrays can eventually go.
-        /// </summary>
-        private static void SeedBuiltInTemplates()
-        {
-            SeedOne("Платформа 4х4", "Площадки", BuiltInTemplates.Platform4x4);
-            SeedOne("Стартовый дом №1", "Дома", BuiltInTemplates.StarterHouse1);
-            SeedOne("Полная кухня", "Кухни", BuiltInTemplates.KitchenFull);
-            SeedOne("Плавильня", "Переработка", BuiltInTemplates.SmelterHall);
-            SeedOne("Угольные печи", "Переработка", BuiltInTemplates.CharcoalKilns);
-        }
-
-        private static void SeedOne(string name, string category, string[] lines)
-        {
-            var path = System.IO.Path.Combine(TemplatesDir, SafeFileName(name) + ".txt");
-            var bin = System.IO.Path.Combine(TemplatesDir, "deleted", SafeFileName(name) + ".txt");
-
-            // Seeding is once and for all: a template the admin deleted must not come
-            // back on the next start.
-            if (System.IO.File.Exists(path) || System.IO.File.Exists(bin)) return;
-
-            WriteTemplate(new BlueprintTemplate
-            {
-                Name = name,
-                Category = category,
-                Author = "",
-                Path = path,
-                Lines = lines,
-                Pieces = lines.Length,
-            });
-        }
     }
 }
