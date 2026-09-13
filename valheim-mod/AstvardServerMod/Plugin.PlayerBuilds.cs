@@ -21,8 +21,6 @@ namespace AstvardServerMod
 
         internal static GameObject PlayerMyTemplatesButton;
 
-        internal static GameObject PlayerServerTemplatesButton;
-
         internal static readonly GameObject[] PlayerTemplateButtons = new GameObject[MaxTemplateButtons];
 
         internal static GameObject TemplatePlayersButton;
@@ -36,6 +34,8 @@ namespace AstvardServerMod
         /// «Постройки» lists. Filled from the server's list, which says so per template.
         /// </summary>
         private static readonly List<SharedTemplate> PlayerTemplates = new List<SharedTemplate>();
+
+        private static int _shownPlayerTemplates;
 
         /// <summary>What we last asked the server for to build rather than to keep; see OnTemplateBody.</summary>
         private static string _awaitedBuild;
@@ -84,26 +84,17 @@ namespace AstvardServerMod
                 OpenCopyForm();
             });
 
-            PlayerMyTemplatesButton = MakeButton(gui, "Шаблоны", () =>
-            {
-                MenuState = StateTemplates;
-                ReloadTemplates();
-                RefreshMenu();
-            });
-
-            PlayerServerTemplatesButton = MakeButton(gui, "", () =>
-            {
-                MenuState = StatePlayerTemplates;
-                AskSharedList();
-                RefreshMenu();
-            });
+            // One way into templates, as an admin has: own and the server's behind «Шаблоны».
+            PlayerMyTemplatesButton = MakeButton(gui, "Шаблоны", OpenTemplateSources);
 
             for (var slot = 0; slot < MaxTemplateButtons; slot++)
             {
                 var index = slot;
                 PlayerTemplateButtons[slot] = MakeButton(gui, "", () =>
                 {
-                    if (index < PlayerTemplates.Count) RequestPlayerBuild(PlayerTemplates[index]);
+                    var shown = SharedIn(PlayerTemplates, _sharedCategory);
+                    var at = MenuPaging.Clamp(_itemOffset, shown.Count, MaxTemplateButtons) + index;
+                    if (at < shown.Count) RequestPlayerBuild(shown[at]);
                 });
             }
         }
@@ -205,9 +196,16 @@ namespace AstvardServerMod
         /// <summary>Relabels a player's «Постройки», and the admin's two switches, from the last list.</summary>
         private static void RebuildPlayerBuildViews()
         {
+            var shown = SharedIn(PlayerTemplates, _sharedCategory);
+            if (MenuState == StatePlayerTemplates)
+                _itemOffset = MenuPaging.Clamp(_itemOffset, shown.Count, MaxTemplateButtons);
+            _shownPlayerTemplates = MenuState == StatePlayerTemplates
+                ? MenuPaging.Shown(_itemOffset, shown.Count, MaxTemplateButtons)
+                : 0;
+
             for (var i = 0; i < MaxTemplateButtons; i++)
-                SetLabel(PlayerTemplateButtons[i], i < PlayerTemplates.Count
-                    ? $"{PlayerTemplates[i].Name} ({PlayerTemplates[i].Pieces})"
+                SetLabel(PlayerTemplateButtons[i], i < _shownPlayerTemplates
+                    ? $"{shown[_itemOffset + i].Name} ({shown[_itemOffset + i].Pieces})"
                     : "");
 
             var hint = PlayerBuildHint != null
@@ -222,20 +220,16 @@ namespace AstvardServerMod
                         + (wait > 0 ? $"{NEWLINE}Следующая — через {FormatWait(wait)}." : "");
             if (hint != null)
                 hint.text = MenuState == StatePlayerTemplates
-                    ? (PlayerTemplates.Count == 0
+                    ? (shown.Count == 0
                         ? "Админ пока ничего не разрешил."
-                        : $"Разрешено админом. Нажми —{NEWLINE}появится проекция:{NEWLINE}"
+                        : $"{_sharedCategory}: {shown.Count}. Нажми —{NEWLINE}появится проекция:{NEWLINE}"
                           + $"ЛКМ — поставить, Esc — отмена,{NEWLINE}"
                           + $"Q/E — поворот, Shift+Q/E — высота,{NEWLINE}"
                           + "P — закрепить, стрелки — сдвиг."
-                          + (PlayerTemplates.Count > MaxTemplateButtons
-                              ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
-                              : "")
+                          + WindowNote(_itemOffset, shown.Count)
                           // Paid, they keep no pause: the bag is the whole price.
                           + (RulePaid("tpl") ? $"{NEWLINE}Из твоих материалов." : pause))
                     : "Постройки, открытые админом." + pause;
-
-            SetLabel(PlayerServerTemplatesButton, $"Шаблоны сервера: {PlayerTemplates.Count}");
 
             SetLabel(TemplatePlayersButton, _editingTemplate != null && IsForPlayers(_editingTemplate.Name)
                 ? "Запретить игрокам"
@@ -259,6 +253,7 @@ namespace AstvardServerMod
         private static bool IsPlayerBuildPage(int state)
         {
             return state == StatePlayerBuild || state == StatePlayerTemplates || state == StateFence
+                   || state == StateTemplateSource || state == StateSharedCategories
                    || state == StateCopyForm || state == StateTemplates || state == StateTemplateList
                    || state == StateTemplateEdit || state == StateAreaFill || state == StateWallHeight
                    || state == StateBuildSettings;
@@ -276,12 +271,11 @@ namespace AstvardServerMod
             SetActive(PlayerFenceButton, page && RuleAllows("fence"));
             SetActive(PlayerCopyButton, page && RuleAllows("copy"));
             SetActive(PlayerSaveButton, page && RuleAllows("copy"));
-            SetActive(PlayerMyTemplatesButton, page && RuleAllows("copy"));
-            SetActive(PlayerServerTemplatesButton, page && PlayerTemplates.Count > 0 && RuleAllows("tpl"));
+            SetActive(PlayerMyTemplatesButton, page && (RuleAllows("copy") || (PlayerTemplates.Count > 0 && RuleAllows("tpl"))));
 
             for (var i = 0; i < MaxTemplateButtons; i++)
                 SetActive(PlayerTemplateButtons[i], !admin && MenuState == StatePlayerTemplates
-                                                    && i < PlayerTemplates.Count);
+                                                    && i < _shownPlayerTemplates);
 
             SetActive(TemplatePlayersButton, admin && MenuState == StateTemplateEdit);
             SetActive(SharedPlayersButton, admin && MenuState == StateSharedItem);

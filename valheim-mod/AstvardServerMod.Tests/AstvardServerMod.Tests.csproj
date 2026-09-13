@@ -19,6 +19,7 @@
     <Compile Include="..\AstvardServerMod\Geometry.cs" Link="Geometry.cs" />
     <!-- The text the mod and the site exchange about player builds: no game needed either. -->
     <Compile Include="..\AstvardServerMod\SiteSync.cs" Link="SiteSync.cs" />
+    <Compile Include="..\AstvardServerMod\MenuPaging.cs" Link="MenuPaging.cs" />
   </ItemGroup>
 
   <ItemGroup>

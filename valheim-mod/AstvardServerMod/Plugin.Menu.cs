@@ -68,6 +68,8 @@ namespace AstvardServerMod
         private const int StateResourceRate = 52; // во сколько раз больше ресурсов
         private const int StateWallHeight = 50;   // высота стены по краю пола, из «Заполнить»
         private const int StateBuildSettings = 51; // как ставятся постройки: прилипание, выравнивание, снос
+        private const int StateTemplateSource = 53; // «Шаблоны»: мои или шаблоны сервера
+        private const int StateSharedCategories = 54; // категории шаблонов сервера: у админа все, у игрока открытые ему
 
         internal static GameObject Panel;
 
@@ -104,7 +106,10 @@ namespace AstvardServerMod
         internal static GameObject TemplateNameLabel;
         internal static GameObject TemplateCategoryLabel;
         internal static GameObject TemplateShareButton;
-        internal static GameObject SharedButton;
+        internal static GameObject TemplateMineButton;
+        internal static GameObject TemplateSharedButton;
+        internal static GameObject ListUpButton;
+        internal static GameObject ListDownButton;
         internal static GameObject SharedHint;
         internal static GameObject SharedTakeButton;
         internal static GameObject SharedDeleteButton;
@@ -804,17 +809,7 @@ namespace AstvardServerMod
                 OpenCopyForm();
             });
 
-            TemplatesButton = MakeButton(gui, "Шаблоны", () =>
-            {
-                MenuState = StateTemplates;
-                // Read the folder on the way in, so a file dropped there while the
-                // game was running shows up without a restart.
-                ReloadTemplates();
-                // And ask the server which of them players may build, for the switch on
-                // each template's page.
-                AskSharedList();
-                RefreshMenu();
-            });
+            TemplatesButton = MakeButton(gui, "Шаблоны", OpenTemplateSources);
 
             SpawnerButton = MakeButton(gui, "Спавнеры", () =>
             {
@@ -828,6 +823,23 @@ namespace AstvardServerMod
 
             TemplateHint = MakeText(gui, "");
 
+            // The page «Шаблоны» opens on, for an admin and a player alike: one's own library
+            // or the server's. Either leads on to categories and then the templates in one.
+            TemplateMineButton = MakeButton(gui, "Мои шаблоны", () =>
+            {
+                _categoryOffset = 0;
+                MenuState = StateTemplates;
+                RefreshMenu();
+            });
+
+            TemplateSharedButton = MakeButton(gui, "Шаблоны сервера", () =>
+            {
+                _categoryOffset = 0;
+                MenuState = StateSharedCategories;
+                AskSharedList();
+                RefreshMenu();
+            });
+
             // One button per category and per template, filled in from whatever the
             // files say. Unity widgets are built once, so the pools stay put and the
             // lists move under them.
@@ -836,11 +848,24 @@ namespace AstvardServerMod
                 var index = slot;
                 CategoryButtons[slot] = MakeButton(gui, "", () =>
                 {
-                    var categories = TemplateCategories();
-                    if (index >= categories.Count) return;
+                    // One pool for both libraries' categories: the page says which it is.
+                    var shared = MenuState == StateSharedCategories;
+                    var categories = shared ? SharedCategories(SharedShown()) : TemplateCategories();
+                    var at = MenuPaging.Clamp(_categoryOffset, categories.Count, MaxTemplateButtons) + index;
+                    if (at >= categories.Count) return;
 
-                    _templateCategory = categories[index];
-                    MenuState = StateTemplateList;
+                    _itemOffset = 0;
+                    if (shared)
+                    {
+                        _sharedCategory = categories[at];
+                        MenuState = IsAdminUnlocked ? StateSharedList : StatePlayerTemplates;
+                    }
+                    else
+                    {
+                        _templateCategory = categories[at];
+                        MenuState = StateTemplateList;
+                    }
+
                     RefreshMenu();
                 });
             }
@@ -851,9 +876,10 @@ namespace AstvardServerMod
                 TemplateButtons[slot] = MakeButton(gui, "", () =>
                 {
                     var shown = TemplatesIn(_templateCategory);
-                    if (index >= shown.Count) return;
+                    var at = MenuPaging.Clamp(_itemOffset, shown.Count, MaxTemplateButtons) + index;
+                    if (at >= shown.Count) return;
 
-                    _editingTemplate = shown[index];
+                    _editingTemplate = shown[at];
 
                     // Filled in rather than left blank: renaming means editing what is
                     // there, and an empty box says nothing about what you are editing.
@@ -919,13 +945,6 @@ namespace AstvardServerMod
 
             CreateTemplatePlayersWidget(gui);
 
-            SharedButton = MakeButton(gui, "Общие", () =>
-            {
-                MenuState = StateSharedList;
-                RequestSharedList();
-                RefreshMenu();
-            });
-
             SharedHint = MakeText(gui, "");
 
             for (var slot = 0; slot < MaxTemplateButtons; slot++)
@@ -933,9 +952,11 @@ namespace AstvardServerMod
                 var index = slot;
                 SharedButtons[slot] = MakeButton(gui, "", () =>
                 {
-                    if (index >= SharedTemplates.Count) return;
+                    var shown = SharedIn(SharedTemplates, _sharedCategory);
+                    var at = MenuPaging.Clamp(_itemOffset, shown.Count, MaxTemplateButtons) + index;
+                    if (at >= shown.Count) return;
 
-                    _selectedShared = SharedTemplates[index];
+                    _selectedShared = shown[at];
                     _sharedItemBack = StateSharedList;
                     MenuState = StateSharedItem;
                     RefreshMenu();
@@ -977,6 +998,12 @@ namespace AstvardServerMod
 
             CopyApplyButton = MakeButton(gui, "Выполнить", () => { if (_copyToFile) RunCopyToFile(); else RunCopy(); });
 
+            // Scrolling for every long list. The eight buttons of a page stay put and the list
+            // moves under them. Made here, below all the pools, so the pair sits in one place
+            // on every list page; the mouse wheel over the panel does the same a row at a time.
+            ListUpButton = MakeButton(gui, "Выше", () => ScrollList(-MaxTemplateButtons));
+            ListDownButton = MakeButton(gui, "Ниже", () => ScrollList(MaxTemplateButtons));
+
             // Last but «Назад», so it sits in the same place on every page it shows on.
             CreateBuildUndoWidget(gui);
 
@@ -1001,10 +1028,11 @@ namespace AstvardServerMod
                 else if (MenuState == StateSpawners) MenuState = StateBuild;
                 else if (MenuState == StateFood) MenuState = StateCheats;
                 else if (MenuState == StateSpawnerList) MenuState = StateSpawners;
-                else if (MenuState == StateTemplates) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
+                else if (MenuState == StateTemplateSource) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
+                else if (MenuState == StateTemplates || MenuState == StateSharedCategories) MenuState = StateTemplateSource;
                 else if (MenuState == StateTemplateList) MenuState = StateTemplates;
                 else if (MenuState == StateTemplateEdit) MenuState = StateTemplateList;
-                else if (MenuState == StateSharedList) MenuState = StateTemplates;
+                else if (MenuState == StateSharedList) MenuState = StateSharedCategories;
                 else if (MenuState == StateSharedItem) MenuState = _sharedItemBack;
                 else if (MenuState == StatePlayerCooldown || MenuState == StateAllowedList) MenuState = StateBuildRules;
                 else if (MenuState == StateRuleEdit) MenuState = RulePage(PlayerRules[_editingRule].Group);
@@ -1013,7 +1041,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateRuneMinutes) MenuState = StateSettings;
                 else if (MenuState == StateResourceRate) MenuState = StateSettings;
                 else if (MenuState == StateSettings) MenuState = StateAdmin;
-                else if (MenuState == StatePlayerTemplates) MenuState = StatePlayerBuild;
+                else if (MenuState == StatePlayerTemplates) MenuState = StateSharedCategories;
                 else if (MenuState == StatePlayerZone) MenuState = StateFeatures;
                 else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateFeatures;
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
@@ -1369,8 +1397,14 @@ namespace AstvardServerMod
             // A player's own templates, while copying is open to them: the same pages, less
             // what only an admin does - putting one on the server, or opening it to players.
             var copying = admin || RuleAllows("copy");
-            SetActive(TemplateHint, copying && (MenuState == StateTemplates
-                                                || MenuState == StateTemplateList));
+            // The server's library, for a player: what the admins opened to them, while templates
+            // are open to players at all.
+            var sharedOpen = admin || (PlayerTemplates.Count > 0 && RuleAllows("tpl"));
+            SetActive(TemplateMineButton, copying && MenuState == StateTemplateSource);
+            SetActive(TemplateSharedButton, sharedOpen && MenuState == StateTemplateSource);
+            SetActive(TemplateHint, ((copying || sharedOpen) && MenuState == StateTemplateSource)
+                                    || (copying && (MenuState == StateTemplates || MenuState == StateTemplateList))
+                                    || (sharedOpen && MenuState == StateSharedCategories));
             SetActive(TemplateEditHint, copying && MenuState == StateTemplateEdit);
             SetActive(TemplatePlaceButton, copying && MenuState == StateTemplateEdit);
             SetActive(TemplateRenameButton, copying && MenuState == StateTemplateEdit);
@@ -1378,7 +1412,6 @@ namespace AstvardServerMod
             SetActive(TemplateShareButton, admin && MenuState == StateTemplateEdit);
             SetActive(TemplateSubmitButton, !admin && copying && RuleAllows("share")
                                             && MenuState == StateTemplateEdit);
-            SetActive(SharedButton, admin && MenuState == StateTemplates);
             SetActive(SharedHint, admin && (MenuState == StateSharedList
                                             || MenuState == StateSharedItem));
             SetActive(SharedTakeButton, admin && MenuState == StateSharedItem);
@@ -1386,7 +1419,7 @@ namespace AstvardServerMod
 
             for (var i = 0; i < MaxTemplateButtons; i++)
                 SetActive(SharedButtons[i], admin && MenuState == StateSharedList
-                                            && i < SharedTemplates.Count);
+                                            && i < _shownShared);
 
             // A player's copy form names only what is saved, not what is placed.
             var naming = MenuState == StateTemplateEdit || (MenuState == StateCopyForm && (admin || _copyToFile));
@@ -1397,10 +1430,23 @@ namespace AstvardServerMod
 
             for (var i = 0; i < MaxTemplateButtons; i++)
             {
-                SetActive(CategoryButtons[i], copying && MenuState == StateTemplates
+                SetActive(CategoryButtons[i], ((copying && MenuState == StateTemplates)
+                                               || (sharedOpen && MenuState == StateSharedCategories))
                                               && i < _shownCategories);
                 SetActive(TemplateButtons[i], copying && MenuState == StateTemplateList
                                               && i < _shownTemplates);
+            }
+
+            // The pair shows on a list page only while its list is longer than a page. At the top
+            // or the bottom its half is greyed out rather than hidden, so nothing under it jumps.
+            var listTotal = IsListPage(MenuState) && ListPageOpen(admin, copying, sharedOpen) ? CurrentListTotal() : 0;
+            var paged = listTotal > MaxTemplateButtons;
+            SetActive(ListUpButton, paged);
+            SetActive(ListDownButton, paged);
+            if (paged)
+            {
+                SetInteractable(ListUpButton, MenuPaging.CanGoUp(ListOffset(), listTotal, MaxTemplateButtons));
+                SetInteractable(ListDownButton, MenuPaging.CanGoDown(ListOffset(), listTotal, MaxTemplateButtons));
             }
 
             if (MenuState == StateCopyForm) UpdateCopyHint();
@@ -1522,6 +1568,12 @@ namespace AstvardServerMod
         private static void SetActive(GameObject go, bool state)
         {
             if (go != null) go.SetActive(state);
+        }
+
+        private static void SetInteractable(GameObject go, bool state)
+        {
+            var button = go != null ? go.GetComponent<Button>() : null;
+            if (button != null) button.interactable = state;
         }
 
         private static void AddFixedSize(GameObject go, float width, float height)

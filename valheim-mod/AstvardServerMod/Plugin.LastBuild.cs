@@ -60,6 +60,7 @@ namespace AstvardServerMod
             return state == StateBuild || state == StateCopyForm
                    || state == StateTemplates || state == StateTemplateList || state == StateTemplateEdit
                    || state == StateSharedList || state == StateSharedItem
+                   || state == StateTemplateSource || state == StateSharedCategories
                    || state == StateSpawners || state == StateSpawnerList
                    || state == StateFence || state == StateAreaFill || state == StateWallHeight
                    || state == StateBuildSettings;

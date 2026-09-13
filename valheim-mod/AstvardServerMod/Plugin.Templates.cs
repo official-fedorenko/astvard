@@ -49,6 +49,13 @@ namespace AstvardServerMod
         private static SharedTemplate _selectedShared;
         private static int _shownCategories;
         private static int _shownTemplates;
+        private static int _shownShared;
+        private static string _sharedCategory = "";
+
+        // The first shown row of the list on screen. Categories keep theirs while one of them
+        // is open, so «Назад» comes back to the same place; a category's list starts at the top.
+        private static int _categoryOffset;
+        private static int _itemOffset;
 
         private static void SetFieldText(GameObject inputGo, string text)
         {
@@ -72,52 +79,64 @@ namespace AstvardServerMod
         /// </summary>
         private static void RebuildTemplateViews()
         {
-            var categories = TemplateCategories();
-            _shownCategories = Mathf.Min(categories.Count, MaxTemplateButtons);
+            var sharedPage = MenuState == StateSharedCategories;
+            var shared = SharedShown();
+            var categories = sharedPage ? SharedCategories(shared) : TemplateCategories();
+
+            // Clamped only on its own page: every refresh passes through here, and a window
+            // kept for a page not on screen must not be cut to the length of another list.
+            if (IsCategoryPage(MenuState))
+                _categoryOffset = MenuPaging.Clamp(_categoryOffset, categories.Count, MaxTemplateButtons);
+            _shownCategories = IsCategoryPage(MenuState)
+                ? MenuPaging.Shown(_categoryOffset, categories.Count, MaxTemplateButtons)
+                : 0;
 
             for (var i = 0; i < MaxTemplateButtons; i++)
             {
-                var label = CategoryButtons[i] != null
-                    ? CategoryButtons[i].GetComponentInChildren<UnityEngine.UI.Text>(true)
-                    : null;
-                if (label == null) continue;
+                var text = "";
+                if (i < _shownCategories)
+                {
+                    var category = categories[_categoryOffset + i];
+                    var count = sharedPage ? SharedIn(shared, category).Count : TemplatesIn(category).Count;
+                    text = $"{category} ({count})";
+                }
 
-                label.text = i < categories.Count
-                    ? $"{categories[i]} ({TemplatesIn(categories[i]).Count})"
-                    : "";
+                SetLabel(CategoryButtons[i], text);
             }
 
             var shown = TemplatesIn(_templateCategory);
-            _shownTemplates = Mathf.Min(shown.Count, MaxTemplateButtons);
+            if (MenuState == StateTemplateList)
+                _itemOffset = MenuPaging.Clamp(_itemOffset, shown.Count, MaxTemplateButtons);
+            _shownTemplates = MenuState == StateTemplateList
+                ? MenuPaging.Shown(_itemOffset, shown.Count, MaxTemplateButtons)
+                : 0;
 
             for (var i = 0; i < MaxTemplateButtons; i++)
-            {
-                var label = TemplateButtons[i] != null
-                    ? TemplateButtons[i].GetComponentInChildren<UnityEngine.UI.Text>(true)
-                    : null;
-                if (label == null) continue;
+                SetLabel(TemplateButtons[i], i < _shownTemplates
+                    ? $"{shown[_itemOffset + i].Name} ({shown[_itemOffset + i].Pieces})"
+                    : "");
 
-                label.text = i < shown.Count ? $"{shown[i].Name} ({shown[i].Pieces})" : "";
-            }
+            SetLabel(TemplateMineButton, $"Мои шаблоны ({Templates.Count})");
+            SetLabel(TemplateSharedButton, $"Шаблоны сервера ({shared.Count})");
 
-            UpdateTemplateHints(categories.Count, shown.Count);
+            UpdateTemplateHints();
             RebuildSharedViews();
         }
 
-        /// <summary>Relabels the server-side list from whatever the server last sent.</summary>
+        /// <summary>Relabels the admin's list of one shared category from whatever the server last sent.</summary>
         private static void RebuildSharedViews()
         {
-            for (var i = 0; i < MaxTemplateButtons; i++)
-            {
-                var label = SharedButtons[i] != null
-                    ? SharedButtons[i].GetComponentInChildren<UnityEngine.UI.Text>(true)
-                    : null;
-                if (label == null) continue;
+            var shown = SharedIn(SharedTemplates, _sharedCategory);
+            if (MenuState == StateSharedList)
+                _itemOffset = MenuPaging.Clamp(_itemOffset, shown.Count, MaxTemplateButtons);
+            _shownShared = MenuState == StateSharedList
+                ? MenuPaging.Shown(_itemOffset, shown.Count, MaxTemplateButtons)
+                : 0;
 
-                label.text = i < SharedTemplates.Count
-                    ? $"{SharedTemplates[i].Name} ({SharedTemplates[i].Pieces})"
-                    : "";
-            }
+            for (var i = 0; i < MaxTemplateButtons; i++)
+                SetLabel(SharedButtons[i], i < _shownShared
+                    ? $"{shown[_itemOffset + i].Name} ({shown[_itemOffset + i].Pieces})"
+                    : "");
 
             var hint = SharedHint != null
                 ? SharedHint.GetComponentInChildren<UnityEngine.UI.Text>(true)
@@ -135,35 +154,193 @@ namespace AstvardServerMod
                 return;
             }
 
-            hint.text = SharedTemplates.Count == 0
-                ? $"На сервере пусто.{NEWLINE}Открой свой шаблон и нажми{NEWLINE}«Выложить на сервер»."
-                : $"На сервере: {SharedTemplates.Count}."
-                  + (SharedTemplates.Count > MaxTemplateButtons
-                      ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
-                      : "");
+            hint.text = $"{_sharedCategory}: {shown.Count}." + WindowNote(_itemOffset, shown.Count);
         }
 
-        private static void UpdateTemplateHints(int categoryCount, int shownCount)
+        /// <summary>«Шаблоны» from either «Постройки»: first which library, one's own or the server's.</summary>
+        private static void OpenTemplateSources()
+        {
+            MenuState = StateTemplateSource;
+            // The folder read on the way in, so a file dropped there while the game ran shows up
+            // without a restart; and the server asked for its list, which the other half counts.
+            ReloadTemplates();
+            AskSharedList();
+            RefreshMenu();
+        }
+
+        /// <summary>The server's templates this client browses: all of them for an admin, the ones opened to this player otherwise.</summary>
+        private static List<SharedTemplate> SharedShown()
+        {
+            return IsAdminUnlocked ? SharedTemplates : PlayerTemplates;
+        }
+
+        private static string CategoryOf(SharedTemplate template)
+        {
+            return string.IsNullOrEmpty(template.Category) ? DefaultCategory : template.Category;
+        }
+
+        private static List<string> SharedCategories(List<SharedTemplate> list)
+        {
+            return list.Select(CategoryOf)
+                .Distinct()
+                .OrderBy(category => category, System.StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        private static List<SharedTemplate> SharedIn(List<SharedTemplate> list, string category)
+        {
+            return list.Where(template => CategoryOf(template) == category)
+                .OrderBy(template => template.Name, System.StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>
+        /// What the admin's «Шаблоны игрокам» lists: every server template open to someone, to
+        /// all or to players named on the site. Not this client's own list, which is only what
+        /// is open to the admin himself.
+        /// </summary>
+        private static List<SharedTemplate> AllowedTemplates()
+        {
+            return SharedTemplates.Where(template => template.ForAll || template.Listed > 0)
+                .OrderBy(CategoryOf, System.StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(template => template.Name, System.StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        private static bool IsListPage(int state)
+        {
+            return state == StateTemplates || state == StateTemplateList || state == StateSharedCategories
+                   || state == StateSharedList || state == StatePlayerTemplates || state == StateAllowedList;
+        }
+
+        private static bool IsCategoryPage(int state)
+        {
+            return state == StateTemplates || state == StateSharedCategories;
+        }
+
+        /// <summary>Whether the list page on screen is one this client is shown at all.</summary>
+        private static bool ListPageOpen(bool admin, bool copying, bool sharedOpen)
+        {
+            switch (MenuState)
+            {
+                case StateTemplates:
+                case StateTemplateList:
+                    return copying;
+                case StateSharedCategories:
+                    return sharedOpen;
+                case StateSharedList:
+                case StateAllowedList:
+                    return admin;
+                case StatePlayerTemplates:
+                    return !admin;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>How long the list on the current page is.</summary>
+        private static int CurrentListTotal()
+        {
+            switch (MenuState)
+            {
+                case StateTemplates: return TemplateCategories().Count;
+                case StateTemplateList: return TemplatesIn(_templateCategory).Count;
+                case StateSharedCategories: return SharedCategories(SharedShown()).Count;
+                case StateSharedList: return SharedIn(SharedTemplates, _sharedCategory).Count;
+                case StatePlayerTemplates: return SharedIn(PlayerTemplates, _sharedCategory).Count;
+                case StateAllowedList: return AllowedTemplates().Count;
+                default: return 0;
+            }
+        }
+
+        private static int ListOffset()
+        {
+            return IsCategoryPage(MenuState) ? _categoryOffset : _itemOffset;
+        }
+
+        private static void ScrollList(int delta)
+        {
+            if (!IsListPage(MenuState)) return;
+
+            var total = CurrentListTotal();
+            if (IsCategoryPage(MenuState))
+                _categoryOffset = MenuPaging.Step(_categoryOffset, total, MaxTemplateButtons, delta);
+            else
+                _itemOffset = MenuPaging.Step(_itemOffset, total, MaxTemplateButtons, delta);
+
+            RefreshMenu();
+        }
+
+        /// <summary>
+        /// From Update: the mouse wheel over the panel scrolls the list on it a row at a time.
+        /// Only over the panel - the wheel elsewhere belongs to the game - and the camera does
+        /// not read it while the inventory is open, which is the only time the panel is.
+        /// </summary>
+        internal static void TickListScroll()
+        {
+            if (Panel == null || !Panel.activeInHierarchy || !IsListPage(MenuState)) return;
+
+            var wheel = ZInput.GetMouseScrollWheel();
+            if (wheel == 0f) return;
+
+            var rect = Panel.GetComponent<RectTransform>();
+            var canvas = Panel.GetComponentInParent<Canvas>();
+            var eye = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            if (rect == null || !RectTransformUtility.RectangleContainsScreenPoint(rect, Input.mousePosition, eye)) return;
+
+            if (CurrentListTotal() <= MaxTemplateButtons) return;
+            ScrollList(wheel > 0f ? -1 : 1);
+        }
+
+        private static string WindowNote(int offset, int total)
+        {
+            var window = MenuPaging.Window(offset, total, MaxTemplateButtons);
+            return window.Length == 0 ? "" : NEWLINE + window;
+        }
+
+        private static void UpdateTemplateHints()
         {
             var hint = TemplateHint != null
                 ? TemplateHint.GetComponentInChildren<UnityEngine.UI.Text>(true)
                 : null;
             if (hint != null)
             {
-                if (Templates.Count == 0)
-                    hint.text = IsAdminUnlocked
-                        ? $"Шаблонов нет.{NEWLINE}Скопируй постройку и сохрани{NEWLINE}её из «Скопировать»."
-                        : $"Шаблонов нет.{NEWLINE}Сохрани свою постройку —{NEWLINE}«Сохранить постройку».";
-                else if (MenuState == StateTemplateList)
-                    hint.text = $"{_templateCategory}: {shownCount}"
-                                + (shownCount > MaxTemplateButtons
-                                    ? $".{NEWLINE}Показаны первые {MaxTemplateButtons}."
-                                    : ".");
-                else
-                    hint.text = $"Шаблонов: {Templates.Count}, категорий: {categoryCount}."
-                                + (categoryCount > MaxTemplateButtons
-                                    ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
-                                    : "");
+                var admin = IsAdminUnlocked;
+                switch (MenuState)
+                {
+                    case StateTemplateSource:
+                        hint.text = admin
+                            ? $"Мои — на этом компьютере.{NEWLINE}Шаблоны сервера — всё, что{NEWLINE}лежит на сервере; открытые{NEWLINE}игрокам они видят у себя."
+                            : $"Мои — постройки, которые{NEWLINE}ты сохранил сам. Шаблоны{NEWLINE}сервера — открытые тебе{NEWLINE}админом, их не переименовать.";
+                        break;
+
+                    case StateTemplates:
+                        var myCategories = TemplateCategories();
+                        hint.text = Templates.Count == 0
+                            ? (admin
+                                ? $"Шаблонов нет.{NEWLINE}Скопируй постройку и сохрани{NEWLINE}её из «Скопировать»."
+                                : $"Шаблонов нет.{NEWLINE}Сохрани свою постройку —{NEWLINE}«Сохранить постройку».")
+                            : $"Мои шаблоны: {Templates.Count},{NEWLINE}категорий: {myCategories.Count}."
+                              + WindowNote(_categoryOffset, myCategories.Count);
+                        break;
+
+                    case StateTemplateList:
+                        var inCategory = TemplatesIn(_templateCategory);
+                        hint.text = $"{_templateCategory}: {inCategory.Count}." + WindowNote(_itemOffset, inCategory.Count);
+                        break;
+
+                    case StateSharedCategories:
+                        var library = SharedShown();
+                        var libraryCategories = SharedCategories(library);
+                        hint.text = library.Count == 0
+                            ? (admin
+                                ? $"На сервере пусто.{NEWLINE}Открой свой шаблон и нажми{NEWLINE}«Выложить на сервер»."
+                                : "Админ пока ничего не открыл.")
+                            : (admin ? $"На сервере: {library.Count}," : $"Открыто тебе: {library.Count},")
+                              + $"{NEWLINE}категорий: {libraryCategories.Count}."
+                              + WindowNote(_categoryOffset, libraryCategories.Count);
+                        break;
+                }
             }
 
             var editHint = TemplateEditHint != null

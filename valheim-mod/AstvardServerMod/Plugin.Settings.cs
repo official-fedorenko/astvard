@@ -54,6 +54,8 @@ namespace AstvardServerMod
         // the server's own or the one of what players may build.
         private static int _sharedItemBack = StateSharedList;
 
+        private static int _shownAllowed;
+
         private static int _editingRule;
 
         /// <summary>
@@ -107,7 +109,11 @@ namespace AstvardServerMod
                 });
             }
 
-            AllowedListButton = MakeButton(gui, "", () => OpenRulePage(StateAllowedList));
+            AllowedListButton = MakeButton(gui, "", () =>
+            {
+                _itemOffset = 0;
+                OpenRulePage(StateAllowedList);
+            });
 
             CooldownHint = MakeText(gui, "Как часто игрок может ставить\nбесплатные постройки,\nв минутах. 0 — без паузы.\nОтмена постройки паузу\nне сбрасывает.");
 
@@ -148,9 +154,11 @@ namespace AstvardServerMod
                 var index = slot;
                 AllowedButtons[slot] = MakeButton(gui, "", () =>
                 {
-                    if (index >= PlayerTemplates.Count) return;
+                    var allowed = AllowedTemplates();
+                    var at = MenuPaging.Clamp(_itemOffset, allowed.Count, MaxTemplateButtons) + index;
+                    if (at >= allowed.Count) return;
 
-                    _selectedShared = PlayerTemplates[index];
+                    _selectedShared = allowed[at];
                     _sharedItemBack = StateAllowedList;
                     MenuState = StateSharedItem;
                     RefreshMenu();
@@ -218,7 +226,7 @@ namespace AstvardServerMod
             SetLabel(PlayerCooldownButton, _playerBuildMinutes > 0
                 ? $"Пауза построек: {_playerBuildMinutes} мин"
                 : "Пауза построек: нет");
-            SetLabel(AllowedListButton, $"Шаблоны игрокам: {PlayerTemplates.Count}");
+            SetLabel(AllowedListButton, $"Шаблоны игрокам: {AllowedTemplates().Count}");
             SetLabel(RuneMinutesButton, $"Руна за {RuneTime(_runeMinutes)}");
             SetLabel(ResourceRateButton, $"Ресурсы: {MultiplierText(ClientResourceMultiplier())}");
 
@@ -246,17 +254,21 @@ namespace AstvardServerMod
             }
 
             var allowedHint = AllowedHint != null ? AllowedHint.GetComponentInChildren<Text>(true) : null;
+            var allowedList = AllowedTemplates();
+            if (MenuState == StateAllowedList)
+                _itemOffset = MenuPaging.Clamp(_itemOffset, allowedList.Count, MaxTemplateButtons);
+            _shownAllowed = MenuState == StateAllowedList
+                ? MenuPaging.Shown(_itemOffset, allowedList.Count, MaxTemplateButtons)
+                : 0;
+
             if (allowedHint != null)
-                allowedHint.text = PlayerTemplates.Count == 0
+                allowedHint.text = allowedList.Count == 0
                     ? $"Игрокам пока ничего{NEWLINE}не разрешено. Разрешить —{NEWLINE}на странице шаблона."
-                    : $"Разрешено игрокам: {PlayerTemplates.Count}"
-                      + (PlayerTemplates.Count > MaxTemplateButtons
-                          ? $"{NEWLINE}Показаны первые {MaxTemplateButtons}."
-                          : "");
+                    : $"Разрешено игрокам: {allowedList.Count}." + WindowNote(_itemOffset, allowedList.Count);
 
             for (var i = 0; i < MaxTemplateButtons; i++)
-                SetLabel(AllowedButtons[i], i < PlayerTemplates.Count
-                    ? $"{PlayerTemplates[i].Name} ({PlayerTemplates[i].Pieces})"
+                SetLabel(AllowedButtons[i], i < _shownAllowed
+                    ? $"{allowedList[_itemOffset + i].Name} ({allowedList[_itemOffset + i].Pieces})"
                     : "");
 
             var rule = PlayerRules[Mathf.Clamp(_editingRule, 0, PlayerRules.Length - 1)];
@@ -319,7 +331,7 @@ namespace AstvardServerMod
             var allowed = admin && MenuState == StateAllowedList;
             SetActive(AllowedHint, allowed);
             for (var i = 0; i < MaxTemplateButtons; i++)
-                SetActive(AllowedButtons[i], allowed && i < PlayerTemplates.Count);
+                SetActive(AllowedButtons[i], allowed && i < _shownAllowed);
 
             var editing = admin && MenuState == StateRuleEdit;
             var kind = PlayerRules[Mathf.Clamp(_editingRule, 0, PlayerRules.Length - 1)].Kind;

@@ -540,6 +540,7 @@ namespace AstvardServerMod
             TickWorldRates();
             TickSiteLists();
             TickCurrencyLabel();
+            TickListScroll();
             UpdatePanelInputBlocking();
             UpdateRoadPreview();
             UpdateBridgePreview();
