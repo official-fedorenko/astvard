@@ -169,6 +169,14 @@ ssh astvard-vps chown -R valheim:valheim /srv/valheim/saves
   **`AstvardServerMod.dll` должен совпадать байт в байт с клиентским** — сверять
   md5, как в корневом `CLAUDE.md`. Это уже третье место, куда кладётся DLL.
 
+**Новая сборка на живой сервер** кладётся рядом с рабочей как `AstvardServerMod.dll.new`
+(`chown valheim:valheim`), дальше —
+`systemd-run --unit=astvard-restart --collect /bin/bash /srv/astvard/deploy/valheim/restart-when-empty.sh`.
+Скрипт ждёт, пока в логе игры никого не останется и на игровые порты перестанут идти
+пакеты, останавливает сервер через `stop`, подменяет DLL (прежняя остаётся в
+`/srv/valheim` как `AstvardServerMod.dll.<md5>.bak`) и запускает. Ход и итог — в
+`/root/astvard-restart-status.txt`.
+
 `server.sh` запускает игру через doorstop теми же четырьмя переменными, что и
 `start_server_bepinex.sh` из пакета. Если `BEPINEX=yes`, а файлов нет, сервер не
 запускается: ванильный старт там, где ждут мод, выглядел бы как «кнопки не работают».

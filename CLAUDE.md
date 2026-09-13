@@ -571,6 +571,13 @@ md5sum valheim-mod/AstvardServerMod/bin/Release/net472/AstvardServerMod.dll \
 работает у клиента. Новую DLL — `scp` в эту папку, `chown valheim:valheim`,
 `md5sum` там же, затем `docker compose -f deploy/valheim/compose.yml restart` из
 `/srv/astvard` (restart останавливает тем же SIGINT, мир пишется).
+Если на сервере могут играть, вместо `restart` — `deploy/valheim/restart-when-empty.sh`: DLL
+кладётся рядом как `AstvardServerMod.dll.new`, скрипт ждёт, пока ни лог, ни порты не покажут
+игроков, подменяет её, прежнюю оставляет в `/srv/valheim` как `.bak` и поднимает сервер; как
+запускать — в его шапке, ход — в `/root/astvard-restart-status.txt`. **Запуск по строке
+`Game server connected` вслепую не ждать:** пока новая игра не написала своё, в файле строки
+прошлого запуска, и ожидание «дожидалось» сразу — так обманулись 13.09.2026. Скрипт сверяет
+время строки с часами контейнера: в логе его местное время, не время машины.
 
 Тесты геометрии игры не требуют и идут за секунды:
 
