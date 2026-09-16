@@ -437,6 +437,7 @@ async function renderArticle(article) {
     html: fill(template, {
       head,
       site_name: text(settings, 'site_name'),
+      community_links: communityLinks(settings),
       title: article.title,
       published_iso: published,
       published_ru: dateRu(article.created_at),

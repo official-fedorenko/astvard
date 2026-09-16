@@ -2377,26 +2377,25 @@ function blobToBase64(blob) {
 // API: Settings loader с типами полей и группировкой
 async function loadSettings() {
   const siteContainer = document.getElementById('settingsContainerSite');
-  const cardsContainer = document.getElementById('settingsContainerCards');
+  const socialContainer = document.getElementById('settingsContainerSocial');
   siteContainer.innerHTML = '<div style="color: hsl(var(--text-muted));">Загрузка настроек...</div>';
-  cardsContainer.innerHTML = '';
+  socialContainer.innerHTML = '';
 
-  // Группировка настроек (для удобства). Группы из SITE_GROUPS рендерятся в
-  // «Настройка сайта», из CARD_GROUPS — в «Настройка карточек» (вкладки
-  // раздела «Настройки»).
+  // Группировка настроек. Группы из SITE_GROUPS рендерятся во вкладке
+  // «Настройка сайта», из SOCIAL_GROUPS — во вкладке «Настройка соц. сетей».
   const SITE_GROUPS = {
     'Общие': ['site_name', 'maintenance_mode', 'allow_registration', 'whitelist_auto_approve'],
     'Главная страница': ['hero_title', 'site_description'],
     'Продвижение в поиске': ['seo_title', 'seo_description', 'yandex_verification', 'google_verification', 'yandex_metrika_id'],
     'О блоге': ['about_title', 'about_subtitle', 'about_card1_title', 'about_card1_text', 'about_card2_title', 'about_card2_text'],
-    'Контакты': ['contact_title', 'contact_subtitle', 'contact_email', 'contact_address'],
-    'Сообщество и мод': ['discord_url', 'telegram_url', 'thunderstore_url', 'mod_download_url']
+    'Контакты': ['contact_title', 'contact_subtitle', 'contact_email', 'contact_address']
   };
-  const CARD_GROUPS = {
-    'Публичная карточка инструмента (по QR)': ['public_card_enabled', 'public_card_show_photo', 'public_card_show_category', 'public_card_show_brand', 'public_card_show_model', 'public_card_show_serial', 'public_card_show_inventory', 'public_card_show_status', 'public_card_show_purchase_date', 'public_card_show_notes'],
-    'Публичная карточка авто (по QR)': ['public_vehicle_card_enabled', 'public_vehicle_card_show_photo', 'public_vehicle_card_show_category', 'public_vehicle_card_show_brand', 'public_vehicle_card_show_model', 'public_vehicle_card_show_year', 'public_vehicle_card_show_plate', 'public_vehicle_card_show_vin', 'public_vehicle_card_show_status', 'public_vehicle_card_show_mileage', 'public_vehicle_card_show_purchase_date', 'public_vehicle_card_show_notes']
+  // Карточки инструмента и авто остались от панели электрика: настройки в базе
+  // ещё лежат, но показывать их здесь незачем — их место заняли соц. сети.
+  const SOCIAL_GROUPS = {
+    'Ссылки на наши каналы': ['discord_url', 'telegram_url', 'thunderstore_url', 'mod_download_url']
   };
-  const GROUPS = { ...SITE_GROUPS, ...CARD_GROUPS };
+  const GROUPS = { ...SITE_GROUPS, ...SOCIAL_GROUPS };
 
   // Понятные подписи (не зависят от description в БД, который может теряться
   // при сохранении из-за INSERT OR REPLACE).
@@ -2456,7 +2455,7 @@ async function loadSettings() {
     siteContainer.innerHTML = '';
 
     Object.entries(GROUPS).forEach(([groupTitle, keys]) => {
-      const container = groupTitle in CARD_GROUPS ? cardsContainer : siteContainer;
+      const container = groupTitle in SOCIAL_GROUPS ? socialContainer : siteContainer;
       // Заголовок группы
       const groupHeader = document.createElement('div');
       groupHeader.style.cssText = 'margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.5px;';
@@ -2510,7 +2509,7 @@ function switchSettingsTab(tab) {
   });
   document.getElementById('settingsForm').hidden = tab === 'system';
   document.getElementById('settingsPanelSite').hidden = tab !== 'site';
-  document.getElementById('settingsPanelCards').hidden = tab !== 'cards';
+  document.getElementById('settingsPanelSocial').hidden = tab !== 'social';
   document.getElementById('settingsPanelSystem').hidden = tab !== 'system';
 }
 document.querySelectorAll('.settings-tab-btn').forEach(btn => {
