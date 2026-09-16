@@ -1,0 +1,21 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  /* Ровно 256x256: Thunderstore другой размер не примет. Фон тёмный, а не
+     прозрачный — знак с прорезанной насквозь буквой на светлой карточке потерял
+     бы саму букву. */
+  * { margin: 0; box-sizing: border-box; }
+  html, body { width: 256px; height: 256px; overflow: hidden; }
+  body {
+    background: #0b0d14;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .glow {
+    position: absolute; width: 230px; height: 230px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(138,43,226,.45) 0%, rgba(138,43,226,0) 70%);
+  }
+  img { width: 176px; height: 176px; position: relative; }
+</style></head><body>
+  <div class="glow"></div>
+  <img src="../../client/img/astvard-mark.svg" alt="">
+</body></html>

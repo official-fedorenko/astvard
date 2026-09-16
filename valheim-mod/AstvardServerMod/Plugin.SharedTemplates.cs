@@ -286,6 +286,7 @@ namespace AstvardServerMod
             ReplyPlayerRules(sender);
             ReplyCurrency(sender);
             ReplyMayAdmin(sender);
+            ReplyVersion(sender);
         }
 
         private static void BroadcastSharedList()

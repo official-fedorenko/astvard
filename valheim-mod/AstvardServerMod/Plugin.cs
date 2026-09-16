@@ -12,10 +12,22 @@ using UnityEngine.UI;
 
 namespace AstvardServerMod
 {
-    [BepInPlugin("astvard.servermod", "AstvardServerMod", "1.0.0")]
+    [BepInPlugin("astvard.servermod", "AstvardServerMod", Version)]
     [BepInDependency(Jotunn.Main.ModGuid)]
     public partial class Plugin : BaseUnityPlugin
     {
+        /// <summary>
+        /// One place for the version, read by the attribute above and sent to clients.
+        ///
+        /// It stopped being decoration the day players started installing from Thunderstore
+        /// and updating whenever they feel like it. Minor and patch are for anything a
+        /// mismatched pair can live through; major is the promise that breaks - the ninth
+        /// field of a template line, chest contents, is exactly that sort of change, and an
+        /// old client drops it without a word. Nobody is turned away for either: see
+        /// OnServerVersion, and note there is no NetworkCompatibility attribute on purpose.
+        /// </summary>
+        internal const string Version = "1.1.0";
+
         internal static bool IsAdminUnlocked;
 
         internal static Plugin Instance;
@@ -125,6 +137,9 @@ namespace AstvardServerMod
         private const string RpcAdminGrant = "AstvardAdminGrant";
 
         private const string RpcAdminSeen = "AstvardAdminSeen";
+
+        /// <summary>The server's own version, sent with the panel's usual query.</summary>
+        private const string RpcVersion = "AstvardVersion";
 
         /// <summary>
         /// The one outstanding unlock request, or 0. A client cannot authenticate an
@@ -242,6 +257,7 @@ namespace AstvardServerMod
             rpc.Register<long>(RpcAdminAsk, OnAdminAsk);
             rpc.Register<long>(RpcAdminGrant, OnAdminGrant);
             rpc.Register<bool>(RpcAdminSeen, OnAdminSeen);
+            rpc.Register<string>(RpcVersion, OnServerVersion);
         }
 
         /// <summary>Client side: ask the server whether we may have the admin buttons.</summary>
@@ -449,6 +465,61 @@ namespace AstvardServerMod
 
             MayAskAdmin = may;
             RefreshMenu();
+        }
+
+        // Said once per connection, like the panel's first query: a line on every panel
+        // open would be nagging, and a reconnect brings a new ZNet.
+        private static ZNet _versionToldOn;
+
+        /// <summary>Server side: our version, for the client to compare against its own.</summary>
+        internal static void ReplyVersion(long sender)
+        {
+            ZRoutedRpc.instance?.InvokeRoutedRPC(ReplyTarget(sender), RpcVersion, Version);
+        }
+
+        /// <summary>
+        /// Client side: says once that the versions differ, and does nothing else about it.
+        /// Nobody is disconnected over this. The mod is not required to play here, and half
+        /// the point of putting it on Thunderstore is that a player updates when they want
+        /// to - so this is a line in the chat, not a gate.
+        ///
+        /// A player who never opens the panel never hears it. That is the price of hanging
+        /// it on the panel's own query rather than on the handshake.
+        /// </summary>
+        private static void OnServerVersion(long sender, string version)
+        {
+            if (string.IsNullOrEmpty(version) || version == Version) return;
+            if (ZNet.instance == null || ReferenceEquals(ZNet.instance, _versionToldOn)) return;
+            _versionToldOn = ZNet.instance;
+
+            Log.LogInfo($"[AstvardServerMod] Server runs {version}, we run {Version}.");
+
+            Chat.instance?.AddString(Behind(Version, version)
+                ? $"Astvard: на сервере мод {version}, у тебя {Version}. "
+                  + "Обнови — часть кнопок может работать не так."
+                : $"Astvard: у тебя мод {Version}, на сервере {version}. "
+                  + "Заходить это не мешает, но нового сервер ещё не умеет.");
+        }
+
+        /// <summary>
+        /// Whether <paramref name="mine"/> is behind <paramref name="theirs"/>, compared
+        /// number by number: "1.10.0" is ahead of "1.9.0", which comparing the strings gets
+        /// backwards. Anything that will not parse counts as equal - the version only ever
+        /// decides which sentence to print, and a confidently wrong one is worse than none.
+        /// </summary>
+        private static bool Behind(string mine, string theirs)
+        {
+            var a = mine.Split('.');
+            var b = theirs.Split('.');
+
+            for (var i = 0; i < 3; i++)
+            {
+                if (i >= a.Length || i >= b.Length) return false;
+                if (!int.TryParse(a[i], out var x) || !int.TryParse(b[i], out var y)) return false;
+                if (x != y) return x < y;
+            }
+
+            return false;
         }
 
         /// <summary>Client side: an answer arrived. Only ours counts.</summary>

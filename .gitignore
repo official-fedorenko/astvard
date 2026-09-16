@@ -20,3 +20,7 @@ valheim-mod/decompiled_*.cs
 
 # Local world backups, not source
 .backups/
+
+# Собранный пакет для Thunderstore — пересобирается tools/thunderstore/build.py
+tools/thunderstore/*.zip
+tools/release/*.zip
