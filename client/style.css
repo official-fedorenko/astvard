@@ -1020,6 +1020,9 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 }
 
 .footer__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 13px;
@@ -1028,6 +1031,12 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 .footer__link:hover {
     color: var(--accent-cyan);
+}
+
+.join-download .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
 }
 
 .join-download {
@@ -1041,4 +1050,12 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .join-download__hint {
     color: var(--text-muted);
     font-size: 13px;
+}
+
+/* Марка канала рядом с подписью. Размер в em, чтобы иконка ехала за шрифтом
+   ссылки, а не жила своей жизнью. */
+.channel-icon {
+    width: 1.15em;
+    height: 1.15em;
+    flex-shrink: 0;
 }
