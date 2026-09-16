@@ -2433,11 +2433,10 @@ async function loadSettings() {
     public_vehicle_card_show_notes: 'Показывать заметки'
   };
 
-  const PUBLIC_CARD_KEYS = [...GROUPS['Публичная карточка инструмента (по QR)'], ...GROUPS['Публичная карточка авто (по QR)']];
 
   // Определяем тип контрола по ключу
   function getFieldType(key) {
-    if (['maintenance_mode', 'allow_registration', 'whitelist_auto_approve'].includes(key) || PUBLIC_CARD_KEYS.includes(key)) return 'boolean';
+    if (['maintenance_mode', 'allow_registration', 'whitelist_auto_approve'].includes(key)) return 'boolean';
     if (['site_description', 'seo_description', 'about_subtitle', 'about_card1_text', 'about_card2_text', 'contact_subtitle'].includes(key)) return 'textarea';
     if (key === 'contact_email') return 'email';
     return 'text';
