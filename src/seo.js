@@ -219,13 +219,29 @@ function communityLinks(settings) {
   return html ? `<nav class="footer__links" aria-label="Сообщество">${html}</nav>` : '';
 }
 
+// Два способа поставить мод, и оба необязательные. Файлом — кто не держит
+// менеджер модов; через менеджер — кому проще, там BepInEx и Jotunn приедут
+// сами. Кнопки появляются порознь: настроен один адрес — будет одна кнопка.
 function modDownload(settings) {
-  const href = safeUrl(settings.mod_download_url);
-  if (!href) return '';
+  const direct = safeUrl(settings.mod_download_url);
+  const store = safeUrl(settings.thunderstore_url);
+  if (!direct && !store) return '';
 
-  return `<p class="join-download"><a class="btn btn--primary" href="${escapeHtml(href)}"`
-    + ` target="_blank" rel="noopener">${channelIcon('mod_download_url')}`
-    + '<span>Скачать мод для Valheim</span></a>'
+  const buttons = [];
+
+  if (direct) {
+    buttons.push(`<a class="btn btn--primary" href="${escapeHtml(direct)}"`
+      + ` target="_blank" rel="noopener">${channelIcon('mod_download_url')}`
+      + '<span>Скачать мод</span></a>');
+  }
+
+  if (store) {
+    buttons.push(`<a class="btn btn--ghost" href="${escapeHtml(store)}"`
+      + ` target="_blank" rel="noopener">${channelIcon('thunderstore_url')}`
+      + '<span>Через менеджер модов</span></a>');
+  }
+
+  return `<p class="join-download">${buttons.join('')}`
     + '<span class="join-download__hint">Необязательно: без мода на сервер тоже пускают</span></p>';
 }
 
