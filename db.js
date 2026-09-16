@@ -228,6 +228,13 @@ const DEFAULT_SETTINGS = [
   ['contact_subtitle', 'Вопрос по серверу или хочешь к нам — напиши', 'Контакты: Подзаголовок'],
   ['contact_email', 'info@astvard.online', 'Контакты: Электронная почта'],
   ['contact_address', 'astvard.online', 'Контакты: Адрес'],
+  // Ссылки сообщества. Пустая настройка прячет ссылку целиком, поэтому здесь нет
+  // ни одного адреса: их вписывает админ, когда им есть куда вести. Ссылка на
+  // несуществующую страницу хуже отсутствующей.
+  ['discord_url', '', 'Ссылка на Discord — пусто прячет ссылку'],
+  ['telegram_url', '', 'Ссылка на Telegram — пусто прячет ссылку'],
+  ['thunderstore_url', '', 'Страница мода на Thunderstore — пусто прячет ссылку'],
+  ['mod_download_url', '', 'Скачать мод: ссылка на релизы GitHub — пусто прячет кнопку'],
   // What search results and link previews show (src/seo.js). Kept apart from the
   // hero on purpose: a title is read in a list of ten others and has to say
   // "Valheim" in its first words, a hero is read by someone already here.

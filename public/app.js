@@ -2389,7 +2389,8 @@ async function loadSettings() {
     'Главная страница': ['hero_title', 'site_description'],
     'Продвижение в поиске': ['seo_title', 'seo_description', 'yandex_verification', 'google_verification', 'yandex_metrika_id'],
     'О блоге': ['about_title', 'about_subtitle', 'about_card1_title', 'about_card1_text', 'about_card2_title', 'about_card2_text'],
-    'Контакты': ['contact_title', 'contact_subtitle', 'contact_email', 'contact_address']
+    'Контакты': ['contact_title', 'contact_subtitle', 'contact_email', 'contact_address'],
+    'Сообщество и мод': ['discord_url', 'telegram_url', 'thunderstore_url', 'mod_download_url']
   };
   const CARD_GROUPS = {
     'Публичная карточка инструмента (по QR)': ['public_card_enabled', 'public_card_show_photo', 'public_card_show_category', 'public_card_show_brand', 'public_card_show_model', 'public_card_show_serial', 'public_card_show_inventory', 'public_card_show_status', 'public_card_show_purchase_date', 'public_card_show_notes'],
@@ -2400,6 +2401,10 @@ async function loadSettings() {
   // Понятные подписи (не зависят от description в БД, который может теряться
   // при сохранении из-за INSERT OR REPLACE).
   const LABELS = {
+    discord_url: 'Discord — ссылка-приглашение (пусто: ссылки на сайте нет)',
+    telegram_url: 'Telegram — ссылка на канал или чат (пусто: ссылки нет)',
+    thunderstore_url: 'Страница мода на Thunderstore (пусто: ссылки нет)',
+    mod_download_url: 'Скачать мод — ссылка на релизы GitHub (пусто: кнопки нет)',
     seo_title: 'Заголовок в поиске и в превью ссылки — до 60–70 знаков, главное слово в начале',
     seo_description: 'Описание в поиске и в превью ссылки — 120–160 знаков',
     yandex_verification: 'Код подтверждения Яндекс Вебмастера (можно вставить тег <meta> целиком)',

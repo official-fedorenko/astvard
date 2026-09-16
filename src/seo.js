@@ -165,6 +165,48 @@ function metrikaId(raw) {
  * names. No Webvisor: recording visitors' screens is not something to switch on
  * for them quietly.
  */
+// Адрес ссылки пишет человек в админке, а попадает он в href на каждой странице.
+// Поэтому схема проверяется, а не подставляется как есть: "javascript:" в поле
+// настройки иначе стал бы XSS для всех посетителей сразу.
+function safeUrl(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+// Пустая настройка — не пустая ссылка, а её отсутствие: ведущая в никуда ссылка
+// в подвале выглядит как заброшенный сайт.
+function communityLinks(settings) {
+  const html = [
+    ['discord_url', 'Discord'],
+    ['telegram_url', 'Telegram'],
+    ['thunderstore_url', 'Мод на Thunderstore'],
+    ['mod_download_url', 'Скачать мод']
+  ]
+    .map(([key, label]) => [safeUrl(settings[key]), label])
+    .filter(([href]) => href)
+    .map(([href, label]) => `<a class="footer__link" href="${escapeHtml(href)}"`
+      + ` target="_blank" rel="noopener">${escapeHtml(label)}</a>`)
+    .join('');
+
+  return html ? `<nav class="footer__links" aria-label="Сообщество">${html}</nav>` : '';
+}
+
+function modDownload(settings) {
+  const href = safeUrl(settings.mod_download_url);
+  if (!href) return '';
+
+  return `<p class="join-download"><a class="btn btn--primary" href="${escapeHtml(href)}"`
+    + ' target="_blank" rel="noopener">Скачать мод для Valheim</a>'
+    + '<span class="join-download__hint">Необязательно: без мода на сервер тоже пускают</span></p>';
+}
+
 function analyticsTags(settings) {
   const id = metrikaId(settings.yandex_metrika_id);
   if (!id) return '';
@@ -318,6 +360,9 @@ async function renderHome() {
   ]) {
     values[key] = text(settings, key);
   }
+  values.community_links = communityLinks(settings);
+  values.mod_download = modDownload(settings);
+
   // The second step says what really happens to a request today, not in general.
   values.join_access = settings.whitelist_auto_approve === 'true'
     ? 'Сейчас заявки принимаются сразу: через десяток секунд после нажатия можно заходить.'
