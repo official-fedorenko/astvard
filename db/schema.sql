@@ -374,6 +374,20 @@ CREATE TABLE IF NOT EXISTS game_build_sync (
     );
 
 INSERT INTO game_build_sync (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+-- Что админ попросил сделать с постройкой на сайте: переименовать, сменить категорию,
+-- убрать. Сайт этого сделать не может — файлы построек пишет только мод, и прав на его
+-- папку у сайта нет, — поэтому просьба лежит здесь с номером, а мод возвращает номер,
+-- когда сделал. Строка живёт от просьбы до «сделано» и не дольше.
+CREATE TABLE IF NOT EXISTS game_build_jobs (
+      id SERIAL PRIMARY KEY,
+      kind TEXT NOT NULL,
+      name TEXT NOT NULL,
+      value TEXT NOT NULL DEFAULT '',
+      revision INTEGER NOT NULL DEFAULT 0,
+      made_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      made_by TEXT
+    );
+
 
 -- Куда сортировщик кладёт предмет (src/gameSorting.js). Каталог присылает сам мод при
 -- каждом старте: какие в игре предметы, как они зовутся и что мод положил бы сам. Выбор

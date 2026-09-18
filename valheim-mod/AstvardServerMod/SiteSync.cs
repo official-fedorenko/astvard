@@ -60,6 +60,25 @@ namespace AstvardServerMod
             public List<string> Players = new List<string>();
         }
 
+        /// <summary>
+        /// Поручение с сайта: то, что сайт сделать не может и не должен.
+        ///
+        /// Файлы построек пишет только мод - у сайта нет и не должно быть прав на эту
+        /// папку. Поэтому «переименуй», «смени категорию» и «убери» не делаются на
+        /// сайте, а приезжают сюда поручением с номером, и номер возвращается обратно,
+        /// когда сделано: иначе сайт не отличит сделанного от потерянного.
+        /// </summary>
+        public sealed class Job
+        {
+            public int Id;
+
+            public string Kind = "";
+
+            public string Name = "";
+
+            public string Value = "";
+        }
+
         public sealed class Pulled
         {
             /// <summary>False when the answer is not a builds state at all: an error page, a proxy's HTML.</summary>
@@ -74,6 +93,8 @@ namespace AstvardServerMod
             public readonly List<RuleState> Rules = new List<RuleState>();
 
             public readonly List<TemplateAccess> Templates = new List<TemplateAccess>();
+
+            public readonly List<Job> Jobs = new List<Job>();
         }
 
         public static Pulled ParsePull(string text)
@@ -98,9 +119,61 @@ namespace AstvardServerMod
                 else if (fields[0] == "unchanged") pulled.Unchanged = true;
                 else if (fields[0] == "rule") AddRule(pulled, fields);
                 else if (fields[0] == "tpl") AddTemplate(pulled, fields);
+                else if (fields[0] == "job") AddJob(pulled, fields);
             }
 
             return pulled;
+        }
+
+        private static void AddJob(Pulled pulled, string[] fields)
+        {
+            // job \t id \t kind \t name \t value
+            if (fields.Length < 4 || !TryInt(fields[1], out var id) || id <= 0) return;
+            if (fields[2].Length == 0 || fields[3].Length == 0) return;
+
+            pulled.Jobs.Add(new Job
+            {
+                Id = id,
+                Kind = fields[2],
+                Name = fields[3],
+                Value = fields.Length > 4 ? fields[4] : "",
+            });
+        }
+
+        /// <summary>Сделано: сайт снимает поручение только по этому номеру.</summary>
+        public static string DoneLine(int id)
+        {
+            return "done" + Tab + id.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Строка заголовка в файле постройки: заменить, а если её нет - вписать сразу
+        /// после первой строки. Заголовки живут в начале файла до первой не-# строки, и
+        /// трогать тело здесь нельзя: там координаты деталей.
+        /// </summary>
+        public static List<string> WithHeader(IList<string> lines, string header, string value)
+        {
+            if (lines == null || lines.Count == 0) return null;
+
+            var mark = "#" + header;
+            var written = mark + " " + (value ?? "").Trim();
+            var updated = new List<string>(lines);
+
+            for (var i = 0; i < updated.Count; i++)
+            {
+                var line = (updated[i] ?? "").Trim();
+                if (line.Length > 0 && line[0] != '#') break;
+                if (!line.StartsWith(mark, StringComparison.OrdinalIgnoreCase)) continue;
+
+                // «#name» и «#nameplate» - разные заголовки: следом должен идти пробел.
+                if (line.Length != mark.Length && line[mark.Length] != ' ') continue;
+
+                updated[i] = written;
+                return updated;
+            }
+
+            updated.Insert(1, written);
+            return updated;
         }
 
         // A line that does not read is skipped rather than failing the whole answer: one

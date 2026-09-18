@@ -132,13 +132,20 @@ namespace AstvardServerMod
         private static void OnTemplateDelete(long sender, string name)
         {
             if (!ServerAllows(sender)) return;
+            if (RemoveSharedTemplate(name)) BroadcastSharedList();
+        }
 
+        /// <summary>
+        /// Убирает общую постройку - в подпапку, а не насовсем: то же правило, что у
+        /// локальных. Зовётся и из игры, и по поручению с сайта.
+        /// </summary>
+        internal static bool RemoveSharedTemplate(string name)
+        {
             try
             {
                 var path = SharedPath(name);
-                if (!System.IO.File.Exists(path)) return;
+                if (!System.IO.File.Exists(path)) return false;
 
-                // Same rule as locally: moved aside, not destroyed.
                 var bin = System.IO.Path.Combine(SharedDir, "deleted");
                 System.IO.Directory.CreateDirectory(bin);
 
@@ -147,14 +154,73 @@ namespace AstvardServerMod
                 System.IO.File.Move(path, target);
 
                 Log.LogInfo($"[AstvardServerMod] Shared template '{name}' removed.");
+                return true;
             }
             catch (System.Exception ex)
             {
                 Log.LogError($"[AstvardServerMod] Could not remove shared template: {ex.Message}");
-                return;
+                return false;
             }
+        }
 
-            BroadcastSharedList();
+        /// <summary>
+        /// Меняет одну строку заголовка в файле постройки — имя или категорию. Через
+        /// временный файл: сайт эти файлы читает и не должен прочитать половину.
+        /// </summary>
+        internal static bool SetSharedHeader(string name, string header, string value)
+        {
+            try
+            {
+                var path = SharedPath(name);
+                if (!System.IO.File.Exists(path)) return false;
+
+                var updated = SiteSync.WithHeader(System.IO.File.ReadAllLines(path), header,
+                                                  CleanShared(value, DefaultCategory));
+                if (updated == null) return false;
+
+                var temp = path + ".tmp";
+                System.IO.File.WriteAllLines(temp, updated);
+                System.IO.File.Replace(temp, path, null);
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogError($"[AstvardServerMod] Could not change '{header}' of '{name}': {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Переименовывает общую постройку: и строку «#name» внутри, и сам файл — его имя
+        /// выводится из названия. Занятое имя - отказ, иначе одна постройка затёрла бы
+        /// другую, и вернуть её было бы неоткуда.
+        /// </summary>
+        internal static bool RenameSharedTemplate(string name, string wanted)
+        {
+            var shown = CleanShared(wanted, "");
+            if (shown.Length == 0 || shown == name) return false;
+
+            try
+            {
+                var path = SharedPath(name);
+                var target = SharedPath(shown);
+                if (!System.IO.File.Exists(path)) return false;
+                if (System.IO.File.Exists(target) && target != path) return false;
+
+                var updated = SiteSync.WithHeader(System.IO.File.ReadAllLines(path), "name", shown);
+                if (updated == null) return false;
+
+                System.IO.File.WriteAllLines(path, updated);
+                if (target != path) System.IO.File.Move(path, target);
+
+                Log.LogInfo($"[AstvardServerMod] Shared template '{name}' is now '{shown}'.");
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogError($"[AstvardServerMod] Could not rename '{name}': {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>Opens a shared template to players, or closes it to them again.</summary>

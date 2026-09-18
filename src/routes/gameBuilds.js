@@ -66,6 +66,16 @@ module.exports = async function handleGameBuilds(req, res, sessionUser, parsedUr
       return sendJson(res, 200, { success: true, revision: result.revision });
     }
 
+    // Переименовать, сменить категорию, убрать: всё это делает мод, сайт только просит.
+    if (pathname === '/api/admin/builds/template/job' && method === 'POST') {
+      const body = await readBody(req, res);
+      if (!body) return undefined;
+      const result = await builds.queueJob(body.kind, body.name, body.value, actor.username);
+      if (result.error) return sendJson(res, result.status, { success: false, message: result.error });
+      logAction(actor, `Постройки: «${result.name}» — ${result.said}`);
+      return sendJson(res, 200, { success: true, revision: result.revision });
+    }
+
     if (pathname === '/api/admin/builds/template' && method === 'PATCH') {
       const body = await readBody(req, res);
       if (!body) return undefined;

@@ -141,10 +141,14 @@ async function pullText(rev) {
     await run('UPDATE game_build_sync SET mod_seen_at = now() WHERE id = 1');
   }
 
+  // Поручения — отдельно от ревизии: мод мог применить всё и не суметь сделать
+  // поручение, и тогда «ничего не менялось» спрятало бы его навсегда.
+  const jobs = await all('SELECT id, kind, name, value FROM game_build_jobs ORDER BY id');
+
   const lines = [`revision\t${sync.revision}`];
   if (!sync.seeded) {
     lines.push('seed\tneeded');
-  } else if (applied === sync.revision) {
+  } else if (applied === sync.revision && jobs.length === 0) {
     lines.push('unchanged');
   } else {
     for (const r of await all('SELECT key, value, limit_value FROM game_build_rules ORDER BY key')) {
@@ -152,6 +156,9 @@ async function pullText(rev) {
     }
     for (const t of await all('SELECT name, for_all, players FROM game_template_access ORDER BY name')) {
       lines.push(['tpl', t.name, t.for_all ? 1 : 0, t.players].join('\t'));
+    }
+    for (const j of jobs) {
+      lines.push(['job', j.id, j.kind, j.name, j.value].join('\t'));
     }
   }
   return `${lines.join('\n')}\n`;
@@ -228,6 +235,7 @@ async function pushFromMod(text) {
   const rules = [];
   const templates = [];
   const templateAll = [];
+  const done = [];
   let skipped = 0;
 
   for (const line of lines.slice(1)) {
@@ -245,6 +253,9 @@ async function pushFromMod(text) {
     } else if (f[0] === 'tplall') {
       parsed = parseTemplate(f, false);
       if (parsed) templateAll.push(parsed);
+    } else if (f[0] === 'done') {
+      parsed = /^\d{1,9}$/.test(String(f[1] ?? '')) ? Number(f[1]) : null;
+      if (parsed) done.push(parsed);
     }
     if (!parsed) skipped += 1;
   }
@@ -272,6 +283,11 @@ async function pushFromMod(text) {
   // A change before any seed has nothing to change: the seed that follows carries the
   // same values anyway, because the mod has already applied them.
   if (!sync.seeded) return reply(409, `revision\t${sync.revision}\nseed\tneeded`);
+
+  // «Сделано» приходит и само по себе: поручение снимается по номеру, а не по тому,
+  // что мод заодно что-то поменял.
+  for (const id of done) await finishJob(id);
+
   if (!rules.length && !templateAll.length) return reply(200, `revision\t${sync.revision}`);
 
   const revision = await nextRevision();
@@ -281,10 +297,67 @@ async function pushFromMod(text) {
   return reply(200, `revision\t${revision}`);
 }
 
+const JOB_KINDS = new Set(['delete', 'rename', 'category']);
+
+/**
+ * Поручение моду. Ревизия поднимается, чтобы ответ сайта перестал быть «ничего не
+ * менялось» и поручение доехало на ближайшем же круге.
+ */
+async function queueJob(kind, name, value, by) {
+  if (!JOB_KINDS.has(kind)) return { error: 'Неизвестное действие', status: 400 };
+
+  const forName = cleanText(name, 80);
+  if (!forName) return { error: 'Не указана постройка', status: 400 };
+
+  let asked = '';
+  if (kind !== 'delete') {
+    asked = cleanText(value, 80);
+    if (!asked) return { error: kind === 'rename' ? 'Пустое имя' : 'Пустая категория', status: 400 };
+    if (kind === 'rename' && asked === forName) return { error: 'Имя то же самое', status: 400 };
+  }
+
+  const revision = await nextRevision();
+  const row = await get(
+    'INSERT INTO game_build_jobs (kind, name, value, revision, made_by)'
+    + ' VALUES (?, ?, ?, ?, ?) RETURNING id',
+    [kind, forName, asked, revision, by || null]
+  );
+
+  const said = kind === 'delete' ? 'убрать'
+    : kind === 'rename' ? `переименовать в «${asked}»`
+      : `категория «${asked}»`;
+
+  return { id: row.id, revision, name: forName, value: asked, said };
+}
+
+/**
+ * Мод сделал. Следом за файлом поправляется и то, что сайт держит у себя: доступ
+ * лежит под именем постройки, а имени у убранной больше нет, у переименованной —
+ * другое. Иначе строка доступа осталась бы висеть на имени, которого нет.
+ */
+async function finishJob(id) {
+  const job = await get('SELECT id, kind, name, value FROM game_build_jobs WHERE id = ?', [id]);
+  if (!job) return false;
+
+  if (job.kind === 'delete') {
+    await run('DELETE FROM game_template_access WHERE name = ?', [job.name]);
+  } else if (job.kind === 'rename' && job.value) {
+    await run('DELETE FROM game_template_access WHERE name = ?', [job.value]);
+    await run('UPDATE game_template_access SET name = ? WHERE name = ?', [job.value, job.name]);
+    await run('UPDATE game_build_jobs SET name = ? WHERE name = ? AND id <> ?',
+              [job.value, job.name, id]);
+  }
+
+  await run('DELETE FROM game_build_jobs WHERE id = ?', [id]);
+  logger.info(`[builds] сервер сделал поручение ${id}: ${job.kind} «${job.name}»`);
+  return true;
+}
+
 // ---------------------------------------------------------------- the admin's side
 
 async function overview(templateFiles) {
   const sync = await syncRow();
+  const jobs = await all('SELECT id, kind, name, value FROM game_build_jobs ORDER BY id');
   const meta = await all('SELECT * FROM game_build_rule_meta ORDER BY sort_order, key');
   const rules = await all('SELECT key, value, limit_value, revision, updated_at, updated_by FROM game_build_rules');
   const access = await all('SELECT name, for_all, players, revision, updated_at, updated_by FROM game_template_access');
@@ -334,6 +407,9 @@ async function overview(templateFiles) {
       mod_seen_at: sync.mod_seen_at,
       mod_applied_revision: sync.mod_applied_revision
     },
+    // Что уже попрошено и ещё не сделано: страница показывает это на самой постройке,
+    // иначе «Удалить» выглядит как нажатие, которое ничего не сделало.
+    jobs: jobs.map((j) => ({ id: j.id, kind: j.kind, name: j.name, value: j.value })),
     rules: meta.map((m) => {
       const row = ruleByKey.get(m.key);
       return {
@@ -437,4 +513,4 @@ async function setTemplate(body, templateFiles, by) {
   return { status: 200, revision, name, forAll, count: splitPlayers(players).length };
 }
 
-module.exports = { pullText, pushFromMod, overview, setRule, setTemplate };
+module.exports = { pullText, pushFromMod, overview, setRule, setTemplate, queueJob };

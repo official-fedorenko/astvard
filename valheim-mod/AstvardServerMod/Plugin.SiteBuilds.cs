@@ -352,6 +352,8 @@ namespace AstvardServerMod
             foreach (var access in pulled.Templates)
                 if (ApplyTemplateAccess(access)) templatesChanged++;
 
+            RunSiteJobs(pulled.Jobs);
+
             if (rulesChanged)
                 ZRoutedRpc.instance?.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcPlayerRules, PackPlayerRules());
             if (pauseChanged)
@@ -363,6 +365,36 @@ namespace AstvardServerMod
                 Log.LogInfo($"[AstvardServerMod] Site builds: revision {pulled.Revision} applied - "
                             + $"rules {(rulesChanged ? "changed" : "as they were")}, pause {PauseMinutes} min, "
                             + $"templates rewritten {templatesChanged}.");
+        }
+
+        /// <summary>
+        /// Что админ попросил с сайта: переименовать постройку, сменить ей категорию или
+        /// убрать. Файлы этой папки пишет только мод, и это единственная дорога туда.
+        ///
+        /// Номер возвращается сайту в любом случае, даже когда делать было нечего: файла
+        /// уже нет, имя занято, папка не читается. Поручение, которое не снимается, сайт
+        /// будет слать вечно, и в логе это будет выглядеть как работа.
+        /// </summary>
+        private static void RunSiteJobs(List<SiteSync.Job> jobs)
+        {
+            if (jobs == null || jobs.Count == 0) return;
+
+            var did = 0;
+            foreach (var job in jobs)
+            {
+                var done = false;
+                if (job.Kind == "delete") done = RemoveSharedTemplate(job.Name);
+                else if (job.Kind == "rename") done = RenameSharedTemplate(job.Name, job.Value);
+                else if (job.Kind == "category") done = SetSharedHeader(job.Name, "category", job.Value);
+                else Log.LogWarning($"[AstvardServerMod] Site builds: unknown job '{job.Kind}' — dropped.");
+
+                if (done) did++;
+                if (SiteBuildsPending.Count < MaxPendingBuildChanges)
+                    SiteBuildsPending.Add(SiteSync.DoneLine(job.Id));
+            }
+
+            Log.LogInfo($"[AstvardServerMod] Site builds: {jobs.Count} asked for, {did} done.");
+            if (did > 0) BroadcastSharedList();
         }
 
         private static bool ApplyTemplateAccess(SiteSync.TemplateAccess access)

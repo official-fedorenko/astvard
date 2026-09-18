@@ -539,7 +539,65 @@ function buildPlayerNames(t) {
 // it by name, and the mod finds the file by that name whether the site sees it or not.
 function buildTemplateButtons(t, index) {
   return `<button class="btn btn-sm ${t.for_all ? 'btn-secondary' : ''} build-all" data-index="${index}">${t.for_all ? 'Не для всех' : 'Открыть всем'}</button>`
-    + `<button class="btn btn-sm btn-secondary build-players" data-index="${index}">Кому…</button>`;
+    + `<button class="btn btn-sm btn-secondary build-players" data-index="${index}">Кому…</button>`
+    + `<button class="btn btn-sm btn-secondary build-settings" data-index="${index}">Настроить</button>`;
+}
+
+// Что уже попрошено у сервера и ещё не сделано. Без этой строки «Удалить» выглядит как
+// нажатие, которое ничего не сделало: файл убирает мод, и до его прихода постройка
+// стоит в списке как ни в чём не бывало.
+function buildJobNote(t) {
+  const jobs = (buildsState.jobs || []).filter((j) => j.name === t.name);
+  if (!jobs.length) return '';
+
+  const said = jobs.map((j) => (j.kind === 'delete' ? 'убрать'
+    : j.kind === 'rename' ? `переименовать в «${j.value}»`
+      : `категория «${j.value}»`));
+
+  return `<div class="cell-note cell-note-warn">Ждёт сервер: ${escapeHtml(said.join(', '))}</div>`;
+}
+
+/**
+ * Настройка одной постройки: имя, категория и «Убрать».
+ *
+ * Ничего из этого сайт не делает сам — файлы построек пишет только мод, и прав на его
+ * папку у сайта нет. Отсюда уезжает просьба, а сделает её сервер на ближайшем круге.
+ */
+function showBuildSettingsDialog(t, index) {
+  showRowDetail(`Настройка «${t.name}»`, [],
+    `<button class="btn btn-sm build-settings-save" data-index="${index}">Сохранить</button>`
+    + `<button class="btn btn-sm btn-danger build-delete" data-index="${index}">Убрать постройку</button>`);
+
+  document.getElementById('rowDetailBody').innerHTML = `
+    <p class="muted" style="margin:0 0 10px;">Имя и категорию меняет игровой сервер: отсюда уезжает просьба, и через несколько секунд он её сделает. Имя постройки — это и имя её файла, поэтому занятое имя он не возьмёт.</p>
+    <div class="form-group">
+      <label for="buildNewName">Имя</label>
+      <input type="text" class="form-control" id="buildNewName" value="${escapeHtml(t.name)}" maxlength="80">
+    </div>
+    <div class="form-group">
+      <label for="buildNewCategory">Категория</label>
+      <input type="text" class="form-control" id="buildNewCategory" value="${escapeHtml(t.category || '')}" maxlength="80" placeholder="Разное">
+    </div>
+    ${t.on_server ? '' : '<p class="muted">Сайт не видит файл этой постройки, так что менять в ней нечего — сперва пусть сервер пришлёт её заново.</p>'}`;
+}
+
+async function askBuildJob(kind, name, value) {
+  try {
+    const res = await fetch('/api/admin/builds/template/job', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, name, value })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      showToast(data.message || 'Не удалось попросить сервер', 'error');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    showToast('Ошибка сети', 'error');
+    return false;
+  }
 }
 
 // What the tables were last drawn from. The refresh redraws them only when this changes:
@@ -553,7 +611,7 @@ function renderBuilds({ onlyIfChanged = false } = {}) {
   const line = document.getElementById('buildsSyncLine');
   if (line) line.textContent = buildsSyncText(buildsState.sync);
 
-  const drawn = JSON.stringify([buildsState.templates, buildsState.rules, buildsState.players, !!buildsState.sync.mod_seen_at]);
+  const drawn = JSON.stringify([buildsState.templates, buildsState.rules, buildsState.players, buildsState.jobs, !!buildsState.sync.mod_seen_at]);
   if (onlyIfChanged && drawn === buildsDrawn) return;
   buildsDrawn = drawn;
 
@@ -568,6 +626,7 @@ function renderBuilds({ onlyIfChanged = false } = {}) {
             <div class="row-note">${buildAccessBadges(t)}</div>
             ${t.on_server ? '' : '<div class="cell-note cell-note-warn">Сайт не видит файл этой постройки: её переименовали или убрали в игре, или сайту не видна папка шаблонов</div>'}
             ${t.submitted ? '<div class="cell-note">Прислал игрок</div>' : ''}
+            ${buildJobNote(t)}
           </td>
           <td class="mobile-hidden">${escapeHtml(t.category || '—')}</td>
           <td class="mobile-hidden">${t.pieces === null ? '—' : t.pieces}</td>
@@ -751,6 +810,48 @@ function bindBuildsHandlers() {
       const t = templateAt(playersButton);
       if (t) showBuildPlayersDialog(t, Number(playersButton.dataset.index));
       return;
+    }
+
+    const settingsButton = e.target.closest('.build-settings');
+    if (settingsButton) {
+      const t = templateAt(settingsButton);
+      if (t) showBuildSettingsDialog(t, Number(settingsButton.dataset.index));
+      return;
+    }
+
+    const settingsSave = e.target.closest('.build-settings-save');
+    if (settingsSave) {
+      const t = templateAt(settingsSave);
+      if (!t) return;
+
+      const name = (document.getElementById('buildNewName')?.value || '').trim();
+      const category = (document.getElementById('buildNewCategory')?.value || '').trim();
+      let asked = 0;
+
+      if (category && category !== (t.category || '') && await askBuildJob('category', t.name, category)) asked++;
+      // Имя — последним: после него постройка зовётся иначе, и просьба про категорию
+      // ушла бы к имени, которого уже нет.
+      if (name && name !== t.name && await askBuildJob('rename', t.name, name)) asked++;
+
+      closeRowDetail();
+      showToast(asked ? 'Отправлено серверу' : 'Менять нечего');
+      return loadBuildsSection();
+    }
+
+    const deleteButton = e.target.closest('.build-delete');
+    if (deleteButton) {
+      const t = templateAt(deleteButton);
+      if (!t) return;
+
+      closeRowDetail();
+      const yes = await confirmDialog(
+        'Сервер уберёт её из общих. Файл он не стирает, а откладывает в подпапку «deleted» — вернуть можно руками.',
+        { title: `Убрать «${t.name}»?`, okText: 'Убрать', danger: true }
+      );
+      if (!yes) return;
+
+      if (await askBuildJob('delete', t.name, '')) showToast(`«${t.name}»: сервер уберёт её`);
+      return loadBuildsSection();
     }
 
     const saveButton = e.target.closest('.build-players-save');
