@@ -1224,7 +1224,7 @@ namespace AstvardServerMod
             var go = gui.CreateText(
                 text, Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                gui.AveriaSerif, 16, gui.ValheimBeige, true, Color.black,
+                PanelFont(), 16, gui.ValheimBeige, true, Color.black,
                 260f, 0f, true);
             var le = go.AddComponent<LayoutElement>();
             le.preferredWidth = 260f;

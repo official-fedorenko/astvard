@@ -122,6 +122,7 @@ namespace AstvardServerMod
             Piece.GetAllPiecesInRadius(new Vector3(zone.X, where.y, zone.Z), reach, ChestLabelPieces);
 
             var shown = 0;
+            var first = Vector3.zero;
 
             foreach (var piece in ChestLabelPieces)
             {
@@ -147,6 +148,8 @@ namespace AstvardServerMod
                 if (label.color != colour) label.color = colour;
                 label.transform.position = spot + Vector3.up * ChestLabelLift;
                 label.gameObject.SetActive(true);
+
+                if (shown == 1) first = label.transform.position;
             }
 
             for (var i = shown; i < ChestLabelPool.Count; i++)
@@ -159,7 +162,10 @@ namespace AstvardServerMod
             if (shown != _chestLabelsSaid)
             {
                 _chestLabelsSaid = shown;
-                Log.LogInfo("[AstvardServerMod] Chest labels: " + shown + " over marked chests.");
+                Log.LogInfo($"[AstvardServerMod] Chest labels: {shown} over marked chests"
+                            + (shown > 0
+                                ? $", first at ({first.x:0.#}, {first.y:0.#}, {first.z:0.#})."
+                                : "."));
             }
         }
 
@@ -226,6 +232,8 @@ namespace AstvardServerMod
 
         private static Font _labelFont;
 
+        private static Font _panelFont;
+
         private static bool _labelFontSaid;
 
         /// <summary>
@@ -271,6 +279,21 @@ namespace AstvardServerMod
 
             _labelFont = font;
             return _labelFont;
+        }
+
+        /// <summary>
+        /// The same search with the plain face first: the panel's own text is not bold,
+        /// and turning it bold to save a lookup would be a change nobody asked for.
+        /// </summary>
+        internal static Font PanelFont()
+        {
+            if (_panelFont != null) return _panelFont;
+
+            var gui = GUIManager.Instance;
+            if (gui != null && gui.AveriaSerif != null) _panelFont = gui.AveriaSerif;
+            if (_panelFont == null) _panelFont = LabelFont();
+
+            return _panelFont;
         }
 
         private static TextMesh MakeChestLabel()
