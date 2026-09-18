@@ -780,7 +780,9 @@ namespace AstvardServerMod
 
             SetLabel(SortOnButton, SortingOn ? "Сортировка: вкл" : "Сортировка: выкл");
             SetLabel(SortZonesButton, $"Зоны: {zones.Count}");
-            SetLabel(SortLabelsButton, ChestLabelsOn ? "Подписи: вкл" : "Подписи: выкл");
+            SetLabel(SortLabelsButton, ChestLabelsOn
+                ? $"Подписи: вкл ({ChestLabelsShown})"
+                : "Подписи: выкл");
             SetLabel(SortShapeButton, _sortSquare ? "Форма: квадрат" : "Форма: круг");
 
             var player = Player.m_localPlayer;

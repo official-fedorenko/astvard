@@ -27,6 +27,15 @@ namespace AstvardServerMod
 
         private static int _chestLabelsShown;
 
+        // Said once per change, so a base that never labels anything says so once.
+        private static int _chestLabelsSaid = -1;
+
+        /// <summary>How many labels are up right now - the page shows it on the switch.</summary>
+        internal static int ChestLabelsShown
+        {
+            get { return _chestLabelsShown; }
+        }
+
         // Far enough to read a wall of chests from the doorway, near enough that the
         // neighbour's storage is not labelled through the hill.
         private const float ChestLabelRange = 40f;
@@ -144,6 +153,14 @@ namespace AstvardServerMod
                 if (ChestLabelPool[i] != null) ChestLabelPool[i].gameObject.SetActive(false);
 
             _chestLabelsShown = shown;
+
+            // The silence was the trouble: a label either appeared or it did not, and
+            // which of the half-dozen reasons it was could not be told from outside.
+            if (shown != _chestLabelsSaid)
+            {
+                _chestLabelsSaid = shown;
+                Log.LogInfo("[AstvardServerMod] Chest labels: " + shown + " over marked chests.");
+            }
         }
 
         /// <summary>Turns every shown label towards the camera, so none of them is read edge on.</summary>
@@ -200,13 +217,65 @@ namespace AstvardServerMod
             return ChestLabelPool[index];
         }
 
+        // What the label is asked for, and how tall it ends up in the world. Kept as two
+        // numbers rather than one scale so a font with a size of its own can reach the
+        // same height: 48 at the old scale of 0.03 is what was looked at in game.
+        private const int LabelFontSize = 48;
+
+        private const float LabelWorldHeight = 1.44f;
+
+        private static Font _labelFont;
+
+        private static bool _labelFontSaid;
+
+        /// <summary>
+        /// The font for everything the mod draws itself: the chest labels, the rune line
+        /// and the line of switches under the bar.
+        ///
+        /// It used to be one property of Jotunn and nothing else. A property that comes
+        /// back empty - and on a game this new any of them may - leaves a Text with no
+        /// font and a TextMesh that is never made: no error, no line in the log, nothing
+        /// on screen. From outside that is indistinguishable from "the mod did nothing".
+        /// So the font is looked for in three places and named once in the log.
+        /// </summary>
+        internal static Font LabelFont()
+        {
+            if (_labelFont != null) return _labelFont;
+
+            Font font = null;
+            var gui = GUIManager.Instance;
+
+            // Unity's own == is what tells a destroyed object from a live one, so no ??.
+            if (gui != null && gui.AveriaSerifBold != null) font = gui.AveriaSerifBold;
+            if (font == null && gui != null && gui.AveriaSerif != null) font = gui.AveriaSerif;
+
+            // Anything the game has already loaded beats nothing, and a dynamic one first:
+            // only that kind can be asked for a size.
+            if (font == null)
+                foreach (var other in Resources.FindObjectsOfTypeAll<Font>())
+                {
+                    if (other == null) continue;
+                    if (font == null || (!font.dynamic && other.dynamic)) font = other;
+                    if (font != null && font.dynamic) break;
+                }
+
+            if (font == null) font = Font.CreateDynamicFontFromOSFont("Arial", LabelFontSize);
+
+            if (!_labelFontSaid)
+            {
+                _labelFontSaid = true;
+                Log.LogInfo("[AstvardServerMod] Label font: "
+                            + (font != null ? font.name + (font.dynamic ? " (dynamic)" : " (baked)")
+                                            : "none - nothing the mod draws itself will show"));
+            }
+
+            _labelFont = font;
+            return _labelFont;
+        }
+
         private static TextMesh MakeChestLabel()
         {
-            var gui = GUIManager.Instance;
-            var font = gui != null ? gui.AveriaSerifBold : null;
-
-            // Without the game's own font there is nothing to draw with, and a font of our
-            // own is not worth shipping for a label.
+            var font = LabelFont();
             if (font == null) return null;
 
             if (_chestLabelRoot == null) _chestLabelRoot = new GameObject("AstvardChestLabels");
@@ -216,7 +285,10 @@ namespace AstvardServerMod
 
             var text = go.AddComponent<TextMesh>();
             text.font = font;
-            text.fontSize = 48;
+
+            // A baked font has the one size it was built with: ask a TextMesh for another
+            // and it lays out an empty mesh - no error, and nothing over the chest.
+            if (font.dynamic) text.fontSize = LabelFontSize;
             text.anchor = TextAnchor.LowerCenter;
             text.alignment = TextAlignment.Center;
 
@@ -224,9 +296,11 @@ namespace AstvardServerMod
             var renderer = go.GetComponent<MeshRenderer>();
             if (renderer != null) renderer.material = font.material;
 
-            // The size above is in font pixels: shrunk to something that reads as a hand's
-            // width over a chest rather than a billboard over the base.
-            go.transform.localScale = Vector3.one * 0.03f;
+            // The size above is in font pixels: shrunk to something that reads over a chest
+            // rather than a billboard over the base. A baked font kept its own size, so the
+            // shrinking is worked out from that one instead of the number we asked for.
+            var pixels = font.dynamic ? LabelFontSize : Mathf.Max(font.fontSize, 1);
+            go.transform.localScale = Vector3.one * (LabelWorldHeight / pixels);
 
             go.SetActive(false);
             return text;

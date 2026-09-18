@@ -642,7 +642,7 @@ namespace AstvardServerMod
 
             var go = gui.CreateText("", bar.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
-                gui.AveriaSerifBold, 18, gui.ValheimBeige, true, Color.black,
+                LabelFont(), 18, gui.ValheimBeige, true, Color.black,
                 240f, 28f, false);
 
             var rect = go.GetComponent<RectTransform>();
