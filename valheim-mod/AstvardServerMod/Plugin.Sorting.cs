@@ -384,6 +384,45 @@ namespace AstvardServerMod
             return view != null && view.IsValid() && view.GetZDO().GetBool(PrivateChestKey);
         }
 
+        // Поиск Container внутри детали - рекурсивный обход всего префаба, а сундук в
+        // детали не заводится и не пропадает. Обходов этих на большой базе выходят
+        // тысячи в секунду: автоматика, сортировщик и подписи ходят по деталям каждый
+        // сам, а деталей полторы тысячи. Ответ держится - в том числе ответ «нет
+        // контейнера», а таких деталей почти все.
+        private static readonly Dictionary<Piece, Container> ContainerByPiece =
+            new Dictionary<Piece, Container>();
+
+        private const int ContainerCacheMax = 4096;
+
+        /// <summary>Сундук этой детали, найденный один раз за её жизнь.</summary>
+        internal static Container ContainerOf(Piece piece)
+        {
+            if (piece == null) return null;
+
+            Container found;
+            if (ContainerByPiece.TryGetValue(piece, out found)) return found != null ? found : null;
+
+            found = piece.GetComponentInChildren<Container>();
+            ContainerByPiece[piece] = found;
+
+            // Ключ здесь - сама деталь, и снесённая остаётся в словаре мёртвым объектом
+            // Unity. Зоны грузятся и выгружаются весь вечер, так что чистить надо; но
+            // разом и редко - перебрать словарь дешевле, чем помнить о каждой детали.
+            if (ContainerByPiece.Count > ContainerCacheMax) ForgetDeadPieces();
+            return found;
+        }
+
+        private static void ForgetDeadPieces()
+        {
+            var dead = new List<Piece>();
+            foreach (var pair in ContainerByPiece)
+                if (pair.Key == null) dead.Add(pair.Key);
+
+            foreach (var piece in dead) ContainerByPiece.Remove(piece);
+            Log.LogInfo($"[AstvardServerMod] Chest lookup: forgot {dead.Count} pieces that are gone, "
+                        + $"{ContainerByPiece.Count} kept.");
+        }
+
         /// <summary>The category this chest takes, or -1 when it is a source.</summary>
         internal static int ChestCategory(Container container)
         {
@@ -445,144 +484,174 @@ namespace AstvardServerMod
         /// everything else here is found; if it turns out it has none, the log will say so
         /// long before anybody notices the cart staying full.
         /// </summary>
+        // Последняя жалоба: цикл идёт раз в секунду, и сломанное место пишет одно и то же
+        // до конца вечера. Одна строка на причину — новость; шестьдесят в минуту — шум,
+        // в котором тонет всё остальное.
+        private static string _loopTrouble;
+
+        private static void SayLoopTrouble(string where, System.Exception bad)
+        {
+            var said = where + ": " + bad.Message;
+            if (said == _loopTrouble) return;
+
+            _loopTrouble = said;
+            Log.LogError($"[AstvardServerMod] {where} stumbled and kept going: {bad}");
+        }
+
         internal static IEnumerator SortingLoop()
         {
             var pieces = new List<Piece>();
             var bins = new List<Container>();
             var sources = new List<Container>();
 
+            // Одно ожидание на все проходы: Unity иначе заводит новое каждую секунду до
+            // конца сессии, и сборщику мусора после нас остаётся горка.
+            var second = new WaitForSeconds(SortTick);
+
             while (true)
             {
-                yield return new WaitForSeconds(SortTick);
+                yield return second;
 
-                var player = Player.m_localPlayer;
-                if (player == null || !SortingOn || !RuleAllows("sort")) continue;
-
-                var where = player.transform.position;
-                var zones = SortingZones();
-                var at = Sorting.ZoneAt(zones, where.x, where.z);
-                _lastZone = at;
-                if (at < 0)
+                // Сбой внутри одного прохода не имеет права унести с собой всё до конца
+                // сессии. Мод это уже проходил: контракт одной RPC разъехался с игрой,
+                // исключение прилетело внутрь корутины, и автоматика молча умерла до
+                // перезахода. Жалуемся один раз и живём дальше.
+                try
                 {
-                    _lastBins = 0;
-                    _lastSources = 0;
-                    _lastPassenger = false;
-                    continue;
-                }
 
-                var zone = zones[at];
+                    var player = Player.m_localPlayer;
+                    if (player == null || !SortingOn || !RuleAllows("sort")) continue;
 
-                // Somebody else is carrying things here this second. Two of us taking the
-                // same stack out of the same cart is an item made or an item lost.
-                _lastPassenger = ZonesOnServer && !zone.Drive;
-                if (_lastPassenger)
-                {
-                    _lastBins = 0;
-                    _lastSources = 0;
-                    continue;
-                }
-
-                var reach = Sorting.ClampRadius(zone.Radius) * (zone.Square ? SquareDiagonal : 1f);
-
-                pieces.Clear();
-                Piece.GetAllPiecesInRadius(new Vector3(zone.X, where.y, zone.Z), reach, pieces);
-
-                bins.Clear();
-                sources.Clear();
-                var carts = 0;
-                foreach (var piece in pieces)
-                {
-                    if (piece == null) continue;
-
-                    var container = piece.GetComponentInChildren<Container>();
-                    if (container == null) continue;
-
-                    var spot = container.transform.position;
-                    if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
-
-                    var cart = container.GetComponentInParent<Vagon>() != null;
-
-                    // Somebody has it open: their hands are in it, and two hands in one chest
-                    // is how an item ends up in neither.
-                    if (container.IsInUse()) continue;
-                    if (IsPrivateChest(container)) continue;
-
-                    // Сундук подачи кормит плавильни и печи: автоматика берёт из него
-                    // руду и уголь. Для сортировщика он «непомеченный», то есть источник,
-                    // и он вычерпал бы его в первую же минуту, а печи встали бы без
-                    // единой ошибки в логе. Сундук сбора трогать можно и нужно: туда
-                    // падает готовое, и разложить его - ровно наша работа.
-                    if (IsSupplyChest(container)) continue;
-
-                    // Приёмником может стать и повозка, если её пометили, - она стоит в зоне.
-                    if (ChestCategory(container) >= 0)
+                    var where = player.transform.position;
+                    var zones = SortingZones();
+                    var at = Sorting.ZoneAt(zones, where.x, where.z);
+                    _lastZone = at;
+                    if (at < 0)
                     {
-                        bins.Add(container);
+                        _lastBins = 0;
+                        _lastSources = 0;
+                        _lastPassenger = false;
+                        continue;
                     }
-                    else
+
+                    var zone = zones[at];
+
+                    // Somebody else is carrying things here this second. Two of us taking the
+                    // same stack out of the same cart is an item made or an item lost.
+                    _lastPassenger = ZonesOnServer && !zone.Drive;
+                    if (_lastPassenger)
                     {
-                        sources.Add(container);
-                        if (cart) carts++;
+                        _lastBins = 0;
+                        _lastSources = 0;
+                        continue;
                     }
+
+                    var reach = Sorting.ClampRadius(zone.Radius) * (zone.Square ? SquareDiagonal : 1f);
+
+                    pieces.Clear();
+                    Piece.GetAllPiecesInRadius(new Vector3(zone.X, where.y, zone.Z), reach, pieces);
+
+                    bins.Clear();
+                    sources.Clear();
+                    var carts = 0;
+                    foreach (var piece in pieces)
+                    {
+                        if (piece == null) continue;
+
+                        var container = ContainerOf(piece);
+                        if (container == null) continue;
+
+                        var spot = container.transform.position;
+                        if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
+
+                        var cart = container.GetComponentInParent<Vagon>() != null;
+
+                        // Somebody has it open: their hands are in it, and two hands in one chest
+                        // is how an item ends up in neither.
+                        if (container.IsInUse()) continue;
+                        if (IsPrivateChest(container)) continue;
+
+                        // Сундук подачи кормит плавильни и печи: автоматика берёт из него
+                        // руду и уголь. Для сортировщика он «непомеченный», то есть источник,
+                        // и он вычерпал бы его в первую же минуту, а печи встали бы без
+                        // единой ошибки в логе. Сундук сбора трогать можно и нужно: туда
+                        // падает готовое, и разложить его - ровно наша работа.
+                        if (IsSupplyChest(container)) continue;
+
+                        // Приёмником может стать и повозка, если её пометили, - она стоит в зоне.
+                        if (ChestCategory(container) >= 0)
+                        {
+                            bins.Add(container);
+                        }
+                        else
+                        {
+                            sources.Add(container);
+                            if (cart) carts++;
+                        }
+                    }
+
+                    _lastBins = bins.Count;
+                    _lastSources = sources.Count;
+                    _lastCarts = carts;
+
+                    // Said once per change, not once a second: enough to answer «видит ли он
+                    // тележку», quiet enough to leave on.
+                    var said = $"bins {bins.Count}, sources {sources.Count}, carts {carts}"
+                               + (_stuck.Length > 0 ? $", stuck {_stuck}" : "");
+                    if (said != _lastSaid)
+                    {
+                        _lastSaid = said;
+                        Log.LogInfo($"[AstvardServerMod] Sorting zone: {said}.");
+                    }
+
+                    if (bins.Count == 0) continue;
+
+                    // A settled order, so that two chests equal in every other way are always
+                    // picked between the same way round. The order the scan handed them over
+                    // is whatever the physics felt like today.
+                    bins.Sort(ByPlace);
+
+                    var plan = BuildPlan(bins, sources);
+                    _lastNowhere = 0;
+                    _lastNoRoom = 0;
+                    _stuck = "";
+                    _lastReserved = false;
+
+                    // During a recheck the marked chests go first: that is the whole of what
+                    // was asked for, and a cart arriving mid-pass would otherwise eat it.
+                    var recheck = Rechecking;
+                    var budget = recheck ? SortRecheckMoves : SortMovesPerSweep;
+
+                    var moved = recheck ? TidyBins(bins, plan, budget) : 0;
+                    if (moved < budget) moved += SweepOnce(sources, bins, plan, budget - moved);
+
+                    // Then put right what is already in the marked chests: a pile that grew
+                    // out of the shared chest moves to its own, one that was spent moves back.
+                    // At least one move is always kept for this - otherwise a base with carts
+                    // coming in all evening never tidies itself at all.
+                    if (!recheck) moved += TidyBins(bins, plan, Mathf.Max(1, budget - moved));
+
+                    if (recheck) _recheckMoved += moved;
+
+                    // The pass is over: say what came of it, because «ничего не двинулось»
+                    // and «кнопка не нажалась» look the same from where the player stands.
+                    if (recheck && !Rechecking)
+                        Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                            _recheckMoved > 0
+                                ? $"Перепроверено: переложено {_recheckMoved}"
+                                : "Перепроверено: всё на своих местах");
+
+                    if (moved <= 0) continue;
+
+                    // Something is happening over there: said rarely enough to be news, not noise.
+                    if (Time.realtimeSinceStartup - _sortSaidAt < 10f) continue;
+                    _sortSaidAt = Time.realtimeSinceStartup;
+                    player.Message(MessageHud.MessageType.TopLeft, $"Сортировка: разложено {moved}");
                 }
-
-                _lastBins = bins.Count;
-                _lastSources = sources.Count;
-                _lastCarts = carts;
-
-                // Said once per change, not once a second: enough to answer «видит ли он
-                // тележку», quiet enough to leave on.
-                var said = $"bins {bins.Count}, sources {sources.Count}, carts {carts}"
-                           + (_stuck.Length > 0 ? $", stuck {_stuck}" : "");
-                if (said != _lastSaid)
+                catch (System.Exception bad)
                 {
-                    _lastSaid = said;
-                    Log.LogInfo($"[AstvardServerMod] Sorting zone: {said}.");
+                    SayLoopTrouble("Sorting", bad);
                 }
-
-                if (bins.Count == 0) continue;
-
-                // A settled order, so that two chests equal in every other way are always
-                // picked between the same way round. The order the scan handed them over
-                // is whatever the physics felt like today.
-                bins.Sort(ByPlace);
-
-                var plan = BuildPlan(bins, sources);
-                _lastNowhere = 0;
-                _lastNoRoom = 0;
-                _stuck = "";
-                _lastReserved = false;
-
-                // During a recheck the marked chests go first: that is the whole of what
-                // was asked for, and a cart arriving mid-pass would otherwise eat it.
-                var recheck = Rechecking;
-                var budget = recheck ? SortRecheckMoves : SortMovesPerSweep;
-
-                var moved = recheck ? TidyBins(bins, plan, budget) : 0;
-                if (moved < budget) moved += SweepOnce(sources, bins, plan, budget - moved);
-
-                // Then put right what is already in the marked chests: a pile that grew
-                // out of the shared chest moves to its own, one that was spent moves back.
-                // At least one move is always kept for this - otherwise a base with carts
-                // coming in all evening never tidies itself at all.
-                if (!recheck) moved += TidyBins(bins, plan, Mathf.Max(1, budget - moved));
-
-                if (recheck) _recheckMoved += moved;
-
-                // The pass is over: say what came of it, because «ничего не двинулось»
-                // and «кнопка не нажалась» look the same from where the player stands.
-                if (recheck && !Rechecking)
-                    Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                        _recheckMoved > 0
-                            ? $"Перепроверено: переложено {_recheckMoved}"
-                            : "Перепроверено: всё на своих местах");
-
-                if (moved <= 0) continue;
-
-                // Something is happening over there: said rarely enough to be news, not noise.
-                if (Time.realtimeSinceStartup - _sortSaidAt < 10f) continue;
-                _sortSaidAt = Time.realtimeSinceStartup;
-                player.Message(MessageHud.MessageType.TopLeft, $"Сортировка: разложено {moved}");
             }
         }
 

@@ -83,10 +83,15 @@ namespace AstvardServerMod
             return HasChestFlag(container, SupplyChestKey);
         }
 
+        /// <summary>
+        /// Пометка сундука. Владелец сети ищется вверх по объекту, а не на нём самом: у
+        /// сундука ZNetView там же, где Container, **а у повозки Container на дочернем
+        /// объекте, ZNetView на корне**. С GetComponent повозку нельзя было ни назначить
+        /// на подачу, ни на сбор - и молча: пометка просто не читалась.
+        /// </summary>
         private static bool HasChestFlag(Container container, string key)
         {
-            if (container == null) return false;
-            var view = container.GetComponent<ZNetView>();
+            var view = ViewOf(container);
             return view != null && view.IsValid() && view.GetZDO().GetBool(key);
         }
 
@@ -100,7 +105,7 @@ namespace AstvardServerMod
         {
             PendingChestAssign = null;
 
-            var view = container != null ? container.GetComponent<ZNetView>() : null;
+            var view = ViewOf(container);
             if (view == null || !view.IsValid()) return false;
 
             // The flag only sticks if the owner writes it, same as the inventory itself.
@@ -143,7 +148,8 @@ namespace AstvardServerMod
 
             // A container saves itself to its ZDO only from the owner's side, so adding
             // to one we do not own would live in local memory and vanish on reload.
-            var targetView = target.GetComponent<ZNetView>();
+            var targetView = ViewOf(target);
+            if (targetView == null || !targetView.IsValid()) return false;
             if (!targetView.IsOwner()) targetView.ClaimOwnership();
 
             return target.GetInventory().AddItem(prefab, amount);
@@ -212,7 +218,7 @@ namespace AstvardServerMod
             {
                 if (piece == null) continue;
 
-                var container = piece.GetComponentInChildren<Container>();
+                var container = ContainerOf(piece);
                 if (container == null) continue;
                 if (assignedOnly != IsCollectChest(container)) continue;
                 if (square && !InChestZone(origin, container.transform.position)) continue;
@@ -220,7 +226,7 @@ namespace AstvardServerMod
                 // Writing into a chest somebody has open is a reliable way to desync it.
                 if (container.IsInUse()) continue;
 
-                var view = container.GetComponent<ZNetView>();
+                var view = ViewOf(container);
                 if (view == null || !view.IsValid()) continue;
                 if (!container.GetInventory().CanAddItem(product, stack)) continue;
 
@@ -263,81 +269,96 @@ namespace AstvardServerMod
             var collectSpots = new List<Vector3>();
             var supplyChests = new List<Container>();
 
+            // Одно ожидание на все проходы, а не новое каждую секунду.
+            var second = new WaitForSeconds(1f);
+
             while (true)
             {
-                yield return new WaitForSeconds(1f);
+                yield return second;
 
-                var player = Player.m_localPlayer;
-                if (player == null) continue;
-
-                pieces.Clear();
-                Piece.GetAllPiecesInRadius(player.transform.position, HarvestScanRadius, pieces);
-
-                // Sort the chests out of the same sweep. Asking per station would mean
-                // re-walking every loaded piece once for each of them.
-                collectSpots.Clear();
-                supplyChests.Clear();
-                foreach (var piece in pieces)
+                // Сбой внутри одного прохода не имеет права унести с собой всё до конца
+                // сессии. Мод это уже проходил: контракт одной RPC разъехался с игрой,
+                // исключение прилетело внутрь корутины, и автоматика молча умерла до
+                // перезахода. Жалуемся один раз и живём дальше.
+                try
                 {
-                    if (piece == null) continue;
-                    var container = piece.GetComponentInChildren<Container>();
-                    if (container == null) continue;
 
-                    if (IsCollectChest(container)) collectSpots.Add(container.transform.position);
-                    if (IsSupplyChest(container)) supplyChests.Add(container);
+                    var player = Player.m_localPlayer;
+                    if (player == null) continue;
+
+                    pieces.Clear();
+                    Piece.GetAllPiecesInRadius(player.transform.position, HarvestScanRadius, pieces);
+
+                    // Sort the chests out of the same sweep. Asking per station would mean
+                    // re-walking every loaded piece once for each of them.
+                    collectSpots.Clear();
+                    supplyChests.Clear();
+                    foreach (var piece in pieces)
+                    {
+                        if (piece == null) continue;
+                        var container = ContainerOf(piece);
+                        if (container == null) continue;
+
+                        if (IsCollectChest(container)) collectSpots.Add(container.transform.position);
+                        if (IsSupplyChest(container)) supplyChests.Add(container);
+                    }
+
+                    // Nothing assigned, or the half switched off: nothing to feed from, so
+                    // skip the reads and reflection the feeding half would do.
+                    var feeding = IsAutoFillEnabled && supplyChests.Count > 0;
+
+                    // And with nowhere to put anything either, the whole second pass is
+                    // waste: five GetComponentInChildren per piece, each a recursive walk of
+                    // a multi-part prefab, on every loaded piece within sixty-four metres,
+                    // once a second. A base of fifteen hundred pieces is some seven thousand
+                    // tree walks a second to reach a row of MayHarvest calls that can only
+                    // answer false. The chest sweep above still has to run, since it is what
+                    // decides this.
+                    var harvesting = IsAutoCollectEnabled && collectSpots.Count > 0;
+                    if (!feeding && !harvesting) continue;
+
+                    foreach (var piece in pieces)
+                    {
+                        if (piece == null) continue;
+
+                        var cooking = piece.GetComponentInChildren<CookingStation>();
+                        if (cooking != null)
+                        {
+                            if (harvesting && MayHarvest(cooking, collectSpots))
+                                cooking.GetComponent<ZNetView>()
+                                    .InvokeRPC("RPC_RemoveDoneItem", player.transform.position, 1);
+                            if (feeding) FillCooking(cooking, supplyChests);
+                        }
+
+                        var beehive = piece.GetComponentInChildren<Beehive>();
+                        if (beehive != null && harvesting && MayHarvest(beehive, collectSpots))
+                            beehive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
+
+                        var fermenter = piece.GetComponentInChildren<Fermenter>();
+                        if (fermenter != null)
+                        {
+                            if (harvesting && MayHarvest(fermenter, collectSpots))
+                                fermenter.GetComponent<ZNetView>().InvokeRPC("RPC_Tap");
+                            if (feeding) FillFermenter(fermenter, supplyChests);
+                        }
+
+                        var smelter = piece.GetComponentInChildren<Smelter>();
+                        if (smelter != null)
+                        {
+                            if (feeding) FillSmelter(smelter, supplyChests);
+                            // Gated like its three siblings. Tipping the kiln out with
+                            // nowhere to put the coal turns one fifty-stack at the end of
+                            // the burn into fifty singles on the floor, one a second.
+                            if (harvesting && MayHarvest(smelter, collectSpots)) FlushSmelter(smelter);
+                        }
+
+                        var fireplace = piece.GetComponentInChildren<Fireplace>();
+                        if (fireplace != null && feeding) FillFireplace(fireplace, supplyChests);
+                    }
                 }
-
-                // Nothing assigned, or the half switched off: nothing to feed from, so
-                // skip the reads and reflection the feeding half would do.
-                var feeding = IsAutoFillEnabled && supplyChests.Count > 0;
-
-                // And with nowhere to put anything either, the whole second pass is
-                // waste: five GetComponentInChildren per piece, each a recursive walk of
-                // a multi-part prefab, on every loaded piece within sixty-four metres,
-                // once a second. A base of fifteen hundred pieces is some seven thousand
-                // tree walks a second to reach a row of MayHarvest calls that can only
-                // answer false. The chest sweep above still has to run, since it is what
-                // decides this.
-                var harvesting = IsAutoCollectEnabled && collectSpots.Count > 0;
-                if (!feeding && !harvesting) continue;
-
-                foreach (var piece in pieces)
+                catch (System.Exception bad)
                 {
-                    if (piece == null) continue;
-
-                    var cooking = piece.GetComponentInChildren<CookingStation>();
-                    if (cooking != null)
-                    {
-                        if (harvesting && MayHarvest(cooking, collectSpots))
-                            cooking.GetComponent<ZNetView>()
-                                .InvokeRPC("RPC_RemoveDoneItem", player.transform.position, 1);
-                        if (feeding) FillCooking(cooking, supplyChests);
-                    }
-
-                    var beehive = piece.GetComponentInChildren<Beehive>();
-                    if (beehive != null && harvesting && MayHarvest(beehive, collectSpots))
-                        beehive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
-
-                    var fermenter = piece.GetComponentInChildren<Fermenter>();
-                    if (fermenter != null)
-                    {
-                        if (harvesting && MayHarvest(fermenter, collectSpots))
-                            fermenter.GetComponent<ZNetView>().InvokeRPC("RPC_Tap");
-                        if (feeding) FillFermenter(fermenter, supplyChests);
-                    }
-
-                    var smelter = piece.GetComponentInChildren<Smelter>();
-                    if (smelter != null)
-                    {
-                        if (feeding) FillSmelter(smelter, supplyChests);
-                        // Gated like its three siblings. Tipping the kiln out with
-                        // nowhere to put the coal turns one fifty-stack at the end of
-                        // the burn into fifty singles on the floor, one a second.
-                        if (harvesting && MayHarvest(smelter, collectSpots)) FlushSmelter(smelter);
-                    }
-
-                    var fireplace = piece.GetComponentInChildren<Fireplace>();
-                    if (fireplace != null && feeding) FillFireplace(fireplace, supplyChests);
+                    SayLoopTrouble("Automation", bad);
                 }
             }
         }
@@ -400,7 +421,7 @@ namespace AstvardServerMod
                 if (sqr >= bestSqr) continue;
                 if (square ? !InChestZone(origin, container.transform.position) : sqr > range) continue;
 
-                var view = container.GetComponent<ZNetView>();
+                var view = ViewOf(container);
                 if (view == null || !view.IsValid()) continue;
 
                 foreach (var item in container.GetInventory().GetAllItems())
@@ -418,7 +439,8 @@ namespace AstvardServerMod
             if (bestChest == null) return null;
 
             // Same rule as storing: only the owner's write reaches the ZDO.
-            var bestView = bestChest.GetComponent<ZNetView>();
+            var bestView = ViewOf(bestChest);
+            if (bestView == null || !bestView.IsValid()) return null;
             if (!bestView.IsOwner()) bestView.ClaimOwnership();
 
             var name = bestItem.m_dropPrefab.name;

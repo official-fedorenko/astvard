@@ -86,10 +86,19 @@ namespace AstvardServerMod
             if (!_chestZoneShown && _chestZoneObject != null) _chestZoneObject.SetActive(false);
         }
 
+        private static Vector3 _chestZoneDrawnAt = new Vector3(float.MaxValue, 0f, 0f);
+
+        private static float _chestZoneDrawnSize;
+
         /// <summary>
-        /// Круг у ног, пока подсветка включена. Рисуется каждый кадр, в отличие от контура
-        /// поставленной зоны: этот ходит вместе с игроком, и замри он на месте - показывал бы
-        /// не ту даль, о которой рассказывает.
+        /// Круг у ног, пока подсветка включена: он ходит вместе с игроком, и замри он на
+        /// месте - показывал бы не ту даль, о которой рассказывает.
+        ///
+        /// Но и каждый кадр его считать незачем. Семьдесят две точки, и у каждой спрошена
+        /// высота земли - это семьдесят два запроса к физике на кадр, то есть четыре
+        /// тысячи в секунду, пока подсветка просто включена. Пересчитывается он, когда
+        /// игрок отошёл на треть метра или поменял саму зону; стоящему на месте он не
+        /// стоит ничего.
         /// </summary>
         internal static void UpdateChestZone()
         {
@@ -112,10 +121,16 @@ namespace AstvardServerMod
             }
 
             _chestZoneObject.SetActive(true);
-            if (ChestZoneSquare)
-                DrawGroundBox(_chestZoneLine, player.transform.position, AssignedChestRadius, 0f);
-            else
-                DrawGroundRing(_chestZoneLine, player.transform.position, AssignedChestRadius);
+
+            var where = player.transform.position;
+            var size = AssignedChestRadius * (ChestZoneSquare ? -1f : 1f);
+            if ((where - _chestZoneDrawnAt).sqrMagnitude < 0.1f && size == _chestZoneDrawnSize) return;
+
+            _chestZoneDrawnAt = where;
+            _chestZoneDrawnSize = size;
+
+            if (ChestZoneSquare) DrawGroundBox(_chestZoneLine, where, AssignedChestRadius, 0f);
+            else DrawGroundRing(_chestZoneLine, where, AssignedChestRadius);
         }
 
         internal static void DestroyChestZone()

@@ -242,11 +242,29 @@ namespace AstvardServerMod
                 {
                     if (string.IsNullOrEmpty(who) || !said.Add(who)) continue;
 
-                    text.Append('|').Append(who).Append('=').Append(NameOfPurse(who));
+                    text.Append('|').Append(who).Append('=').Append(PlainName(NameOfPurse(who)));
                 }
             }
 
             return text.ToString();
+        }
+
+        /// <summary>
+        /// Имя без разделителей этой строки. Ник в Steam бывает любым, и «a|b» разорвал
+        /// бы список имён так, что половина зоны стала бы безымянной.
+        /// </summary>
+        private static string PlainName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "";
+
+            var kept = new System.Text.StringBuilder();
+            foreach (var symbol in name)
+            {
+                if (symbol == '|' || symbol == '=' || symbol == '\n' || symbol == '\r') continue;
+                kept.Append(symbol);
+            }
+
+            return kept.ToString();
         }
 
         /// <summary>Forgetting what they were sent is enough: the next tick sends it again.</summary>

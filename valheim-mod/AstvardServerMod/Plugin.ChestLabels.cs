@@ -161,7 +161,7 @@ namespace AstvardServerMod
                 if (shown >= MaxChestLabels) break;
                 if (piece == null) continue;
 
-                var container = piece.GetComponentInChildren<Container>();
+                var container = ContainerOf(piece);
                 if (container == null) continue;
 
                 var spot = container.transform.position;
