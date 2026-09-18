@@ -194,20 +194,79 @@ namespace AstvardServerMod
                 Name = Sorting.CleanName(name),
             };
 
+            if (!ReplaceSortingZone(index, wanted, "Такой размер налезет на соседнюю зону")) return false;
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                $"Зона: {(wanted.Name.Length > 0 ? wanted.Name : "без имени")}, {wanted.Radius:0} м");
+            return true;
+        }
+
+        /// <summary>Сменить форму уже поставленной зоны. Квадрат шире круга по углам.</summary>
+        internal static bool ChangeSortingZoneShape(int index, bool square)
+        {
+            var zones = SortingZones();
+            if (index < 0 || index >= zones.Count) return false;
+
+            var zone = zones[index];
+            var wanted = new Sorting.Zone
+            {
+                X = zone.X,
+                Z = zone.Z,
+                Radius = zone.Radius,
+                Square = square,
+                Angle = square ? zone.Angle : 0f,
+                Name = zone.Name,
+            };
+
+            if (!ReplaceSortingZone(index, wanted, "Квадрат тут налезет на соседнюю зону")) return false;
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                square ? "Зона стала квадратной" : "Зона стала круглой");
+            return true;
+        }
+
+        /// <summary>Перенести зону туда, где стоит проекция, вместе с поворотом.</summary>
+        internal static bool MoveSortingZone(int index, float x, float z, float angle)
+        {
+            var zones = SortingZones();
+            if (index < 0 || index >= zones.Count) return false;
+
+            var zone = zones[index];
+            var wanted = new Sorting.Zone
+            {
+                X = x,
+                Z = z,
+                Radius = zone.Radius,
+                Square = zone.Square,
+                Angle = zone.Square ? Sorting.NormaliseAngle(angle) : 0f,
+                Name = zone.Name,
+            };
+
+            if (!ReplaceSortingZone(index, wanted, "Здесь она налезет на соседнюю зону")) return false;
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Зона перенесена");
+            return true;
+        }
+
+        /// <summary>
+        /// Ставит зону на место index, если она не налезет на остальные. Одна проверка на
+        /// все правки: раздутая, перенесённая и обращённая в квадрат ошибаются одинаково,
+        /// и стоить это будет одного сундука с двумя хозяевами.
+        /// </summary>
+        private static bool ReplaceSortingZone(int index, Sorting.Zone wanted, string refusal)
+        {
+            var zones = SortingZones();
+
             for (var i = 0; i < zones.Count; i++)
             {
                 if (i == index || !Sorting.Overlap(wanted, zones[i])) continue;
 
-                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                    "Такой размер налезет на соседнюю зону");
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, refusal);
                 return false;
             }
 
             zones[index] = wanted;
             SaveSortingZones();
-
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                $"Зона: {(wanted.Name.Length > 0 ? wanted.Name : "без имени")}, {wanted.Radius:0} м");
             return true;
         }
 

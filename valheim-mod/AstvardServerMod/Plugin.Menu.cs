@@ -80,6 +80,7 @@ namespace AstvardServerMod
         private const int StateSortSlots = 62;  // с какой кучи начинается свой сундук
         private const int StateSortLift = 63;   // высота подписей над сундуками
         private const int StateSortZone = 64;   // одна зона: имя, размер, удаление
+        private const int StateChestZone = 65;  // даль, с которой станции видят сундуки
 
         internal static GameObject Panel;
 
@@ -788,6 +789,7 @@ namespace AstvardServerMod
             CreateSettingsWidgets(gui);
             CreateRunePageWidgets(gui);
             CreateSortPageWidgets(gui);
+            CreateChestZoneWidgets(gui);
             CreateHelperWidgets(gui);
             CreateTestChestWidget(gui);
 
@@ -1067,6 +1069,7 @@ namespace AstvardServerMod
                          || MenuState == StateSortMark || MenuState == StateSortSlots
                          || MenuState == StateSortLift) MenuState = StateSorting;
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;
+                else if (MenuState == StateChestZone) MenuState = StateFeatures;
                 else if (MenuState == StateSorting) MenuState = StateFeatures;
                 else if (MenuState == StateHelper) MenuState = StateFeatures;
                 else if (MenuState == StateRuneGrant) MenuState = StateRunes;
@@ -1440,6 +1443,7 @@ namespace AstvardServerMod
             RefreshSettingsVisibility(admin);
             RefreshRunePageVisibility(admin);
             RefreshSortVisibility();
+            RefreshChestZoneVisibility();
             RefreshHelperVisibility(admin);
             RefreshBuildSettingsVisibility(admin);
             RebuildTemplateViews();

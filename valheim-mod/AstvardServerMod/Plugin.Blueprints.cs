@@ -554,6 +554,7 @@ namespace AstvardServerMod
             UpdateSortZonePreview();
             UpdateZonePreview();
             UpdateShownZone();
+            UpdateChestZone();
             UpdateWallPreview();
             CheckBuildAskTimeout();
             TickPlayerBuildHint();

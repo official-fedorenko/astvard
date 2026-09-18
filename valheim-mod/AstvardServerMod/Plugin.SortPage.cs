@@ -199,6 +199,25 @@ namespace AstvardServerMod
             return centre;
         }
 
+        /// <summary>
+        /// Несём уже поставленную зону. Проекция та же и отвечает тем же: ЛКМ ставит,
+        /// Esc отменяет, P закрепляет, стрелки двигают, Q и E вращают квадрат. Форма и
+        /// размер берутся у самой зоны — переносим её, а не ставим новую.
+        /// </summary>
+        private static void StartSortZoneMove(int at)
+        {
+            var zones = SortingZones();
+            if (at < 0 || at >= zones.Count) return;
+
+            _movingZone = at;
+            _sortSquare = zones[at].Square;
+            _sortAngle = zones[at].Angle;
+            SetFieldText(SortRadiusInput,
+                zones[at].Radius.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
+
+            StartSortZonePreview();
+        }
+
         private static void StartSortZonePreview()
         {
             var player = Player.m_localPlayer;
@@ -232,6 +251,7 @@ namespace AstvardServerMod
 
             _sortPreviewing = false;
             _sortPinned = false;
+            _movingZone = -1;
             if (_sortPreview != null) _sortPreview.SetActive(false);
         }
 
@@ -301,6 +321,21 @@ namespace AstvardServerMod
                 _inputHeldUntil = Time.time + 0.3f;
 
                 var centre = SortZoneCentre(player);
+
+                // Turned down - it would share ground with a zone already there - the outline
+                // stays up to be moved rather than vanishing with no way back.
+                if (_movingZone >= 0)
+                {
+                    if (MoveSortingZone(_movingZone, centre.x, centre.z, _sortAngle))
+                    {
+                        CancelSortZonePreview();
+                        MenuState = StateSortZone;
+                    }
+
+                    RefreshMenu();
+                    return true;
+                }
+
                 var zone = new Sorting.Zone
                 {
                     X = centre.x,
@@ -310,8 +345,6 @@ namespace AstvardServerMod
                     Angle = _sortSquare ? _sortAngle : 0f,
                 };
 
-                // Turned down - it would share ground with a zone already there - the outline
-                // stays up to be moved rather than vanishing with no way back.
                 if (AddSortingZone(zone))
                 {
                     CancelSortZonePreview();
@@ -572,6 +605,17 @@ namespace AstvardServerMod
 
             SortZoneShowButton = MakeButton(gui, "", () => { ToggleShownZone(_editingSortZone); RefreshMenu(); });
 
+            SortZoneShapeButton = MakeButton(gui, "", () =>
+            {
+                var zones = SortingZones();
+                if (_editingSortZone < 0 || _editingSortZone >= zones.Count) return;
+
+                ChangeSortingZoneShape(_editingSortZone, !zones[_editingSortZone].Square);
+                RefreshMenu();
+            });
+
+            SortZoneMoveButton = MakeButton(gui, "Перенести", () => StartSortZoneMove(_editingSortZone));
+
             SortZoneDelete = MakeButton(gui, "", () =>
             {
                 // Вторым нажатием, как у всего, что не вернёшь.
@@ -606,6 +650,13 @@ namespace AstvardServerMod
         }
 
         internal static GameObject SortZoneShowButton;
+
+        internal static GameObject SortZoneShapeButton;
+
+        internal static GameObject SortZoneMoveButton;
+
+        /// <summary>Какую зону несём. -1 — ставим новую.</summary>
+        private static int _movingZone = -1;
 
         // Какую зону сейчас обводим на земле, -1 — никакую. Живёт до конца сессии: это
         // «дай посмотреть, где край», а не настройка, которую хочется найти завтра.
@@ -685,6 +736,12 @@ namespace AstvardServerMod
                 ? "Подсветка: вкл"
                 : "Подсветка: выкл");
 
+            var opened = SortingZones();
+            SetLabel(SortZoneShapeButton,
+                _editingSortZone >= 0 && _editingSortZone < opened.Count && opened[_editingSortZone].Square
+                    ? "Форма: квадрат"
+                    : "Форма: круг");
+
             SetLabel(SortZoneDelete, Time.realtimeSinceStartup - _zoneDeleteArmedAt <= 5f
                 ? "Точно? Нажми ещё раз"
                 : "Удалить зону");
@@ -712,6 +769,8 @@ namespace AstvardServerMod
             SetActive(SortZoneSizeInput, open);
             SetActive(SortZoneApply, open);
             SetActive(SortZoneShowButton, open);
+            SetActive(SortZoneShapeButton, open);
+            SetActive(SortZoneMoveButton, open);
             SetActive(SortZoneDelete, open);
         }
 

@@ -85,6 +85,7 @@ namespace AstvardServerMod
             BindCurrency(Config);
             BindSorting(Config);
             BindChestLabels(Config);
+            BindChestZone(Config);
             BindWorldRates(Config);
             BindSiteLists(Config);
 
@@ -554,6 +555,7 @@ namespace AstvardServerMod
             DestroyChestLabels();
             DestroyZonePreview();
             DestroyShownZone();
+            DestroyChestZone();
             SavePurses();
             _harmony?.UnpatchSelf();
         }

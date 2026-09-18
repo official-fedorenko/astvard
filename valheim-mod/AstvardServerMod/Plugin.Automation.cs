@@ -67,10 +67,6 @@ namespace AstvardServerMod
 
         private const float AutoCollectRadius = 8f;
 
-        // An assigned chest is a deliberate choice, so it reaches further than the
-        // "whatever is closest" fallback.
-        private const float AssignedChestRadius = 24f;
-
         // Lives in the chest's own ZDO, so the assignment is part of the world: it
         // survives a relog and every player sees the same chest, not only whoever set it.
         private const string CollectChestKey = "astvard_collect";
@@ -144,9 +140,9 @@ namespace AstvardServerMod
             // An assigned chest is a decision made in the world, so it works for
             // whoever happens to be nearby. The personal toggle only governs the
             // guess-the-nearest-chest fallback.
-            var target = FindChest(origin, AssignedChestRadius, prefab, amount, true)
+            var target = FindChest(origin, AssignedChestRadius, prefab, amount, true, ChestZoneSquare)
                          ?? (IsAutoCollectEnabled
-                             ? FindChest(origin, AutoCollectRadius, prefab, amount, false)
+                             ? FindChest(origin, AutoCollectRadius, prefab, amount, false, false)
                              : null);
             if (target == null) return false;
 
@@ -207,10 +203,12 @@ namespace AstvardServerMod
         }
 
         private static Container FindChest(Vector3 origin, float radius, GameObject product,
-                                           int stack, bool assignedOnly)
+                                           int stack, bool assignedOnly, bool square)
         {
             var pieces = new List<Piece>();
-            Piece.GetAllPiecesInRadius(origin, radius, pieces);
+            // Квадрат достаёт до угла дальше, чем до стороны: смотрим шире, а отбираем
+            // ниже, самой зоной.
+            Piece.GetAllPiecesInRadius(origin, square ? radius * 1.415f : radius, pieces);
 
             Container best = null;
             var bestSqr = float.MaxValue;
@@ -222,6 +220,7 @@ namespace AstvardServerMod
                 var container = piece.GetComponentInChildren<Container>();
                 if (container == null) continue;
                 if (assignedOnly != IsCollectChest(container)) continue;
+                if (square && !InChestZone(origin, container.transform.position)) continue;
 
                 // Writing into a chest somebody has open is a reliable way to desync it.
                 if (container.IsInUse()) continue;
@@ -376,13 +375,12 @@ namespace AstvardServerMod
 
             var origin = producer.transform.position;
 
-            var range = AssignedChestRadius * AssignedChestRadius;
             foreach (var chest in assignedChests)
-                if ((chest - origin).sqrMagnitude <= range) return true;
+                if (InChestZone(origin, chest)) return true;
 
             if (!IsAutoCollectEnabled) return false;
 
-            range = AutoCollectRadius * AutoCollectRadius;
+            var range = AutoCollectRadius * AutoCollectRadius;
             foreach (var chest in anyChests)
                 if (chest != null
                     && (chest.transform.position - origin).sqrMagnitude <= range) return true;
@@ -408,12 +406,14 @@ namespace AstvardServerMod
         {
             if (accepted.Count == 0) return null;
 
-            return TakeFrom(origin, supplyChests, AssignedChestRadius, accepted)
-                   ?? (IsAutoFillEnabled ? TakeFrom(origin, anyChests, AutoCollectRadius, accepted) : null);
+            return TakeFrom(origin, supplyChests, AssignedChestRadius, accepted, ChestZoneSquare)
+                   ?? (IsAutoFillEnabled
+                       ? TakeFrom(origin, anyChests, AutoCollectRadius, accepted, false)
+                       : null);
         }
 
         private static string TakeFrom(Vector3 origin, List<Container> chests,
-                                       float radius, List<string> accepted)
+                                       float radius, List<string> accepted, bool square)
         {
             var range = radius * radius;
             Container bestChest = null;
@@ -425,7 +425,8 @@ namespace AstvardServerMod
                 if (container == null || container.IsInUse()) continue;
 
                 var sqr = (container.transform.position - origin).sqrMagnitude;
-                if (sqr > range || sqr >= bestSqr) continue;
+                if (sqr >= bestSqr) continue;
+                if (square ? !InChestZone(origin, container.transform.position) : sqr > range) continue;
 
                 var view = container.GetComponent<ZNetView>();
                 if (view == null || !view.IsValid()) continue;
