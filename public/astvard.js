@@ -774,3 +774,161 @@ function bindBuildsHandlers() {
 }
 
 bindBuildsHandlers();
+
+// ---------------- Сортировка ----------------
+//
+// По какой полке сортировщик раскладывает предмет. Список предметов сайт не придумывает
+// и придумывать не должен: его присылает мод, который один знает, что в игре есть, — и
+// в новой версии игры новые предметы появятся здесь сами, без правки сайта. Поэтому тут
+// нельзя «добавить предмет», только выбрать полку среди присланного.
+//
+// Пустой выбор — не «Разное». Это «решает мод», то есть по типу предмета, и разница
+// видна на первом же незнакомом предмете: «Разное» — это ответ, а пустой выбор — его
+// отсутствие.
+
+let sortingState = null;
+let sortingHandlersBound = false;
+
+async function loadSortingSection({ quiet = false } = {}) {
+  try {
+    const res = await fetch('/api/admin/sorting');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return quiet ? undefined : showToast(data.message || 'Не удалось загрузить сортировку', 'error');
+    sortingState = data;
+    renderSorting();
+  } catch (err) {
+    if (!quiet) showToast('Не удалось загрузить сортировку', 'error');
+  }
+  return undefined;
+}
+
+function sortingSyncText() {
+  if (!sortingState.seeded || !sortingState.modSeenAt) {
+    return 'Игровой сервер ещё ни разу не присылал сюда список предметов. Нужен мод, который умеет '
+      + 'этот обмен, и перезапуск сервера — до тех пор выбирать не из чего.';
+  }
+  const seen = astvardDate(sortingState.modSeenAt);
+  if (Date.now() - new Date(sortingState.modSeenAt).getTime() > BUILDS_SILENT_MS) {
+    return `Сервер последний раз заходил ${seen} — он остановлен или не достаёт до сайта. Выбранное дождётся его.`;
+  }
+  return sortingState.modAppliedRevision < sortingState.revision
+    ? `Сервер заходил ${seen}. Последнее изменение ещё в пути — обычно это до минуты.`
+    : `Сервер заходил ${seen}, всё выбранное у него.`;
+}
+
+function sortingTitle(category) {
+  const titles = (sortingState && sortingState.categories) || [];
+  return titles[category] || `№${category}`;
+}
+
+function sortingRows() {
+  const query = (document.getElementById('sortingSearch')?.value || '').trim().toLowerCase();
+  const onlyChosen = Boolean(document.getElementById('sortingOnlyChosen')?.checked);
+
+  return (sortingState.items || []).filter((item) => {
+    if (onlyChosen && item.category === null) return false;
+    if (!query) return true;
+    return item.title.toLowerCase().includes(query) || item.kind.toLowerCase().includes(query);
+  });
+}
+
+function renderSorting() {
+  const line = document.getElementById('sortingSyncLine');
+  if (line) line.textContent = sortingSyncText();
+
+  const body = document.getElementById('sortingItemsBody');
+  if (!body || !sortingState) return;
+
+  const items = sortingRows();
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="3" class="empty-state">'
+      + (sortingState.seeded ? 'Ничего не нашлось' : 'Сервер ещё не присылал список предметов')
+      + '</td></tr>';
+    return;
+  }
+
+  const options = (chosen) => (sortingState.categories || [])
+    .map((title, at) => `<option value="${at}"${chosen === at ? ' selected' : ''}>${escapeHtml(title)}</option>`)
+    .join('');
+
+  body.innerHTML = items.map((item) => {
+    const now = item.category === null
+      ? `<span class="badge badge-muted">по типу: ${escapeHtml(sortingTitle(item.modCategory))}</span>`
+      : `<span class="badge badge-success">${escapeHtml(sortingTitle(item.category))}</span>`;
+
+    return `<tr>
+      <td>
+        <div>${escapeHtml(item.title || item.kind)}</div>
+        <div class="muted" style="font-size:12px;">${escapeHtml(item.kind)}${item.type ? ' · ' + escapeHtml(item.type) : ''}</div>
+      </td>
+      <td>${now}</td>
+      <td>
+        <select class="sorting-pick" data-kind="${escapeHtml(item.kind)}">
+          <option value=""${item.category === null ? ' selected' : ''}>решает сервер</option>
+          ${options(item.category)}
+        </select>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// Раз в десять секунд, пока раздел открыт: «ещё в пути» само становится «у него», а
+// смена, сделанная в другой вкладке, видна без нажатий. Не во время набора в поиске и
+// не когда открыт какой-нибудь список: перерисовка стёрла бы и то и другое.
+const SORTING_REFRESH_MS = 10 * 1000;
+setInterval(() => {
+  const section = document.getElementById('section-sorting');
+  if (!section || !section.classList.contains('active') || document.visibilityState !== 'visible') return;
+  const focused = document.activeElement;
+  if (focused && section.contains(focused) && focused.matches('input, select')) return;
+  loadSortingSection({ quiet: true });
+}, SORTING_REFRESH_MS);
+
+async function saveSortingPick(kind, value) {
+  try {
+    const res = await fetch('/api/admin/sorting/item', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, category: value === '' ? null : Number(value) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      showToast(data.message || 'Не удалось сохранить', 'error');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    showToast('Ошибка сети', 'error');
+    return false;
+  }
+}
+
+function bindSortingHandlers() {
+  if (sortingHandlersBound) return;
+  sortingHandlersBound = true;
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#sortingRefreshBtn')) loadSortingSection();
+  });
+
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'sortingSearch' && sortingState) renderSorting();
+  });
+
+  document.addEventListener('change', async (e) => {
+    if (e.target.id === 'sortingOnlyChosen' && sortingState) return renderSorting();
+
+    const pick = e.target.closest('.sorting-pick');
+    if (!pick || !sortingState) return undefined;
+
+    const kind = pick.dataset.kind;
+    const item = sortingState.items.find((row) => row.kind === kind);
+    if (!(await saveSortingPick(kind, pick.value))) return loadSortingSection();
+
+    const said = pick.value === '' ? 'решает сервер' : `«${sortingTitle(Number(pick.value))}»`;
+    showToast(`${item ? item.title || kind : kind}: ${said}`);
+    return loadSortingSection();
+  });
+}
+
+bindSortingHandlers();

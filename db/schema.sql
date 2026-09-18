@@ -374,3 +374,29 @@ CREATE TABLE IF NOT EXISTS game_build_sync (
     );
 
 INSERT INTO game_build_sync (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Куда сортировщик кладёт предмет (src/gameSorting.js). Каталог присылает сам мод при
+-- каждом старте: какие в игре предметы, как они зовутся и что мод положил бы сам. Выбор
+-- админа живёт в category, и NULL там значит «решает мод» — это не то же самое, что 0
+-- («Разное»), и путать их значит тихо менять раскладку на всей базе.
+CREATE TABLE IF NOT EXISTS game_sort_items (
+      kind TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      item_type TEXT NOT NULL DEFAULT '',
+      mod_category INTEGER NOT NULL DEFAULT 0,
+      category INTEGER,
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ,
+      updated_by TEXT
+    );
+
+CREATE TABLE IF NOT EXISTS game_sort_sync (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      revision INTEGER NOT NULL DEFAULT 0,
+      seeded BOOLEAN NOT NULL DEFAULT false,
+      categories TEXT NOT NULL DEFAULT '',
+      mod_seen_at TIMESTAMPTZ,
+      mod_applied_revision INTEGER NOT NULL DEFAULT 0
+    );
+
+INSERT INTO game_sort_sync (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

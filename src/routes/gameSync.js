@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const logger = require('../logger');
 const { permittedLines, adminLines } = require('../gameLists');
 const builds = require('../gameBuilds');
+const sorting = require('../gameSorting');
 
 /**
  * Списки доступа для самого игрового сервера: мод забирает их отсюда по токену.
@@ -108,14 +109,41 @@ async function buildsPush(req, res) {
   }
 }
 
+async function sortingPull(res, parsedUrl) {
+  try {
+    sendPlain(res, 200, await sorting.pullText(parsedUrl.searchParams.get('rev')));
+  } catch (err) {
+    logger.error('[sorting] не собрать выбранное для мода:', err.message);
+    sendPlain(res, 500, 'error\n');
+  }
+}
+
+async function sortingPush(req, res) {
+  let text;
+  try {
+    text = await readText(req);
+  } catch (err) {
+    return sendPlain(res, err.tooLarge ? 413 : 400, 'bad body\n');
+  }
+  try {
+    const result = await sorting.pushCatalogue(text);
+    return sendPlain(res, result.status, result.text);
+  } catch (err) {
+    logger.error('[sorting] не принять каталог от мода:', err.message);
+    return sendPlain(res, 500, 'error\n');
+  }
+}
 module.exports = async function handleGameSync(req, res, sessionUser, parsedUrl, method) {
   if (!expectedToken()) return sendPlain(res, 404, 'not found\n');
 
   const isLists = parsedUrl.pathname === '/api/game/lists' && method === 'GET';
   const isBuilds = parsedUrl.pathname === '/api/game/builds' && (method === 'GET' || method === 'POST');
-  if (!isLists && !isBuilds) return sendPlain(res, 404, 'not found\n');
+  // Куда сортировщик кладёт предмет: каталог сюда, выбранное обратно.
+  const isSorting = parsedUrl.pathname === '/api/game/sorting' && (method === 'GET' || method === 'POST');
+  if (!isLists && !isBuilds && !isSorting) return sendPlain(res, 404, 'not found\n');
   if (!authorized(req)) return sendPlain(res, 401, 'unauthorized\n');
 
   if (isLists) return lists(req, res);
+  if (isSorting) return method === 'GET' ? sortingPull(res, parsedUrl) : sortingPush(req, res);
   return method === 'GET' ? buildsPull(res, parsedUrl) : buildsPush(req, res);
 };

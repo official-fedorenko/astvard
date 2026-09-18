@@ -691,6 +691,8 @@ function loadSectionData(hash) {
     loadServersSection();
   } else if (hash === 'builds') {
     loadBuildsSection();
+  } else if (hash === 'sorting') {
+    loadSortingSection();
   } else if (hash === 'dashboard') {
     loadDashboardStats();
   } else if (hash === 'employees') {

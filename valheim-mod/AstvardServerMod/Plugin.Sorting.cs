@@ -873,10 +873,17 @@ namespace AstvardServerMod
             // What somebody said about this one outright beats the guess below, and the
             // mod's own list of drops beats the item type - the game calls a deer hide a
             // material, the same word it uses for stone.
-            var kind = item.m_shared.m_name;
-            var chosen = Sorting.ChosenFor(kind);
-            if (chosen >= 0) return chosen;
-            if (Sorting.IsLoot(kind)) return Sorting.Loot;
+            var chosen = Sorting.ChosenFor(item.m_shared.m_name);
+            return chosen >= 0 ? chosen : DefaultCategoryOf(item);
+        }
+
+        /// <summary>
+        /// Куда мод положил бы сам, без чужого слова. Это же уезжает в каталог на сайт:
+        /// человеку надо видеть, что он меняет, а не что он уже поменял.
+        /// </summary>
+        private static int DefaultCategoryOf(ItemDrop.ItemData item)
+        {
+            if (Sorting.IsLoot(item.m_shared.m_name)) return Sorting.Loot;
 
             switch (item.m_shared.m_itemType)
             {

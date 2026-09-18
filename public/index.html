@@ -37,6 +37,12 @@
             <span>Серверы</span>
           </a>
         </li>
+        <li class="nav-item" data-section="sorting">
+          <a href="#sorting" title="Сортировка">
+            <i data-lucide="package-search"></i>
+            <span>Сортировка</span>
+          </a>
+        </li>
         <li class="nav-item" data-section="builds">
           <a href="#builds" title="Постройки">
             <i data-lucide="hammer"></i>
@@ -971,6 +977,44 @@
         </div>
 
         <div id="buildsRules"></div>
+      </section>
+
+      <section id="section-sorting" class="app-section">
+        <div class="page-header">
+          <div class="page-title">
+            <h2>Сортировка</h2>
+            <p>По какой полке сортировщик раскладывает предмет. Список присылает сам игровой сервер —
+               он один знает, что в игре есть; выбранное здесь он забирает за минуту. Всё, что не
+               выбрано, он раскладывает по-своему: по типу предмета, а незнакомое — в «Разное»</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-secondary" id="sortingRefreshBtn">
+              <i data-lucide="refresh-cw"></i>
+              <span>Обновить</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="muted builds-sync" id="sortingSyncLine">Загрузка…</p>
+
+        <div class="toolbar-form">
+          <input type="text" id="sortingSearch" placeholder="Поиск по названию или ключу" autocomplete="off">
+          <label class="check-chip">
+            <input type="checkbox" id="sortingOnlyChosen">
+            <span>Только выбранные</span>
+          </label>
+        </div>
+
+        <div class="table-container">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr><th>Предмет</th><th>Сейчас</th><th>Куда класть</th></tr>
+              </thead>
+              <tbody id="sortingItemsBody"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section id="section-logs" class="app-section">

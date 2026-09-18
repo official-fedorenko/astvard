@@ -181,6 +181,7 @@ namespace AstvardServerMod
                 if (id.Length == 0) continue;
 
                 here.Add(peer.m_uid);
+                SendSortKinds(peer);
 
                 var theirs = new List<Sorting.Zone>();
                 foreach (var zone in ServerZones)
@@ -210,7 +211,11 @@ namespace AstvardServerMod
             foreach (var pair in ZonesSent)
                 if (!here.Contains(pair.Key)) gone.Add(pair.Key);
 
-            foreach (var uid in gone) ZonesSent.Remove(uid);
+            foreach (var uid in gone)
+            {
+                ZonesSent.Remove(uid);
+                SortKindsSent.Remove(uid);
+            }
         }
 
         /// <summary>

@@ -41,6 +41,7 @@ namespace AstvardServerMod
                 "Как часто спрашивать сайт, в секундах, от 10 до 3600.");
 
             BindSiteBuilds(config);
+            BindSiteSorting(config);
         }
 
         /// <summary>
@@ -52,6 +53,7 @@ namespace AstvardServerMod
         {
             // The same site and token: what players may build is fetched beside the lists.
             TickSiteBuilds();
+            TickSiteSorting();
 
             var net = ZNet.instance;
             if (net == null || !net.IsServer() || _siteListsBusy) return;

@@ -1,0 +1,302 @@
+using System.Collections;
+using System.Collections.Generic;
+using BepInEx.Configuration;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace AstvardServerMod
+{
+    public partial class Plugin
+    {
+        /// <summary>
+        /// По какой полке раскладывать предмет — то, что решили на сайте.
+        ///
+        /// The mod sorts by the game's own item type, and for most things that is right.
+        /// But the type is the game's word, not the word of whoever keeps the base: a deer
+        /// hide is a «material» to the game, the same word it uses for stone, and tar lives
+        /// with the potions at one base and with the materials at the next. There is nothing
+        /// the mod can say to that, so the answer is given elsewhere and fetched.
+        ///
+        /// The catalogue goes up, the choices come down. Up, because the site has no idea
+        /// what the game contains and should not have to: a new item in a new version turns
+        /// up on the page without a line of site code changing. Down, only what a person
+        /// actually chose - a list of four hundred «this one stays where it was» would be a
+        /// kilobyte a minute carrying no decision at all.
+        ///
+        /// And then on to the clients, because the sorter runs there: the server is only the
+        /// one place that has the token.
+        /// </summary>
+        private static ConfigEntry<string> _siteSortingUrl;
+
+        private static ConfigEntry<int> _siteSortingSeconds;
+
+        // A choice made on the site is not urgent - nothing is waiting on it but a chest.
+        private const int DefaultSiteSortingSeconds = 60;
+
+        private const int MinSiteSortingSeconds = 10;
+
+        private const int MaxSiteSortingSeconds = 3600;
+
+        private static float _siteSortingNextAt;
+
+        private static bool _siteSortingBusy;
+
+        private static bool _siteSortingSent;
+
+        private static int _siteSortingApplied;
+
+        private static string _siteSortingLastProblem;
+
+        internal static void BindSiteSorting(ConfigFile config)
+        {
+            _siteSortingUrl = config.Bind("Сайт", "SortingUrl", "",
+                "Откуда сервер берёт, куда сортировщик кладёт какой предмет, и куда отправляет список "
+                + "предметов игры. Пусто — рядом со списками: ListsUrl, где «lists» заменено на "
+                + "«sorting». Токен тот же — ListsToken.");
+            _siteSortingSeconds = config.Bind("Сайт", "SortingSeconds", DefaultSiteSortingSeconds,
+                "Как часто спрашивать сайт о раскладке, в секундах, от 10 до 3600.");
+        }
+
+        private static string SiteSortingUrl()
+        {
+            return SiteSync.SiblingUrlFrom(_siteSortingUrl != null ? _siteSortingUrl.Value : "",
+                                           _siteListsUrl != null ? _siteListsUrl.Value : "", "sorting");
+        }
+
+        /// <summary>From TickSiteLists, on the server: starts a round when one is due.</summary>
+        private void TickSiteSorting()
+        {
+            var net = ZNet.instance;
+            if (net == null || !net.IsServer() || _siteSortingBusy) return;
+
+            var url = SiteSortingUrl();
+            var token = SiteToken();
+            if (url.Length == 0 || token.Length == 0) return;
+
+            var now = Time.realtimeSinceStartup;
+            if (now < _siteSortingNextAt) return;
+
+            var seconds = Mathf.Clamp(
+                _siteSortingSeconds != null ? _siteSortingSeconds.Value : DefaultSiteSortingSeconds,
+                MinSiteSortingSeconds, MaxSiteSortingSeconds);
+
+            _siteSortingNextAt = now + seconds;
+            StartCoroutine(SyncSiteSorting(url, token));
+        }
+
+        private IEnumerator SyncSiteSorting(string url, string token)
+        {
+            _siteSortingBusy = true;
+            try
+            {
+                if (!_siteSortingSent)
+                {
+                    var sent = false;
+                    yield return PostCatalogue(url, token, (ok) => sent = ok);
+                    if (!sent) yield break;
+
+                    _siteSortingSent = true;
+                }
+
+                string answer = null;
+                using (var request = UnityWebRequest.Get(
+                    url + (url.Contains("?") ? "&" : "?") + "rev=" + _siteSortingApplied))
+                {
+                    request.SetRequestHeader("Authorization", "Bearer " + token);
+                    request.timeout = 15;
+                    yield return request.SendWebRequest();
+
+                    if (request.result != UnityWebRequest.Result.Success)
+                    {
+                        SaySortingProblem(request.error);
+                        yield break;
+                    }
+
+                    answer = request.downloadHandler != null ? request.downloadHandler.text : "";
+                }
+
+                _siteSortingLastProblem = null;
+
+                // The site has nothing to choose from - it was wiped, or this is a new one.
+                // Sending the catalogue again is the whole of the repair.
+                if (answer != null && answer.StartsWith("seed needed"))
+                {
+                    _siteSortingSent = false;
+                    yield break;
+                }
+
+                ApplySortingAnswer(answer);
+            }
+            finally
+            {
+                _siteSortingBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// «rev N», а дальше строки «ключ=номер». Ревизия — просто порядок: по ней сайт
+        /// видит, доехало ли до сервера, а сервер — надо ли что-то делать вообще.
+        /// </summary>
+        private static void ApplySortingAnswer(string answer)
+        {
+            if (answer == null) return;
+
+            var lines = answer.Split('\n');
+            var revision = _siteSortingApplied;
+            var chosen = new System.Text.StringBuilder();
+
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0) continue;
+
+                if (trimmed.StartsWith("rev "))
+                {
+                    int read;
+                    if (int.TryParse(trimmed.Substring(4).Trim(), out read)) revision = read;
+                    continue;
+                }
+
+                if (chosen.Length > 0) chosen.Append(';');
+                chosen.Append(trimmed);
+            }
+
+            var packed = chosen.ToString();
+            if (revision == _siteSortingApplied && packed == Sorting.PackChosen()) return;
+
+            _siteSortingApplied = revision;
+            Sorting.ReadChosen(packed);
+            _sortKindsPacked = packed;
+
+            Log.LogInfo($"[AstvardServerMod] Sorting: the site chose for {lines.Length - 1} kinds (rev {revision}).");
+        }
+
+        /// <summary>
+        /// Каталог: что в игре вообще есть. Шлётся раз за запуск, и правильно, что при
+        /// каждом: предметы могли появиться с обновлением игры, а имена — с переводом.
+        /// </summary>
+        private IEnumerator PostCatalogue(string url, string token, System.Action<bool> done)
+        {
+            var body = new System.Text.StringBuilder();
+            body.Append("#categories ");
+            for (var i = 0; i < Sorting.Count; i++)
+            {
+                if (i > 0) body.Append('|');
+                body.Append(Sorting.Title(i));
+            }
+
+            body.Append('\n');
+
+            var counted = 0;
+            var db = ObjectDB.instance;
+            if (db != null && db.m_items != null)
+                foreach (var prefab in db.m_items)
+                {
+                    var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
+                    if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null) continue;
+
+                    var shared = drop.m_itemData.m_shared;
+                    var kind = CleanForCatalogue(shared.m_name);
+                    if (kind.Length == 0) continue;
+
+                    body.Append(kind).Append('|')
+                        .Append(CleanForCatalogue(ItemTitle(drop.m_itemData))).Append('|')
+                        .Append(CleanForCatalogue(shared.m_itemType.ToString())).Append('|')
+                        .Append(DefaultCategoryOf(drop.m_itemData))
+                        .Append('\n');
+
+                    counted++;
+                }
+
+            if (counted == 0)
+            {
+                // Нечего рассказывать - значит, игра ещё не разложила свой ObjectDB.
+                // Следующий заход через минуту, и там он уже будет.
+                done(false);
+                yield break;
+            }
+
+            using (var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
+            {
+                request.uploadHandler = new UploadHandlerRaw(
+                    System.Text.Encoding.UTF8.GetBytes(body.ToString()));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Authorization", "Bearer " + token);
+                request.SetRequestHeader("Content-Type", "text/plain; charset=utf-8");
+                request.timeout = 30;
+
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    SaySortingProblem(request.error);
+                    done(false);
+                    yield break;
+                }
+
+                Log.LogInfo($"[AstvardServerMod] Sorting: told the site about {counted} items.");
+                done(true);
+            }
+        }
+
+        /// <summary>Ни переносов, ни разделителей: строка каталога иначе разорвётся.</summary>
+        private static string CleanForCatalogue(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+
+            var kept = new System.Text.StringBuilder();
+            foreach (var symbol in text)
+            {
+                if (symbol == '|' || symbol == '\n' || symbol == '\r') continue;
+                kept.Append(symbol);
+            }
+
+            return kept.ToString().Trim();
+        }
+
+        // The site being down is one line in the log, not one a minute.
+        private static void SaySortingProblem(string problem)
+        {
+            if (_siteSortingLastProblem == problem) return;
+
+            _siteSortingLastProblem = problem;
+            Log.LogWarning($"[AstvardServerMod] Sorting: the site would not answer — {problem}");
+        }
+
+        // ---------------- to the clients ----------------
+
+        private const string RpcSortKinds = "AstvardSortKinds";
+
+        private static string _sortKindsPacked = "";
+
+        private static readonly Dictionary<long, string> SortKindsSent = new Dictionary<long, string>();
+
+        internal static void RegisterSiteSortingRpcs(ZRoutedRpc rpc)
+        {
+            rpc.Register<string>(RpcSortKinds, OnSortKinds);
+        }
+
+        /// <summary>
+        /// From the zones tick, which already walks the peers: each one gets the choices when
+        /// they differ from what it was last sent - which on an ordinary second is never.
+        /// </summary>
+        private static void SendSortKinds(ZNetPeer peer)
+        {
+            if (peer == null || peer.m_socket == null) return;
+
+            string last;
+            if (SortKindsSent.TryGetValue(peer.m_uid, out last) && last == _sortKindsPacked) return;
+
+            SortKindsSent[peer.m_uid] = _sortKindsPacked;
+            ZRoutedRpc.instance?.InvokeRoutedRPC(peer.m_uid, RpcSortKinds, _sortKindsPacked);
+        }
+
+        private static void OnSortKinds(long sender, string text)
+        {
+            var net = ZNet.instance;
+            if (net == null || net.IsServer()) return;
+
+            Sorting.ReadChosen(text);
+        }
+    }
+}

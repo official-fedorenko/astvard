@@ -80,6 +80,7 @@ namespace AstvardServerMod
             RegisterCurrencyRpcs(rpc);
             RegisterWorldRateRpcs(rpc);
             RegisterSharedZoneRpcs(rpc);
+            RegisterSiteSortingRpcs(rpc);
         }
 
         // ---------------- server side ----------------

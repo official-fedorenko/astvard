@@ -243,13 +243,22 @@ namespace AstvardServerMod
         /// </summary>
         public static string BuildsUrlFrom(string buildsUrl, string listsUrl)
         {
-            var own = (buildsUrl ?? "").Trim();
+            return SiblingUrlFrom(buildsUrl, listsUrl, "builds");
+        }
+
+        /// <summary>
+        /// Адрес рядом со списками: у сервера, который уже ходит за ними, новой строки в
+        /// конфиге не появляется. Свой адрес, если он вписан, всегда главнее.
+        /// </summary>
+        public static string SiblingUrlFrom(string ownUrl, string listsUrl, string name)
+        {
+            var own = (ownUrl ?? "").Trim();
             if (own.Length > 0) return own;
 
             var lists = (listsUrl ?? "").Trim();
             const string tail = "/lists";
             return lists.EndsWith(tail, StringComparison.Ordinal)
-                ? lists.Substring(0, lists.Length - tail.Length) + "/builds"
+                ? lists.Substring(0, lists.Length - tail.Length) + "/" + name
                 : "";
         }
 
