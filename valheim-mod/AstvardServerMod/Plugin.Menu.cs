@@ -81,6 +81,8 @@ namespace AstvardServerMod
         private const int StateSortLift = 63;   // высота подписей над сундуками
         private const int StateSortZone = 64;   // одна зона: имя, размер, удаление
         private const int StateChestZone = 65;  // даль, с которой станции видят сундуки
+        private const int StateSortCrew = 66;   // кто вписан в зону сортировки
+        private const int StateSortInvite = 67; // кого из тех, кто в игре, вписать
 
         internal static GameObject Panel;
 
@@ -1069,6 +1071,8 @@ namespace AstvardServerMod
                          || MenuState == StateSortMark || MenuState == StateSortSlots
                          || MenuState == StateSortLift) MenuState = StateSorting;
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;
+                else if (MenuState == StateSortCrew) MenuState = StateSortZone;
+                else if (MenuState == StateSortInvite) MenuState = StateSortCrew;
                 else if (MenuState == StateChestZone) MenuState = StateFeatures;
                 else if (MenuState == StateSorting) MenuState = StateFeatures;
                 else if (MenuState == StateHelper) MenuState = StateFeatures;

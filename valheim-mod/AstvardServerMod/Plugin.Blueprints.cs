@@ -542,6 +542,7 @@ namespace AstvardServerMod
             TickCurrency();
             TickWorldRates();
             TickSiteLists();
+            TickSharedZones();
             TickCurrencyLabel();
             TickStateHud();
             TickChestLabels();

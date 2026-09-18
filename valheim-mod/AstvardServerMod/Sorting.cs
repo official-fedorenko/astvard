@@ -109,6 +109,85 @@ namespace AstvardServerMod
 
             /// <summary>Что хозяин её назвал. Пусто — зовём по форме и размеру.</summary>
             public string Name;
+
+            /// <summary>
+            /// Which zone this is, as the server numbers them. Zero is a zone the server
+            /// has never seen: one made offline, or one on its way to being made.
+            /// </summary>
+            public int Id;
+
+            /// <summary>Whose it is, by platform id. Empty means nobody's but this client's.</summary>
+            public string Owner = "";
+
+            /// <summary>Who else was written into it, by platform id.</summary>
+            public List<string> Members = new List<string>();
+
+            /// <summary>
+            /// Whether this client is the one to sort here. The server decides it and says
+            /// so with the zone; two clients emptying one cart between them would move the
+            /// same stack twice, and that is an item made or an item lost, silently.
+            /// </summary>
+            public bool Drive;
+
+            public Zone Copy()
+            {
+                return new Zone
+                {
+                    X = X, Z = Z, Radius = Radius, Square = Square, Angle = Angle, Name = Name,
+                    Id = Id, Owner = Owner, Members = new List<string>(Members), Drive = Drive,
+                };
+            }
+        }
+
+        /// <summary>
+        /// A platform id as we are willing to keep it: digits and nothing else. It travels
+        /// in the same line as the zone, so a stray comma or semicolon in it would tear the
+        /// record in two and take every zone after it down with the parse.
+        /// </summary>
+        public static string CleanId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return "";
+
+            var kept = new StringBuilder();
+            foreach (var symbol in id)
+            {
+                if (symbol < '0' || symbol > '9') continue;
+                if (kept.Length >= 20) break;
+
+                kept.Append(symbol);
+            }
+
+            return kept.ToString();
+        }
+
+        /// <summary>Whether this person has the zone at all: theirs, or written into it.</summary>
+        public static bool Sees(Zone zone, string id)
+        {
+            if (zone == null) return false;
+
+            var who = CleanId(id);
+            if (who.Length == 0) return false;
+            if (zone.Owner == who) return true;
+
+            if (zone.Members == null) return false;
+            foreach (var member in zone.Members)
+                if (member == who) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Whether this person may change the zone: the one who put it down, or an admin.
+        /// Being written into a zone is leave to work in it, not leave to move it - the
+        /// chests inside are somebody's, and so is the decision about where the zone ends.
+        /// </summary>
+        public static bool MayEdit(Zone zone, string id, bool admin)
+        {
+            if (zone == null) return false;
+            if (admin) return true;
+
+            var who = CleanId(id);
+            return who.Length > 0 && zone.Owner == who;
         }
 
         public const float MinZoneRadius = 4f;
@@ -242,7 +321,11 @@ namespace AstvardServerMod
                     .Append(ClampRadius(zone.Radius).ToString("F1", Invariant)).Append(',')
                     .Append(zone.Square ? '1' : '0').Append(',')
                     .Append(NormaliseAngle(zone.Angle).ToString("F1", Invariant)).Append(',')
-                    .Append(CleanName(zone.Name));
+                    .Append(CleanName(zone.Name)).Append(',')
+                    .Append(zone.Id.ToString(Invariant)).Append(',')
+                    .Append(CleanId(zone.Owner)).Append(',')
+                    .Append(PackMembers(zone.Members)).Append(',')
+                    .Append(zone.Drive ? '1' : '0');
             }
 
             return text.ToString();
@@ -269,6 +352,12 @@ namespace AstvardServerMod
                 if (parts.Length < 5 || !float.TryParse(parts[4], NumberStyles.Float, Invariant, out angle))
                     angle = 0f;
 
+                // Everything past the name came later still, the same way: a record
+                // without it is a zone that was only ever this client's.
+                int id;
+                if (parts.Length < 7 || !int.TryParse(parts[6], NumberStyles.Integer, Invariant, out id))
+                    id = 0;
+
                 zones.Add(new Zone
                 {
                     X = x,
@@ -277,6 +366,10 @@ namespace AstvardServerMod
                     Square = parts.Length > 3 && parts[3] == "1",
                     Angle = NormaliseAngle(angle),
                     Name = parts.Length > 5 ? CleanName(parts[5]) : "",
+                    Id = id < 0 ? 0 : id,
+                    Owner = parts.Length > 7 ? CleanId(parts[7]) : "",
+                    Members = ParseMembers(parts.Length > 8 ? parts[8] : ""),
+                    Drive = parts.Length > 9 && parts[9] == "1",
                 });
 
                 if (zones.Count >= MaxZones) break;
@@ -422,6 +515,44 @@ namespace AstvardServerMod
                 return other;
             }
         }
+
+        /// <summary>The people written into a zone, as one field: ids and spaces, nothing else.</summary>
+        public static string PackMembers(IEnumerable<string> members)
+        {
+            var text = new StringBuilder();
+            if (members == null) return "";
+
+            foreach (var member in members)
+            {
+                var who = CleanId(member);
+                if (who.Length == 0) continue;
+
+                if (text.Length > 0) text.Append(' ');
+                text.Append(who);
+            }
+
+            return text.ToString();
+        }
+
+        public static List<string> ParseMembers(string text)
+        {
+            var members = new List<string>();
+            if (string.IsNullOrEmpty(text)) return members;
+
+            foreach (var part in text.Split(' '))
+            {
+                var who = CleanId(part);
+                if (who.Length == 0 || members.Contains(who)) continue;
+
+                members.Add(who);
+                if (members.Count >= MaxMembers) break;
+            }
+
+            return members;
+        }
+
+        /// <summary>More people than this in one zone is not a base, it is a server.</summary>
+        public const int MaxMembers = 32;
 
         /// <summary>Square of the gap between two chests: only the order of it is ever used.</summary>
         private static float Gap(BinState a, BinState b)

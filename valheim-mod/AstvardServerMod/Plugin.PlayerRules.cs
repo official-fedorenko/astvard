@@ -195,6 +195,9 @@ namespace AstvardServerMod
                        "Чинит всегда даром. Платно —\nтопливо для заправки из сумки."),
             // Closed out of the box: every zone is ground the server keeps loaded for good.
             ToggleRule("sort", "Sorting", "Сортировка", RuleGroup.Features, true),
+            // Open: a zone is one man's corner of the base, and who works in it is his
+            // business. Closed, zones still work - only nobody new can be written in.
+            ToggleRule("sharezone", "SharedZones", "Общие зоны", RuleGroup.Features, true),
             LimitRule("zone", "Zone", "Зона", RuleGroup.Features, false,
                       "радиус", MinZoneRadius, MaxZoneRadius, MinZoneRadius),
         };

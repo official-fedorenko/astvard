@@ -203,6 +203,20 @@ namespace AstvardServerMod
             if (_pursesDirty && now - _currencySavedAt >= CurrencySaveEvery) SavePurses();
         }
 
+        /// <summary>
+        /// What this id is called, for anything that has to show a person rather than a
+        /// number. The purses keep a name for everyone who has ever played here, so
+        /// somebody written into a zone months ago still reads as a person.
+        /// </summary>
+        internal static string NameOfPurse(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return "";
+            if (!_pursesLoaded) LoadPurses();
+
+            Purse purse;
+            return Purses.TryGetValue(id, out purse) ? purse.Name : "";
+        }
+
         private static Purse PurseFor(string id, string name)
         {
             if (!_pursesLoaded) LoadPurses();

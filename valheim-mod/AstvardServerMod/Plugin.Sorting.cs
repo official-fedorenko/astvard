@@ -59,6 +59,9 @@ namespace AstvardServerMod
 
         private static int _lastZone = -1;
 
+        // Кто-то другой в этой зоне за рулём: мы только смотрим.
+        private static bool _lastPassenger;
+
         // Carts seen in the zone, and what the log last said. The cart is the one thing
         // here found on an assumption - that it carries a Piece like everything else the
         // sweep walks - and this is the line that will say so either way.
@@ -96,6 +99,10 @@ namespace AstvardServerMod
                 "Зоны сортировки: x,z,радиус,квадрат,поворот — через точку с запятой. "
                 + "Ставятся в игре, руками править незачем.");
 
+            _zonesSeeded = config.Bind("Сортировка", "ZonesSent", false,
+                "Служебное: отданы ли зоны этого клиента серверу. Ставится само, руками "
+                + "не нужно. false — при первом входе на сервер с модом зоны уедут туда.");
+
             _ownChestSlots = config.Bind("Сортировка", "OwnChestSlots", 4,
                 "Сколько ячеек должна занимать куча одного предмета, чтобы получить свой "
                 + "сундук внутри категории. 0 — не делить: все сундуки категории берут всё.");
@@ -106,6 +113,8 @@ namespace AstvardServerMod
                 + "соседнего сундука, а не через всю группу: стена сундуков — одна кучка, "
                 + "какой бы длинной ни была. 0 — не собирать в кучки вовсе.");
         }
+
+        private static BepInEx.Configuration.ConfigEntry<bool> _zonesSeeded;
 
         private static BepInEx.Configuration.ConfigEntry<float> _groupSpan;
 
@@ -163,6 +172,15 @@ namespace AstvardServerMod
         internal static bool AddSortingZone(Sorting.Zone zone)
         {
             var zones = SortingZones();
+
+            // On a server the checks below belong to it: this client sees only the zones
+            // it is in, so «здесь уже есть зона» is a question it cannot answer.
+            if (ZonesOnServer)
+            {
+                zone.Id = 0;
+                SendZone(zone);
+                return true;
+            }
 
             if (zones.Count >= Sorting.MaxZones)
             {
@@ -270,6 +288,17 @@ namespace AstvardServerMod
         private static bool ReplaceSortingZone(int index, Sorting.Zone wanted, string refusal)
         {
             var zones = SortingZones();
+            if (index < 0 || index >= zones.Count) return false;
+
+            // On a server the zones are its own, and so is the last word on whether two
+            // of them meet: this client only sees the zones it is in, and a zone it
+            // cannot see is exactly the one it would be told about too late.
+            if (ZonesOnServer)
+            {
+                wanted.Id = zones[index].Id;
+                SendZone(wanted);
+                return true;
+            }
 
             for (var i = 0; i < zones.Count; i++)
             {
@@ -288,6 +317,12 @@ namespace AstvardServerMod
         {
             var zones = SortingZones();
             if (index < 0 || index >= zones.Count) return;
+
+            if (ZonesOnServer)
+            {
+                SendZoneDrop(zones[index].Id);
+                return;
+            }
 
             zones.RemoveAt(index);
             SaveSortingZones();
@@ -396,10 +431,22 @@ namespace AstvardServerMod
                 {
                     _lastBins = 0;
                     _lastSources = 0;
+                    _lastPassenger = false;
                     continue;
                 }
 
                 var zone = zones[at];
+
+                // Somebody else is carrying things here this second. Two of us taking the
+                // same stack out of the same cart is an item made or an item lost.
+                _lastPassenger = ZonesOnServer && !zone.Drive;
+                if (_lastPassenger)
+                {
+                    _lastBins = 0;
+                    _lastSources = 0;
+                    continue;
+                }
+
                 var reach = Sorting.ClampRadius(zone.Radius) * (zone.Square ? SquareDiagonal : 1f);
 
                 pieces.Clear();
@@ -506,6 +553,9 @@ namespace AstvardServerMod
             if (Player.m_localPlayer == null) return "";
             if (SortingZones().Count == 0) return "Зон нет — поставь первую.";
             if (_lastZone < 0) return "Ты вне своих зон.";
+            if (_lastPassenger)
+                return $"В этой зоне сейчас разбирает{NEWLINE}другой игрок — чтобы одну стопку{NEWLINE}"
+                       + "не унесли дважды.";
             if (_lastBins == 0) return "В зоне нет помеченных сундуков.";
             if (_lastSources == 0) return "Разбирать нечего: всё помечено.";
 

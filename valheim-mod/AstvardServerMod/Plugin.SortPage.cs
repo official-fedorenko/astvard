@@ -76,6 +76,7 @@ namespace AstvardServerMod
 
             CreateSortSettingWidgets(gui);
             CreateSortZonePageWidgets(gui);
+            CreateSortCrewWidgets(gui);
 
             SortLabelsButton = MakeButton(gui, "", () =>
             {
@@ -93,6 +94,7 @@ namespace AstvardServerMod
             SortZonesButton = MakeButton(gui, "", () =>
             {
                 _itemOffset = 0;
+                AskForZones();
                 MenuState = StateSortZones;
                 RefreshMenu();
             });
@@ -565,6 +567,11 @@ namespace AstvardServerMod
         /// <summary>Какая зона сейчас открыта.</summary>
         private static int _editingSortZone;
 
+        // And which zone that is, as the server numbers them. The list is rebuilt from
+        // under this page every time anybody touches a zone anywhere: a page holding a
+        // place in that list would answer «Удалить» about whichever zone landed there.
+        private static int _editingZoneId;
+
         // Удаление в одно нажатие стирало зону, которую хотели всего лишь посмотреть.
         private static float _zoneDeleteArmedAt;
 
@@ -640,6 +647,7 @@ namespace AstvardServerMod
             if (at < 0 || at >= zones.Count) return;
 
             _editingSortZone = at;
+            _editingZoneId = zones[at].Id;
             _zoneDeleteArmedAt = 0f;
             SetFieldText(SortZoneNameInput, zones[at].Name ?? "");
             SetFieldText(SortZoneSizeInput,
@@ -772,6 +780,16 @@ namespace AstvardServerMod
             SetActive(SortZoneShapeButton, open);
             SetActive(SortZoneMoveButton, open);
             SetActive(SortZoneDelete, open);
+
+            // Only the one who put the zone down may change it; the rest of the crew see
+            // the page and its numbers, which is what tells them whose corner they are in.
+            var mine = !open || IsMyZone(zones[_editingSortZone]);
+            SetActive(SortZoneNameInput, open && mine);
+            SetActive(SortZoneSizeInput, open && mine);
+            SetActive(SortZoneApply, open && mine);
+            SetActive(SortZoneShapeButton, open && mine);
+            SetActive(SortZoneMoveButton, open && mine);
+            SetActive(SortZoneDelete, open && mine);
         }
 
         private static void RebuildSortViews()
@@ -855,6 +873,7 @@ namespace AstvardServerMod
             var allowed = RuleAllows("sort");
             RefreshSortSettingVisibility(allowed);
             RefreshSortZonePage(allowed);
+            RefreshSortCrew(allowed);
 
             SetActive(SortingButton, allowed && MenuState == StateFeatures);
 
