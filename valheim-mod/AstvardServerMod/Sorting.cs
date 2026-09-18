@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -392,6 +393,11 @@ namespace AstvardServerMod
         {
             public int Category;
 
+            /// <summary>Where it stands. Height is not asked, as nowhere else here.</summary>
+            public float X;
+
+            public float Z;
+
             /// <summary>How many slots it has at all.</summary>
             public int Slots;
 
@@ -415,6 +421,78 @@ namespace AstvardServerMod
 
                 return other;
             }
+        }
+
+        /// <summary>Square of the gap between two chests: only the order of it is ever used.</summary>
+        private static float Gap(BinState a, BinState b)
+        {
+            if (a == null || b == null) return 0f;
+
+            var dx = a.X - b.X;
+            var dz = a.Z - b.Z;
+            return dx * dx + dz * dz;
+        }
+
+        /// <summary>
+        /// Chests standing together, by single linkage: one joins a group as soon as it is
+        /// within <paramref name="span"/> of any chest already in it. So a wall of them is
+        /// one group however long the wall runs - the span says «сосед», not «размер
+        /// группы», and a room away is a group of its own.
+        /// </summary>
+        public static List<List<int>> Groups(IList<BinState> bins, IList<int> of, float span)
+        {
+            var groups = new List<List<int>>();
+            if (bins == null || of == null) return groups;
+
+            var left = new List<int>(of);
+            var reach = span * span;
+
+            while (left.Count > 0)
+            {
+                var group = new List<int> { left[0] };
+                left.RemoveAt(0);
+
+                // group grows as it goes, and that is the linkage: a chest pulled in brings
+                // in its own neighbours on the next turn of the outer loop.
+                for (var i = 0; i < group.Count; i++)
+                    for (var j = left.Count - 1; j >= 0; j--)
+                    {
+                        if (Gap(bins[group[i]], bins[left[j]]) > reach) continue;
+
+                        group.Add(left[j]);
+                        left.RemoveAt(j);
+                    }
+
+                group.Sort();
+                groups.Add(group);
+            }
+
+            return groups;
+        }
+
+        /// <summary>
+        /// Which group the pile goes to: the one that already holds most of it, and among
+        /// equals the roomier one - nothing held anywhere means the biggest group, where it
+        /// is least likely to run out and spill into the next room after all.
+        /// </summary>
+        private static List<int> PickGroup(IList<BinState> bins, List<List<int>> groups, string kind)
+        {
+            List<int> best = null;
+            var bestHeld = -1;
+
+            foreach (var group in groups)
+            {
+                var held = 0;
+                foreach (var bin in group) held += bins[bin].Held(kind);
+
+                if (best != null
+                    && (held < bestHeld || (held == bestHeld && group.Count <= best.Count))) continue;
+
+                best = group;
+                bestHeld = held;
+            }
+
+            return best != null ? new List<int>(best) : new List<int>();
         }
 
         /// <summary>Everything of one kind the category has to hold - in its chests and on its way there.</summary>
@@ -511,7 +589,8 @@ namespace AstvardServerMod
         /// With ownChestSlots at zero nothing is split: every chest of a category takes
         /// everything, which is what this did before there was a plan.
         /// </summary>
-        public static Plan MakePlan(IList<BinState> bins, IList<Load> loads, int ownChestSlots)
+        public static Plan MakePlan(IList<BinState> bins, IList<Load> loads, int ownChestSlots,
+                                    float groupSpan = 0f)
         {
             var plan = new Plan();
             if (bins == null) return plan;
@@ -561,26 +640,54 @@ namespace AstvardServerMod
                     foreach (var bin in ofCategory)
                         if (!claimed.Contains(bin)) free.Add(bin);
 
-                    // The last one stays shared, always.
+                    // The last one stays shared, always. Counted over the category and not
+                    // over the group below: a shared chest in the other room is still one.
                     var mayTake = free.Count - 1;
                     if (mayTake < 1) continue;
 
                     // The chest that already holds most of it, and among equals the one that
                     // holds least of anything else - a chest half full of this is a better
                     // home than an empty one somebody is about to want for something else.
-                    free.Sort((a, b) =>
+                    var kind = load.Kind;
+                    Comparison<int> byHolding = (a, b) =>
                     {
-                        var mine = bins[b].Held(load.Kind).CompareTo(bins[a].Held(load.Kind));
+                        var mine = bins[b].Held(kind).CompareTo(bins[a].Held(kind));
                         if (mine != 0) return mine;
 
-                        var others = bins[a].HeldOther(load.Kind).CompareTo(bins[b].HeldOther(load.Kind));
+                        var others = bins[a].HeldOther(kind).CompareTo(bins[b].HeldOther(kind));
                         return others != 0 ? others : a.CompareTo(b);
-                    });
+                    };
+
+                    // One pile, one place. Chests standing together count as a group, so a
+                    // pile that outgrows its chest spreads along the wall it is already on
+                    // instead of turning up in the cellar as well: «дрова вон там» has to
+                    // stay true, and a pile split across the base is a pile nobody finds.
+                    var pool = groupSpan > 0f
+                        ? PickGroup(bins, Groups(bins, free, groupSpan), kind)
+                        : free;
+
+                    pool.Sort(byHolding);
+
+                    // And past the first chest - the nearest to it, not the next in line.
+                    if (pool.Count > 1)
+                    {
+                        var anchor = pool[0];
+                        var tail = pool.GetRange(1, pool.Count - 1);
+
+                        tail.Sort((a, b) =>
+                        {
+                            var byGap = Gap(bins[anchor], bins[a]).CompareTo(Gap(bins[anchor], bins[b]));
+                            return byGap != 0 ? byGap : byHolding(a, b);
+                        });
+
+                        pool = new List<int> { anchor };
+                        pool.AddRange(tail);
+                    }
 
                     var slots = SlotsFor(load.Units, load.StackSize);
                     var home = new List<int>();
 
-                    foreach (var bin in free)
+                    foreach (var bin in pool)
                     {
                         if (home.Count >= mayTake) break;
                         if (home.Count > 0 && slots <= 0) break;

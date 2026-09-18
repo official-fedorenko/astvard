@@ -256,4 +256,110 @@ public class SortingPlanTests
         Assert.Equal(0, plan.Where("Дерево", Materials)[0]);
         Assert.Equal(1, plan.Where("Мясо", Sorting.Food)[0]);
     }
+    private static Sorting.BinState At(float x, float z, int slots, params (string kind, int units)[] holds)
+    {
+        var bin = Bin(slots, holds);
+        bin.X = x;
+        bin.Z = z;
+        return bin;
+    }
+
+    [Fact]
+    public void APileSpreadsToTheChestNearestItsOwn()
+    {
+        // Wood is started in the chest at the near end; the two it takes next are the ones
+        // beside it, not the next two in the list - which is what it used to take.
+        var bins = new List<Sorting.BinState>
+        {
+            At(30f, 0f, 4),
+            At(0f, 0f, 4, ("Дерево", 50)),
+            At(20f, 0f, 4),
+            At(2f, 0f, 4),
+        };
+        var loads = new List<Sorting.Load> { Load("Дерево", 500, 50) };
+
+        var plan = Sorting.MakePlan(bins, loads, OwnChest);
+
+        Assert.Equal(new List<int> { 1, 3, 2 }, plan.Homes["Дерево"]);
+    }
+
+    [Fact]
+    public void APileWouldRatherSpillThanCrossTheYard()
+    {
+        // Two chests by the kiln, four in the cellar twenty-five metres off. The pile wants
+        // four chests and its own corner holds two: it takes the two and the rest goes in
+        // with the odds and ends, instead of half the wood turning up in the cellar.
+        var bins = new List<Sorting.BinState>
+        {
+            At(0f, 0f, 4, ("Дерево", 50)), At(2f, 0f, 4),
+            At(25f, 0f, 4), At(27f, 0f, 4), At(29f, 0f, 4), At(31f, 0f, 4),
+        };
+        var loads = new List<Sorting.Load> { Load("Дерево", 800, 50) };
+
+        var plan = Sorting.MakePlan(bins, loads, OwnChest, 8f);
+
+        Assert.Equal(new List<int> { 0, 1 }, plan.Homes["Дерево"]);
+    }
+
+    [Fact]
+    public void WithoutASpanTheGroupsAreNotConsulted()
+    {
+        // The same two rooms, and the pile crosses the yard because nothing tells it not to.
+        // That is what every install did before the span, and 0 keeps it that way.
+        var bins = new List<Sorting.BinState>
+        {
+            At(0f, 0f, 4, ("Дерево", 50)), At(2f, 0f, 4),
+            At(25f, 0f, 4), At(27f, 0f, 4), At(29f, 0f, 4), At(31f, 0f, 4),
+        };
+        var loads = new List<Sorting.Load> { Load("Дерево", 800, 50) };
+
+        var plan = Sorting.MakePlan(bins, loads, OwnChest, 0f);
+
+        Assert.Equal(new List<int> { 0, 1, 2, 3 }, plan.Homes["Дерево"]);
+    }
+
+    [Fact]
+    public void WithNothingHeldAnywhereThePileTakesTheBiggerGroup()
+    {
+        var bins = new List<Sorting.BinState>
+        {
+            At(0f, 0f, 4), At(2f, 0f, 4),
+            At(25f, 0f, 4), At(27f, 0f, 4), At(29f, 0f, 4),
+        };
+        var loads = new List<Sorting.Load> { Load("Дерево", 500, 50) };
+
+        var plan = Sorting.MakePlan(bins, loads, OwnChest, 8f);
+
+        Assert.All(plan.Homes["Дерево"], bin => Assert.True(bin >= 2));
+    }
+
+    [Fact]
+    public void AWallOfChestsIsOneGroupHoweverLongItRuns()
+    {
+        // Ten chests two metres apart: twenty metres end to end, far past the span, but each
+        // has a neighbour. The span says «сосед», so this is one wall and not five groups.
+        var bins = new List<Sorting.BinState>();
+        var all = new List<int>();
+        for (var i = 0; i < 10; i++)
+        {
+            bins.Add(At(i * 2f, 0f, 4));
+            all.Add(i);
+        }
+
+        var groups = Sorting.Groups(bins, all, 3f);
+
+        Assert.Equal(10, Assert.Single(groups).Count);
+    }
+
+    [Fact]
+    public void AChestOffOnItsOwnIsAGroupOfOne()
+    {
+        var bins = new List<Sorting.BinState> { At(0f, 0f, 4), At(2f, 0f, 4), At(40f, 0f, 4) };
+
+        var groups = Sorting.Groups(bins, new List<int> { 0, 1, 2 }, 8f);
+
+        Assert.Equal(2, groups.Count);
+        Assert.Equal(new List<int> { 0, 1 }, groups[0]);
+        Assert.Equal(new List<int> { 2 }, groups[1]);
+    }
 }

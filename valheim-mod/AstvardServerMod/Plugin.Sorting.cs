@@ -99,6 +99,20 @@ namespace AstvardServerMod
             _ownChestSlots = config.Bind("Сортировка", "OwnChestSlots", 4,
                 "Сколько ячеек должна занимать куча одного предмета, чтобы получить свой "
                 + "сундук внутри категории. 0 — не делить: все сундуки категории берут всё.");
+
+            _groupSpan = config.Bind("Сортировка", "GroupSpan", 8f,
+                "На каком расстоянии сундуки считаются стоящими вместе, от 0 до 64 м. Куча "
+                + "держится одной такой кучки и не расползается по базе. Мерится до "
+                + "соседнего сундука, а не через всю группу: стена сундуков — одна кучка, "
+                + "какой бы длинной ни была. 0 — не собирать в кучки вовсе.");
+        }
+
+        private static BepInEx.Configuration.ConfigEntry<float> _groupSpan;
+
+        /// <summary>How close two chests stand to count as one group.</summary>
+        internal static float GroupSpan
+        {
+            get { return Mathf.Clamp(_groupSpan != null ? _groupSpan.Value : 8f, 0f, 64f); }
         }
 
         /// <summary>How big a pile has to be before it earns a chest of its own.</summary>
@@ -556,9 +570,12 @@ namespace AstvardServerMod
             foreach (var bin in bins)
             {
                 var inventory = bin.GetInventory();
+                var spot = bin.transform.position;
                 var state = new Sorting.BinState
                 {
                     Category = ChestCategory(bin),
+                    X = spot.x,
+                    Z = spot.z,
                     Slots = inventory != null ? inventory.GetWidth() * inventory.GetHeight() : 0,
                 };
 
@@ -576,7 +593,7 @@ namespace AstvardServerMod
             Tally(loads, bins);
             Tally(loads, sources);
 
-            return Sorting.MakePlan(states, new List<Sorting.Load>(loads.Values), OwnChestSlots);
+            return Sorting.MakePlan(states, new List<Sorting.Load>(loads.Values), OwnChestSlots, GroupSpan);
         }
 
         private static void Tally(Dictionary<string, Sorting.Load> loads, List<Container> from)
