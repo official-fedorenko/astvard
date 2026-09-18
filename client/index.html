@@ -148,6 +148,12 @@
             </a>
           </li>
           <li>
+            <a href="#mod" class="sidebar__link" onclick="switchSection('mod')">
+              <span class="sidebar__link-icon"><i data-lucide="wand-sparkles"></i></span>
+              <span>Что умеет мод</span>
+            </a>
+          </li>
+          <li>
             <a href="#articles-section" class="sidebar__link" onclick="switchSection('articles-section')">
               <span class="sidebar__link-icon"><i data-lucide="newspaper"></i></span>
               <span>Новости</span>
@@ -253,6 +259,483 @@
           <p class="block__hint">Шаблоны, которые админ выложил на сервер: их можно поставить в игре через панель мода.</p>
           <div class="articles-grid" id="buildsGrid">
             <p class="server-meta">Загрузка...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ЧТО УМЕЕТ МОД: плитка на каждую возможность, пояснение — в окне.
+           Тексты окон лежат ниже, в скрытом блоке: так их читает и поисковик. -->
+      <section class="section" id="mod">
+        <h2 class="section__title">Что умеет мод</h2>
+        <p class="section__subtitle">Панель открывается вместе с инвентарём, клавишей Tab. Нажми на возможность — расскажу, что она делает, где её искать и во что обойдётся.</p>
+
+        <div class="section__block">
+          <h3 class="block__title">С чего начать</h3>
+          <p class="block__hint">Мод нужен ради панели: без него на сервер тоже пустят, но кнопок не будет.</p>
+          <div class="feature-grid">
+            <button type="button" class="feature-card" data-feature="panel">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="layout-panel-left"></i></span>
+                <span class="feature-card__title">Панель мода</span>
+              </span>
+              <span class="feature-card__text">Деревянная панель над инвентарём — из неё работает всё остальное.</span>
+              <span class="feature-tags"><span class="feature-tag">Tab</span><span class="feature-tag feature-tag--free">даром</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="runes">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="gem"></i></span>
+                <span class="feature-card__title">Руны</span>
+              </span>
+              <span class="feature-card__text">Счёт времени в мире: по руне за час игры, сами собой.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">сами копятся</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="keys">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="mouse-pointer-click"></i></span>
+                <span class="feature-card__title">Клавиши проекций</span>
+              </span>
+              <span class="feature-card__text">Всё сначала показывается призраком: ЛКМ, Esc, P и стрелки.</span>
+              <span class="feature-tags"><span class="feature-tag">ЛКМ · Esc · P · стрелки</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="section__block">
+          <h3 class="block__title">Постройки</h3>
+          <p class="block__hint">Что из этого открыто и за материалы ли — решает админ сервера. Бесплатные постройки идут с паузой: следующая через несколько минут.</p>
+          <div class="feature-grid">
+            <button type="button" class="feature-card" data-feature="tpl-server">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="blocks"></i></span>
+                <span class="feature-card__title">Шаблоны сервера</span>
+              </span>
+              <span class="feature-card__text">Готовые постройки, которые админ открыл игрокам. Нажал — ставишь.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">обычно даром</span><span class="feature-tag feature-tag--wait">с паузой</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="tpl-mine">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="folder"></i></span>
+                <span class="feature-card__title">Мои шаблоны</span>
+              </span>
+              <span class="feature-card__text">Твоя личная библиотека построек: имя, категория, установка.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">хранение даром</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="copy">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="copy"></i></span>
+                <span class="feature-card__title">Копировать постройку</span>
+              </span>
+              <span class="feature-card__text">Снять свою постройку и поставить копию или сохранить её в шаблоны.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span><span class="feature-tag">радиус до 20 м</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="floor">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="square"></i></span>
+                <span class="feature-card__title">Пол по контуру</span>
+              </span>
+              <span class="feature-card__text">Обнеси место стенами — мод сам застелет пол внутри.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="wall">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="panels-top-left"></i></span>
+                <span class="feature-card__title">Стена по краю пола</span>
+              </span>
+              <span class="feature-card__text">Встань на пол — стены встанут по его внешнему краю.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span><span class="feature-tag">высота 1–4 м</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="fence">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="fence"></i></span>
+                <span class="feature-card__title">Забор кольцом</span>
+              </span>
+              <span class="feature-card__text">Частокол вокруг тебя: с помостом, крышей и выравниванием земли.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span><span class="feature-tag">от 4 до 64 м</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="undo-build">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="undo-2"></i></span>
+                <span class="feature-card__title">Отменить постройку</span>
+              </span>
+              <span class="feature-card__text">Снимает последнее, что ты поставил через мод, и возвращает материалы.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="build-settings">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="sliders-horizontal"></i></span>
+                <span class="feature-card__title">Настройки построек</span>
+              </span>
+              <span class="feature-card__text">Прилипание, выравнивание земли, снос под постройкой и дальность проекции.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="section__block">
+          <h3 class="block__title">Рельеф</h3>
+          <p class="block__hint">Земляные работы. Обычно бесплатные, но у каждого инструмента есть предел в метрах, который ставит админ.</p>
+          <div class="feature-grid">
+            <button type="button" class="feature-card" data-feature="level">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="layers"></i></span>
+                <span class="feature-card__title">Выровнять площадку</span>
+              </span>
+              <span class="feature-card__text">Круг или квадрат ровной земли под базу, с аккуратными краями.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">радиус до 64 м</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="road">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="route"></i></span>
+                <span class="feature-card__title">Дорожка</span>
+              </span>
+              <span class="feature-card__text">Мощёная дорога от точки до точки, с изгибом, сносом и факелами.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">до 200 м</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="area">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="circle-dot"></i></span>
+                <span class="feature-card__title">Мощение вокруг</span>
+              </span>
+              <span class="feature-card__text">Круглая мощёная площадка вокруг тебя — теми же настройками, что дорожка.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">радиус до 32 м</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="bridge">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="waypoints"></i></span>
+                <span class="feature-card__title">Мост</span>
+              </span>
+              <span class="feature-card__text">Мост через воду или овраг: сваи, настил и крыша по желанию.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">обычно даром</span><span class="feature-tag feature-tag--wait">с паузой</span><span class="feature-tag">до 120 м</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="undo-terrain">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="rotate-ccw"></i></span>
+                <span class="feature-card__title">Откат рельефа</span>
+              </span>
+              <span class="feature-card__text">Возвращает землю такой, какой она была до твоих работ.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">5 шагов назад</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="section__block">
+          <h3 class="block__title">Функции</h3>
+          <p class="block__hint">Всё, что работает само: подача сырья в станции, сбор готового, сортировка сундуков и ремонт. Эта страница открыта всегда.</p>
+          <div class="feature-grid">
+            <button type="button" class="feature-card" data-feature="fill">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="package-plus"></i></span>
+                <span class="feature-card__title">Наполнение станций</span>
+              </span>
+              <span class="feature-card__text">Печь, плавильня, улей и брага сами берут сырьё из назначенного сундука.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="collect">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="package-open"></i></span>
+                <span class="feature-card__title">Сбор готового</span>
+              </span>
+              <span class="feature-card__text">Слитки, уголь, еда, мёд и брага складываются в назначенный сундук сами.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="chest-zone">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="scan"></i></span>
+                <span class="feature-card__title">Зона сундуков</span>
+              </span>
+              <span class="feature-card__text">Как далеко станция ищет назначенный сундук: от 8 до 64 метров.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="sorting">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="list-checks"></i></span>
+                <span class="feature-card__title">Сортировка сундуков</span>
+              </span>
+              <span class="feature-card__text">Помеченные сундуки сами разбирают всё, что ты свалил в кучу.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="repair">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="wrench"></i></span>
+                <span class="feature-card__title">Ремонт и заправка</span>
+              </span>
+              <span class="feature-card__text">Чинит постройки вокруг и подкидывает топливо в костры и печи.</span>
+              <span class="feature-tags"><span class="feature-tag feature-tag--free">ремонт даром</span><span class="feature-tag feature-tag--paid">заправка из сумки</span></span>
+            </button>
+            <button type="button" class="feature-card" data-feature="zone">
+              <span class="feature-card__head">
+                <span class="feature-card__icon"><i data-lucide="map-pin"></i></span>
+                <span class="feature-card__title">Моя зона</span>
+              </span>
+              <span class="feature-card__text">Сервер держит кусок мира загруженным: печи работают и без тебя.</span>
+              <span class="feature-tags"><span class="feature-tag">открывает админ</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="feature-texts">
+          <div id="feature-panel" class="feature-text">
+            <h3 class="feature-text__title">Панель мода</h3>
+            <p class="feature-text__where">Открывается клавишей Tab, вместе с инвентарём</p>
+            <p>Мод добавляет в игру деревянную панель с кнопками: она появляется над инвентарём и прячется вместе с ним. Всё, что мод умеет, лежит в ней — отдельных горячих клавиш запоминать не нужно.</p>
+            <ul>
+              <li>Разделы внутри: <strong>«Ознакомиться»</strong> — про мир, сид и твоё место на карте, <strong>«Постройки»</strong>, <strong>«Рельеф»</strong> и <strong>«Функции»</strong>.</li>
+              <li>Кнопок ровно столько, сколько админ открыл игрокам: закрытого в панели просто нет.</li>
+              <li>Первая строка панели — твои руны и время до следующей.</li>
+              <li>Панели нет? Проверь, что <strong>AstvardServerMod.dll</strong> и <strong>Jotunn.dll</strong> лежат в <strong>Valheim\BepInEx\plugins</strong>, а в <strong>BepInEx\LogOutput.log</strong> есть строка «Loading [AstvardServerMod]».</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag">Tab</span><span class="feature-tag feature-tag--free">даром</span></span>
+          </div>
+          <div id="feature-runes" class="feature-text">
+            <h3 class="feature-text__title">Руны</h3>
+            <p class="feature-text__where">Первая строка панели и надпись под панелью быстрых предметов</p>
+            <p>Руна — внутренняя валюта сервера. Её начисляет сам сервер за время, которое ты провёл в мире: по умолчанию одна руна за час, но админ может поставить и другую ставку.</p>
+            <ul>
+              <li>Считается только живая игра: если ты ничего не делаешь минут двадцать, счёт замирает и продолжается сам, как только ты снова что-то сделал. Из игры за это никого не выкидывают.</li>
+              <li>Недосиженный час не пропадает — он переносится на следующий заход.</li>
+              <li>При начислении в углу экрана появляется «+1 руна за час в игре».</li>
+              <li><strong>Тратить руны пока не на что</strong> — это счёт часов. Админ может выдать или забрать их вручную.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">сами копятся</span></span>
+          </div>
+          <div id="feature-keys" class="feature-text">
+            <h3 class="feature-text__title">Клавиши проекций</h3>
+            <p class="feature-text__where">Одинаково у всех инструментов мода</p>
+            <p>Ничего не ставится сразу. Сначала мод показывает белую проекцию будущей постройки — её видно только тебе, и пока она в руках, можно передумать.</p>
+            <ul>
+              <li><strong>ЛКМ</strong> — построить там, где стоит проекция.</li>
+              <li><strong>Esc</strong> — отменить. Меню паузы при этом не открывается.</li>
+              <li><strong>P</strong> — закрепить проекцию на месте, чтобы обойти и осмотреть; P ещё раз — снова за тобой.</li>
+              <li><strong>Стрелки</strong> двигают закреплённую проекцию на метр, с Shift — на четверть метра.</li>
+              <li><strong>Q и E</strong> поворачивают постройку, <strong>Shift+Q / Shift+E</strong> поднимают и опускают её.</li>
+              <li><strong>Колесо мыши</strong> над панелью листает длинные списки по строке.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag">ЛКМ · Esc · P · стрелки</span></span>
+          </div>
+          <div id="feature-tpl-server" class="feature-text">
+            <h3 class="feature-text__title">Шаблоны сервера</h3>
+            <p class="feature-text__where">«Постройки» → «Шаблоны» → «Шаблоны сервера»</p>
+            <p>Админ выкладывает на сервер свои постройки и открывает их игрокам. Они разложены по категориям, как обычное меню строительства, и у каждой написано, из скольких деталей она состоит.</p>
+            <ul>
+              <li>Нажал на постройку — в руках появилась проекция. Дальше как обычно: ЛКМ поставить, Esc отменить, Q/E повернуть.</li>
+              <li>Сундуки в такой постройке приходят пустыми — содержимое сервер игрокам не отдаёт.</li>
+              <li>Переименовать или переложить в другую категорию серверную постройку нельзя: это общая библиотека. Свои — сколько угодно.</li>
+              <li>Если админ пока ничего не открыл, в списке так и будет написано.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">обычно даром</span><span class="feature-tag feature-tag--wait">с паузой</span></span>
+          </div>
+          <div id="feature-tpl-mine" class="feature-text">
+            <h3 class="feature-text__title">Мои шаблоны</h3>
+            <p class="feature-text__where">«Постройки» → «Шаблоны» → «Мои шаблоны»</p>
+            <p>Всё, что ты сохранил через «Сохранить постройку», ложится сюда — файлами в твоей игре, а не на сервере. Их видишь только ты.</p>
+            <ul>
+              <li>Постройки разложены по категориям, которые ты сам и задал.</li>
+              <li>У своей постройки можно поменять имя и категорию, поставить её или удалить.</li>
+              <li>Если админ разрешил делиться, там же есть кнопка «Поделиться» — постройка уйдёт админам на проверку, и они решат, класть ли её на сервер для всех.</li>
+              <li>Списки длиннее восьми строк листаются кнопками «Выше» и «Ниже» или колесом мыши.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">хранение даром</span></span>
+          </div>
+          <div id="feature-copy" class="feature-text">
+            <h3 class="feature-text__title">Копировать постройку</h3>
+            <p class="feature-text__where">«Постройки» → «Копировать» и «Сохранить постройку»</p>
+            <p>Мод забирает в буфер всё, что стоит вокруг тебя в заданном радиусе, и либо сразу даёт поставить копию рядом, либо сохраняет её в «Мои шаблоны» под именем и категорией.</p>
+            <ul>
+              <li><strong>Копируются только твои детали.</strong> Чужие постройки мод не берёт, даже если они попали в радиус.</li>
+              <li>Радиус по умолчанию до 20 метров; админ может его урезать.</li>
+              <li>Сохранить шаблон себе — всегда бесплатно. Платной бывает только установка копии.</li>
+              <li>Если рядом нет ничего твоего, мод так и скажет.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span><span class="feature-tag">радиус до 20 м</span></span>
+          </div>
+          <div id="feature-floor" class="feature-text">
+            <h3 class="feature-text__title">Пол по контуру</h3>
+            <p class="feature-text__where">«Постройки» → «Заполнить» → «Пол»</p>
+            <p>В руках появляется одна плита. Приставь её к стене изнутри — мод обойдёт помещение по физике, найдёт замкнутый контур и покажет сразу весь пол, вместе с половинками по краям.</p>
+            <ul>
+              <li>Q и E поворачивают плиту, P закрепляет проекцию.</li>
+              <li>Если контур не замкнут, мод нарисует красную линию прямо через дыру — видно, куда «утекает» пол.</li>
+              <li>Потолок — примерно 3000 м²: больше обычно означает, что стены где-то не сошлись.</li>
+              <li>Пол не встанет там, где он уже лежит, и не полезет в чужой оберег.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span></span>
+          </div>
+          <div id="feature-wall" class="feature-text">
+            <h3 class="feature-text__title">Стена по краю пола</h3>
+            <p class="feature-text__where">«Постройки» → «Заполнить» → «Стена по краю пола»</p>
+            <p>Мод находит весь пол той высоты, на которой ты стоишь, и обносит его стенами там, где их ещё нет. Дыра в середине — лестничный проём — стенами не обносится.</p>
+            <ul>
+              <li>Высота выбирается кнопкой: 1 м — полустена, 2 м — стена, 3 м — полустена и стена сверху, 4 м — две стены.</li>
+              <li>Проекция показывает, сколько пролётов и деталей встанет и сколько уже стоит.</li>
+              <li>Проёма под дверь мод не оставляет — дверь ставится обычным молотком.</li>
+              <li>P закрепляет проекцию, но стрелками её не двигают: стена стоит там, где кончается пол.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span><span class="feature-tag">высота 1–4 м</span></span>
+          </div>
+          <div id="feature-fence" class="feature-text">
+            <h3 class="feature-text__title">Забор кольцом</h3>
+            <p class="feature-text__where">«Постройки» → «Обнести забором»</p>
+            <p>Мод ставит частокол ровным кольцом вокруг тебя. Расстояние задаётся в метрах — это от тебя до стены, от 4 до 64 метров.</p>
+            <ul>
+              <li>Помост и крышу можно включить отдельными кнопками: получится крытая галерея по кругу.</li>
+              <li>«Выравнивать» подровняет землю под кольцом по высоте середины — иначе на склоне часть кольев уходит в землю.</li>
+              <li>Кнопка «Поставить» сначала показывает проекцию: ЛКМ строит, Esc отменяет, P закрепляет, стрелки двигают.</li>
+              <li>Мод сам скажет, сколько деталей встало и сколько мест пропущено, если что-то мешало.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--paid">из твоих материалов</span><span class="feature-tag">от 4 до 64 м</span></span>
+          </div>
+          <div id="feature-undo-build" class="feature-text">
+            <h3 class="feature-text__title">Отменить постройку</h3>
+            <p class="feature-text__where">Кнопка внизу любой страницы «Построек»</p>
+            <p>Одна кнопка на всё: шаблон, копию, пол, стену, забор. Она помнит последнюю постройку — ту, что ты поставил только что.</p>
+            <ul>
+              <li>Если постройка ещё ставится, первое нажатие её останавливает и разбирает уже поставленное.</li>
+              <li>Готовую снимает второе нажатие: сначала кнопка спросит «Точно? Нажми ещё раз».</li>
+              <li>Материалы за платную постройку возвращаются под ноги.</li>
+              <li>Выровненная земля откатывается вместе с постройкой, а вот <strong>снесённые деревья и камни не вернутся</strong>.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+          </div>
+          <div id="feature-build-settings" class="feature-text">
+            <h3 class="feature-text__title">Настройки построек</h3>
+            <p class="feature-text__where">«Постройки» → «Настройки»</p>
+            <p>Здесь лежит то, как именно мод ставит постройки. Настройки твои, они запоминаются между заходами.</p>
+            <ul>
+              <li><strong>Прилипание</strong> — постройка цепляется к деталям, которые уже стоят рядом.</li>
+              <li><strong>Выравнивать землю</strong> — мод подровняет площадку под тем, что ставит.</li>
+              <li><strong>Разрушать</strong> — снесёт деревья и камни ровно там, куда встанут детали. «Отменить постройку» их не вернёт.</li>
+              <li><strong>Дальность проекции</strong> — на сколько метров перед тобой висит призрак.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+          </div>
+          <div id="feature-level" class="feature-text">
+            <h3 class="feature-text__title">Выровнять площадку</h3>
+            <p class="feature-text__where">«Рельеф» → «Выровнять круг» и «Выровнять квадрат»</p>
+            <p>Мод выравнивает землю вокруг тебя до одной высоты и сшивает края с окружающим рельефом, чтобы не было ступенек.</p>
+            <ul>
+              <li>Высота задаётся над уровнем воды; пустое поле или 0 — выровнять по тому месту, где стоишь.</li>
+              <li>Если админ урезал радиус, мод возьмёт разрешённый и напишет об этом в углу экрана.</li>
+              <li>Работать можно только по прогруженной земле: далеко от себя выровнять не выйдет.</li>
+              <li>Всё это возвращается кнопкой «Откатить».</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">радиус до 64 м</span></span>
+          </div>
+          <div id="feature-road" class="feature-text">
+            <h3 class="feature-text__title">Дорожка</h3>
+            <p class="feature-text__where">«Рельеф» → «Дорожка»</p>
+            <p>Отметь начало, дойди до конца и нажми ЛКМ — мод проложит дорожку между точками: выровняет землю, замостит её и, если попросишь, расставит факелы по краям.</p>
+            <ul>
+              <li><strong>Кладка</strong> — каменная или земляная, <strong>ширина</strong> — от 1 до 8 метров.</li>
+              <li><strong>Изгиб</strong> уводит дорожку дугой влево или вправо, чтобы обойти гору или дом.</li>
+              <li><strong>Сносить</strong> убирает деревья и камни на пути — обратно их уже не вернуть.</li>
+              <li><strong>Факелы</strong> бывают деревянные, железные, зелёные и синие, с любым шагом; по умолчанию они из твоих материалов.</li>
+              <li>«Продолжить» начинает следующий кусок ровно там, где кончился прошлый.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">до 200 м</span></span>
+          </div>
+          <div id="feature-area" class="feature-text">
+            <h3 class="feature-text__title">Мощение вокруг</h3>
+            <p class="feature-text__where">«Рельеф» → «Мощение вокруг»</p>
+            <p>То же, что дорожка, только кругом: двор перед домом, площадка под портал, ровное место под лагерь.</p>
+            <ul>
+              <li>Кладка, сглаживание, снос и факелы берутся общие с дорожкой.</li>
+              <li>«Поставить» показывает круг проекцией: ЛКМ мостит, Esc отменяет, P закрепляет, стрелки двигают.</li>
+              <li>Радиус — от 2 метров; верхнюю границу ставит админ.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">радиус до 32 м</span></span>
+          </div>
+          <div id="feature-bridge" class="feature-text">
+            <h3 class="feature-text__title">Мост</h3>
+            <p class="feature-text__where">«Рельеф» → «Мост»</p>
+            <p>Встань на одном берегу, отметь начало, перейди на другой — мод промерит дно, расставит сваи нужной высоты и положит настил.</p>
+            <ul>
+              <li>Ширина — в секциях, подъём настила над берегом задаётся отдельно.</li>
+              <li><strong>Белая проекция — мост устоит, красная — нет.</strong> Красный участок мод назовёт в метрах.</li>
+              <li>Крыша включается кнопкой.</li>
+              <li>P закрепляет дальний берег, стрелки его двигают.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">обычно даром</span><span class="feature-tag feature-tag--wait">с паузой</span><span class="feature-tag">до 120 м</span></span>
+          </div>
+          <div id="feature-undo-terrain" class="feature-text">
+            <h3 class="feature-text__title">Откат рельефа</h3>
+            <p class="feature-text__where">«Рельеф» → «Откатить: …»</p>
+            <p>Мод помнит пять последних земляных работ и подписывает кнопку тем, что откатит: «Откатить: выравнивание», «Откатить: дорожка».</p>
+            <ul>
+              <li>Факелы, которые мод поставил вдоль дорожки, снимаются вместе с ней, а оплаченные возвращаются под ноги.</li>
+              <li><strong>Снос не откатывается.</strong> Сваленные деревья и разбитые камни — навсегда.</li>
+              <li>Если откатывать нечего, мод так и напишет.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span><span class="feature-tag">5 шагов назад</span></span>
+          </div>
+          <div id="feature-fill" class="feature-text">
+            <h3 class="feature-text__title">Наполнение станций</h3>
+            <p class="feature-text__where">«Функции» → «Наполнение»</p>
+            <p>Назначь сундук — и станции рядом начнут сами тянуть из него руду, уголь, дрова, мясо и заготовки для браги. Бегать с полными руками больше не надо.</p>
+            <ul>
+              <li>Нажми «Назначить сундук» и открой нужный сундук — он станет источником.</li>
+              <li><strong>Неназначенные сундуки станции не трогают</strong> — ни твои, ни чужие.</li>
+              <li>«Отвязать сундук» возвращает всё как было.</li>
+              <li>Переключатель гасит всю подачу разом, назначенные сундуки при этом не теряются.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+          </div>
+          <div id="feature-collect" class="feature-text">
+            <h3 class="feature-text__title">Сбор готового</h3>
+            <p class="feature-text__where">«Функции» → «Сбор»</p>
+            <p>Обратная половина: всё, что станция сделала, мод убирает в сундук, который ты для этого назначил. Плавильня не встаёт из-за того, что некуда положить слиток.</p>
+            <ul>
+              <li>«Назначить сундук» — открой сундук, в который складывать.</li>
+              <li>Сбор и наполнение включаются по отдельности.</li>
+              <li>Если сундук полон, продукт останется в станции — ничего не пропадает.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+          </div>
+          <div id="feature-chest-zone" class="feature-text">
+            <h3 class="feature-text__title">Зона сундуков</h3>
+            <p class="feature-text__where">«Функции» → «Зона сундуков»</p>
+            <p>Настройка расстояния для наполнения и сбора. Круг рисуется вокруг тебя, и по нему видно, какие станции дотянутся до сундука.</p>
+            <ul>
+              <li>Форма — круг или квадрат, как удобнее в застройке.</li>
+              <li>«Подсветка» показывает зону прямо в мире.</li>
+              <li>Настройка твоя личная и на других игроков не влияет.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+          </div>
+          <div id="feature-sorting" class="feature-text">
+            <h3 class="feature-text__title">Сортировка сундуков</h3>
+            <p class="feature-text__where">«Функции» → «Сортировка»</p>
+            <p>Пометь сундуки категориями, поставь вокруг склада зону — и мод будет разбирать непомеченные сундуки и тележки по помеченным, пока ты стоишь внутри этой зоны.</p>
+            <ul>
+              <li>Категории: <strong>Разное, Материалы, Еда, Оружие, Броня, Инструменты, Трофеи</strong>, а ещё «Личный» — такой сундук мод не трогает вовсе.</li>
+              <li>«Пометить сундук» закрывает панель: следующий открытый сундук получит пометку.</li>
+              <li>«Подписи» рисуют над сундуками их категорию — видно, куда что поедет.</li>
+              <li>Зона ставится проекцией, кругом или квадратом, радиусом от 4 до 64 метров; зоны не должны пересекаться.</li>
+              <li>На странице всегда написано, почему сортировка сейчас ничего не делает.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
+          </div>
+          <div id="feature-repair" class="feature-text">
+            <h3 class="feature-text__title">Ремонт и заправка</h3>
+            <p class="feature-text__where">«Функции» → «Ремонт»</p>
+            <p>Одно нажатие чинит всё вокруг в заданном радиусе — до 32 метров — и заодно заправляет костры, факелы, печи и плавильни.</p>
+            <ul>
+              <li><strong>Чинит всегда бесплатно.</strong> Платной бывает только заправка: топливо берётся из твоей сумки.</li>
+              <li>Мод отчитается, сколько починено и заправлено.</li>
+              <li>В чужом обереге ремонт не сработает — там ты и молотком ничего не сделаешь.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag feature-tag--free">ремонт даром</span><span class="feature-tag feature-tag--paid">заправка из сумки</span></span>
+          </div>
+          <div id="feature-zone" class="feature-text">
+            <h3 class="feature-text__title">Моя зона</h3>
+            <p class="feature-text__where">«Функции» → «Моя зона»</p>
+            <p>Обычно Valheim считает только то, что рядом с игроком: стоит уйти — и плавильня замирает. Зона заставляет сервер держать твой кусок мира загруженным всё время.</p>
+            <ul>
+              <li>Одна зона на игрока, радиус от 32 метров; предел ставит админ.</li>
+              <li>«Показать клетки» рисует, какие именно куски земли зона удержит.</li>
+              <li>Ставится проекцией: ЛКМ — поставить, Esc — отменить, P — закрепить.</li>
+              <li>По умолчанию эта возможность закрыта — если нужна, попроси админа.</li>
+            </ul>
+            <span class="feature-tags"><span class="feature-tag">открывает админ</span></span>
           </div>
         </div>
       </section>
@@ -393,6 +876,14 @@
       lucide.createIcons();
     }
   </script>
+  <!-- Окно с пояснением к возможности мода: текст берётся из .feature-texts -->
+  <div class="feature-modal" id="featureModal" role="dialog" aria-modal="true" aria-label="Что умеет мод">
+    <div class="feature-modal__box">
+      <button type="button" class="feature-modal__close" aria-label="Закрыть"><i data-lucide="x"></i></button>
+      <div class="feature-text" id="featureModalBody"></div>
+    </div>
+  </div>
   <script src="/astvard-home.js"></script>
+  <script src="/mod-features.js"></script>
 </body>
 </html>
