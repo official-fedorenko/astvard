@@ -768,8 +768,12 @@ namespace AstvardServerMod
                             + $"{(zone.Square ? "Квадрат" : "Круг")} {zone.Radius:0} м, "
                             + $"до неё {away:0} м."
                             + (zone.Square && zone.Angle > 0.05f ? $"{NEWLINE}Повёрнута на {zone.Angle:0.#}°." : "")
-                            + $"{NEWLINE}{NEWLINE}Имя и расстояние от середины,{NEWLINE}"
-                            + $"от {Sorting.MinZoneRadius:0} до {Sorting.MaxZoneRadius:0} м.";
+                            + (ZonesOnServer && !IsMyZone(zone)
+                                ? $"{NEWLINE}{NEWLINE}Зона игрока {ZonePersonName(zone.Owner)}.{NEWLINE}"
+                                  + $"Ты в ней разбираешь и видишь{NEWLINE}подписи, менять её может{NEWLINE}"
+                                  + "только он."
+                                : $"{NEWLINE}{NEWLINE}Имя и расстояние от середины,{NEWLINE}"
+                                  + $"от {Sorting.MinZoneRadius:0} до {Sorting.MaxZoneRadius:0} м.");
             }
 
             SetActive(SortZoneHint, open);
@@ -853,7 +857,14 @@ namespace AstvardServerMod
                 var shape = zone.Square ? $"квадрат {zone.Radius:0} м" : $"круг {zone.Radius:0} м";
                 var title = string.IsNullOrEmpty(zone.Name) ? shape : $"{zone.Name} · {shape}";
 
-                SetLabel(SortZoneButtons[i], $"{title} — до неё {away:0} м");
+                // Чья она, если не моя: в списке теперь лежат и зоны, в которые вписали
+                // меня, а они выглядели ровно как свои - до первой попытки что-то в них
+                // поменять.
+                var whose = ZonesOnServer && !IsMyZone(zone)
+                    ? $" · {ZonePersonName(zone.Owner)}"
+                    : "";
+
+                SetLabel(SortZoneButtons[i], $"{title}{whose} — до неё {away:0} м");
             }
 
             var markHint = SortMarkHint != null ? SortMarkHint.GetComponentInChildren<Text>(true) : null;
