@@ -20,6 +20,8 @@ namespace AstvardServerMod
 
         internal static GameObject SortMarkButton;
 
+        internal static GameObject SortRecheckButton;
+
         internal static GameObject SortPlaceHint;
 
         internal static GameObject SortShapeButton;
@@ -96,6 +98,12 @@ namespace AstvardServerMod
                 _itemOffset = 0;
                 AskForZones();
                 MenuState = StateSortZones;
+                RefreshMenu();
+            });
+
+            SortRecheckButton = MakeButton(gui, "", () =>
+            {
+                StartRecheck();
                 RefreshMenu();
             });
 
@@ -806,6 +814,7 @@ namespace AstvardServerMod
                 ? $"Подписи: вкл ({ChestLabelsShown})"
                 : "Подписи: выкл");
             SetLabel(SortShapeButton, _sortSquare ? "Форма: квадрат" : "Форма: круг");
+            SetLabel(SortRecheckButton, Rechecking ? "Перепроверяю…" : "Перепроверить");
 
             var player = Player.m_localPlayer;
             var at = player != null

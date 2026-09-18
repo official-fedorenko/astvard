@@ -27,6 +27,41 @@ namespace AstvardServerMod
 
         private const int SortMovesPerSweep = 3;
 
+        // Пока идёт перепроверка. Больше, потому что она конечна: разобрать стену
+        // сундуков по трём ходам в секунду - это минуты, за которые человек решит,
+        // что кнопка не работает.
+        private const int SortRecheckMoves = 12;
+
+        private const float SortRecheckFor = 15f;
+
+        private static float _recheckUntil;
+
+        private static int _recheckMoved;
+
+        /// <summary>Идёт ли сейчас перепроверка — страница подписывает этим кнопку.</summary>
+        internal static bool Rechecking
+        {
+            get { return Time.realtimeSinceStartup < _recheckUntil; }
+        }
+
+        /// <summary>
+        /// Пройти по всем помеченным сундукам и переложить то, что лежит не там.
+        ///
+        /// The sweep does this anyway, every second - but with what is left of three
+        /// moves after the carts and the unmarked chests have had their turn, which on a
+        /// busy base is nothing at all. Marking a new chest, or emptying one, leaves the
+        /// old arrangement standing until the base goes quiet, and from the outside that
+        /// is indistinguishable from «не работает».
+        /// </summary>
+        internal static void StartRecheck()
+        {
+            _recheckUntil = Time.realtimeSinceStartup + SortRecheckFor;
+            _recheckMoved = 0;
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                "Перепроверяю сундуки в зоне");
+        }
+
         // A square reaches to its corner, which is further than its half-side. The sweep
         // that gathers pieces asks for a radius, so it has to ask for the diagonal and let
         // Sorting.Inside throw back what fell outside the box.
@@ -518,11 +553,29 @@ namespace AstvardServerMod
                 _stuck = "";
                 _lastReserved = false;
 
-                var moved = SweepOnce(sources, bins, plan);
+                // During a recheck the marked chests go first: that is the whole of what
+                // was asked for, and a cart arriving mid-pass would otherwise eat it.
+                var recheck = Rechecking;
+                var budget = recheck ? SortRecheckMoves : SortMovesPerSweep;
+
+                var moved = recheck ? TidyBins(bins, plan, budget) : 0;
+                if (moved < budget) moved += SweepOnce(sources, bins, plan, budget - moved);
 
                 // Then put right what is already in the marked chests: a pile that grew
                 // out of the shared chest moves to its own, one that was spent moves back.
-                if (moved < SortMovesPerSweep) moved += TidyBins(bins, plan, SortMovesPerSweep - moved);
+                // At least one move is always kept for this - otherwise a base with carts
+                // coming in all evening never tidies itself at all.
+                if (!recheck) moved += TidyBins(bins, plan, Mathf.Max(1, budget - moved));
+
+                if (recheck) _recheckMoved += moved;
+
+                // The pass is over: say what came of it, because «ничего не двинулось»
+                // and «кнопка не нажалась» look the same from where the player stands.
+                if (recheck && !Rechecking)
+                    Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                        _recheckMoved > 0
+                            ? $"Перепроверено: переложено {_recheckMoved}"
+                            : "Перепроверено: всё на своих местах");
 
                 if (moved <= 0) continue;
 
@@ -676,13 +729,14 @@ namespace AstvardServerMod
         }
 
         /// <summary>Carries what is in the unmarked chests and the carts to where the plan says.</summary>
-        private static int SweepOnce(List<Container> sources, List<Container> bins, Sorting.Plan plan)
+        private static int SweepOnce(List<Container> sources, List<Container> bins, Sorting.Plan plan,
+                                     int budget)
         {
             var moved = 0;
 
             foreach (var source in sources)
             {
-                if (moved >= SortMovesPerSweep) break;
+                if (moved >= budget) break;
 
                 var inventory = source.GetInventory();
                 if (inventory == null) continue;
@@ -690,7 +744,7 @@ namespace AstvardServerMod
                 var items = inventory.GetAllItems();
 
                 // Backwards: moving an item out shifts everything after it down a place.
-                for (var i = items.Count - 1; i >= 0 && moved < SortMovesPerSweep; i--)
+                for (var i = items.Count - 1; i >= 0 && moved < budget; i--)
                 {
                     var item = items[i];
                     if (item == null || item.m_shared == null) continue;
@@ -816,6 +870,14 @@ namespace AstvardServerMod
         /// </summary>
         private static int CategoryOf(ItemDrop.ItemData item)
         {
+            // What somebody said about this one outright beats the guess below, and the
+            // mod's own list of drops beats the item type - the game calls a deer hide a
+            // material, the same word it uses for stone.
+            var kind = item.m_shared.m_name;
+            var chosen = Sorting.ChosenFor(kind);
+            if (chosen >= 0) return chosen;
+            if (Sorting.IsLoot(kind)) return Sorting.Loot;
+
             switch (item.m_shared.m_itemType)
             {
                 case ItemDrop.ItemData.ItemType.Material:

@@ -55,9 +55,41 @@ namespace AstvardServerMod
                 "Показывать ли подпись над помеченными сундуками, пока ты в своей зоне. "
                 + "Переключается в игре: «Функции» → «Сортировка».");
 
+            _chestLabelCounts = config.Bind("Сортировка", "LabelCounts", true,
+                "Писать ли под пометкой, сколько в сундуке лежит и сколько занято ячеек. "
+                + "Считается там же, где собираются подписи, — дважды в секунду.");
+
             _chestLabelLift = config.Bind("Сортировка", "LabelHeight", 0.5f,
                 "На сколько метров подпись поднята над сундуком, от 0 до 5. Отсчёт от дна "
                 + "сундука. Меняется на ходу: правь файл и смотри, перезапуск не нужен.");
+        }
+
+        private static BepInEx.Configuration.ConfigEntry<bool> _chestLabelCounts;
+
+        internal static bool ChestLabelCounts
+        {
+            get { return _chestLabelCounts == null || _chestLabelCounts.Value; }
+        }
+
+        /// <summary>
+        /// Сколько в сундуке всего и сколько ячеек занято: «120 · 6/18».
+        ///
+        /// Штуки и ячейки вместе, потому что решают они разное: штуки говорят, много ли
+        /// добра, а ячейки - влезет ли следующая поставка. Сундук на 120 дерева может
+        /// быть занят тремя ячейками, а на 12 обрывков кожи - двенадцатью.
+        /// </summary>
+        private static string ChestFill(Container container)
+        {
+            var inventory = container.GetInventory();
+            if (inventory == null) return "";
+
+            var items = inventory.GetAllItems();
+            var units = 0;
+            foreach (var item in items)
+                if (item != null) units += item.m_stack;
+
+            var slots = inventory.GetWidth() * inventory.GetHeight();
+            return slots > 0 ? $"{units} · {items.Count}/{slots}" : units.ToString();
         }
 
         internal static bool ChestLabelsOn
@@ -138,6 +170,8 @@ namespace AstvardServerMod
 
                 var note = SortMarkNote(container);
                 if (note.Length == 0) continue;
+
+                if (ChestLabelCounts) note += NEWLINE + ChestFill(container);
 
                 var label = ChestLabel(shown++);
                 if (label == null) break;

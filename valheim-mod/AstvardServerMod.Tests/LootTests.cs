@@ -1,0 +1,86 @@
+using AstvardServerMod;
+
+namespace AstvardServerMod.Tests;
+
+/// <summary>
+/// «Лут» и чужое слово о категориях.
+///
+/// The game has no idea that a deer hide is loot: to it a hide is a material, the same
+/// word it uses for stone. So the mod knows the drops by name, and whatever is said from
+/// outside beats that list - the list knows vanilla, and the base belongs to people.
+/// </summary>
+public class LootTests
+{
+    [Fact]
+    public void WhatFallsOffSomethingIsLoot()
+    {
+        Assert.True(Sorting.IsLoot("$item_deerhide"));
+        Assert.True(Sorting.IsLoot("$item_greydwarfeye"));
+        Assert.False(Sorting.IsLoot("$item_wood"));
+        Assert.False(Sorting.IsLoot(null));
+    }
+
+    [Fact]
+    public void MeatIsFoodAndNotLoot()
+    {
+        // It falls off a creature too, and it still belongs with the food: the sorter is
+        // for finding things again, and nobody looks for a neck tail among the pelts.
+        Assert.False(Sorting.IsLoot("$item_necktail"));
+        Assert.False(Sorting.IsLoot("$item_hare_meat"));
+    }
+
+    [Fact]
+    public void WhatWasSaidFromOutsideIsKept()
+    {
+        Sorting.ReadChosen($"$item_tar={Sorting.Materials};$item_wood={Sorting.Misc}");
+
+        Assert.Equal(Sorting.Materials, Sorting.ChosenFor("$item_tar"));
+        Assert.Equal(Sorting.Misc, Sorting.ChosenFor("$item_wood"));
+        Assert.Equal(-1, Sorting.ChosenFor("$item_stone"));
+    }
+
+    [Fact]
+    public void ANonsenseLineChangesNothing()
+    {
+        // A category out of range, a record with no number, a record with no name: each is
+        // dropped on its own rather than taking the rest of the line down with it.
+        Sorting.ReadChosen($"$item_tar=99;=3;$item_guck;$item_stone={Sorting.Materials}");
+
+        Assert.Equal(-1, Sorting.ChosenFor("$item_tar"));
+        Assert.Equal(-1, Sorting.ChosenFor("$item_guck"));
+        Assert.Equal(Sorting.Materials, Sorting.ChosenFor("$item_stone"));
+    }
+
+    [Fact]
+    public void SayingNothingTakesBackWhatWasSaid()
+    {
+        Sorting.ReadChosen($"$item_tar={Sorting.Materials}");
+        Sorting.ReadChosen("");
+
+        Assert.Equal(-1, Sorting.ChosenFor("$item_tar"));
+        Assert.Equal("", Sorting.PackChosen());
+    }
+
+    [Fact]
+    public void ItSurvivesTheRoundTrip()
+    {
+        Sorting.ReadChosen($"$item_tar={Sorting.Loot}");
+        var packed = Sorting.PackChosen();
+
+        Sorting.ReadChosen("");
+        Sorting.ReadChosen(packed);
+
+        Assert.Equal(Sorting.Loot, Sorting.ChosenFor("$item_tar"));
+        Sorting.ReadChosen("");
+    }
+
+    [Fact]
+    public void ThereIsATitleForEveryCategory()
+    {
+        // The mark page draws one button per category from this array: a category with no
+        // title would be a button with no name, and «Лут» was added to both or neither.
+        Assert.Equal(8, Sorting.Count);
+        Assert.Equal("Лут", Sorting.Title(Sorting.Loot));
+        Assert.True(Sorting.IsCategory(Sorting.Loot));
+    }
+}

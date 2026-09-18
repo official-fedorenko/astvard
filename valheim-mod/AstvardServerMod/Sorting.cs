@@ -26,7 +26,7 @@ namespace AstvardServerMod
         /// </summary>
         public static readonly string[] CategoryTitles =
         {
-            "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи"
+            "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи", "Лут"
         };
 
         /// <summary>The catch-all: what an item goes to when no bin wants it by name.</summary>
@@ -45,6 +45,97 @@ namespace AstvardServerMod
         public const int Tools = 5;
 
         public const int Trophies = 6;
+
+        public const int Loot = 7;
+
+        /// <summary>
+        /// Что падает с убитого. Отличить это по типу предмета нельзя: для игры шкура,
+        /// потроха и глаз грейдворфа - такой же «материал», как дерево и камень, так что
+        /// здесь их приходится знать по именам.
+        ///
+        /// Ключи перевода, а не русские слова: `m_shared.m_name` - это `$item_deerhide`
+        /// на любом языке игры. Список сверен по данным игры, а не по памяти; то, чего в
+        /// нём не хватает, добавляется потом - для этого есть Chosen ниже.
+        /// </summary>
+        private static readonly HashSet<string> LootKeys = new HashSet<string>
+        {
+            "$item_leatherscraps", "$item_deerhide", "$item_trollhide", "$item_wolfpelt",
+            "$item_loxpelt", "$item_scalehide", "$item_chitin", "$item_carapace",
+            "$item_entrails", "$item_guck", "$item_greydwarfeye", "$item_bonefragments",
+            "$item_witheredbone", "$item_charredbone", "$item_freezegland", "$item_softtissue",
+            "$item_serpentscale", "$item_wolffang", "$item_hardantler", "$item_queenbee",
+            "$item_goblintotem", "$item_ymirremains", "$item_surtlingcore", "$item_ancientseed",
+            "$item_wolfhairbundle", "$item_bloodbag", "$item_eyescream", "$item_dragontear",
+            "$item_morgenheart", "$item_bonemawtooth", "$item_royaljelly", "$item_feathers",
+            "$item_blackmetalscrap", "$item_tar",
+        };
+
+        /// <summary>
+        /// Что об этом предмете сказали снаружи - с сайта. Перевешивает и список выше, и
+        /// тип предмета: список мода знает ваниль, а базу держат люди, и спорить с ними
+        /// о том, где у них лежит смола, моду нечем.
+        /// </summary>
+        private static readonly Dictionary<string, int> Chosen = new Dictionary<string, int>();
+
+        /// <summary>Какую категорию выбрали для этого предмета, или -1 - не выбирали.</summary>
+        public static int ChosenFor(string kind)
+        {
+            int category;
+            if (kind == null || !Chosen.TryGetValue(kind, out category)) return -1;
+
+            return IsCategory(category) ? category : -1;
+        }
+
+        public static bool IsLoot(string kind)
+        {
+            return kind != null && LootKeys.Contains(kind);
+        }
+
+        /// <summary>Имена, которые мод знает сам - сайту, чтобы было что показывать.</summary>
+        public static List<string> KnownLoot()
+        {
+            var kinds = new List<string>(LootKeys);
+            kinds.Sort(System.StringComparer.Ordinal);
+            return kinds;
+        }
+
+        /// <summary>
+        /// Чужое слово о категориях: «ключ=номер», через точку с запятой. Пустая строка
+        /// снимает всё сказанное - это не то же самое, что «сайт молчит», и разбирать
+        /// молчание должен тот, кто звал.
+        /// </summary>
+        public static void ReadChosen(string text)
+        {
+            Chosen.Clear();
+            if (string.IsNullOrEmpty(text)) return;
+
+            foreach (var record in text.Split(';'))
+            {
+                var at = record.IndexOf('=');
+                if (at <= 0) continue;
+
+                var kind = record.Substring(0, at).Trim();
+                int category;
+                if (kind.Length == 0) continue;
+                if (!int.TryParse(record.Substring(at + 1).Trim(), NumberStyles.Integer,
+                                  Invariant, out category)) continue;
+                if (!IsCategory(category)) continue;
+
+                Chosen[kind] = category;
+            }
+        }
+
+        public static string PackChosen()
+        {
+            var text = new StringBuilder();
+            foreach (var pair in Chosen)
+            {
+                if (text.Length > 0) text.Append(';');
+                text.Append(pair.Key).Append('=').Append(pair.Value.ToString(Invariant));
+            }
+
+            return text.ToString();
+        }
 
         public static int Count
         {
