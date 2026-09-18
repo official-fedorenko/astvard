@@ -70,6 +70,16 @@ namespace AstvardServerMod
         private const int StateBuildSettings = 51; // как ставятся постройки: прилипание, выравнивание, снос
         private const int StateTemplateSource = 53; // «Шаблоны»: мои или шаблоны сервера
         private const int StateSharedCategories = 54; // категории шаблонов сервера: у админа все, у игрока открытые ему
+        private const int StateRunes = 55;      // ведомость рун: у кого сколько, с поиском
+        private const int StateRuneGrant = 56;  // один игрок: выдать или забрать руны
+        private const int StateSorting = 57;    // сортировка: переключатель, зоны, пометка сундука
+        private const int StateSortPlace = 58;  // зона сортировки: форма, радиус, показать
+        private const int StateSortZones = 59;  // поставленные зоны сортировки
+        private const int StateSortMark = 60;   // чем станет сундук, который сейчас откроют
+        private const int StateHelper = 61;     // ОПЫТ: помощник, вместе с Plugin.HelperTest.cs
+        private const int StateSortSlots = 62;  // с какой кучи начинается свой сундук
+        private const int StateSortLift = 63;   // высота подписей над сундуками
+        private const int StateSortZone = 64;   // одна зона: имя, размер, удаление
 
         internal static GameObject Panel;
 
@@ -310,6 +320,10 @@ namespace AstvardServerMod
                     MinZoneRadius, MaxZoneRadius);
                 ZRoutedRpc.instance?.InvokeRoutedRPC(RpcZoneAdd, pos.x, pos.z, radius);
             });
+
+            // The same zone, shown as the cells it will really keep awake before it is
+            // put down. «Добавить здесь» stays: it is one press when the size is known.
+            ZoneShowButton = MakeButton(gui, "Показать клетки", () => StartZonePreview(false));
 
             // One button per zone, filled in from whichever list the current page shows.
             // Unity widgets are built once, so the pool is fixed and the labels move.
@@ -772,6 +786,10 @@ namespace AstvardServerMod
             });
 
             CreateSettingsWidgets(gui);
+            CreateRunePageWidgets(gui);
+            CreateSortPageWidgets(gui);
+            CreateHelperWidgets(gui);
+            CreateTestChestWidget(gui);
 
             // «Постройки» → «Настройки»: the button first on the build page, and behind it, in
             // this order, the hint and the switches made just below.
@@ -1010,7 +1028,6 @@ namespace AstvardServerMod
             ListUpButton = MakeButton(gui, "Выше", () => ScrollList(-MaxTemplateButtons));
             ListDownButton = MakeButton(gui, "Ниже", () => ScrollList(MaxTemplateButtons));
 
-            // Last but «Назад», so it sits in the same place on every page it shows on.
             CreateBuildUndoWidget(gui);
 
             BackButton = MakeButton(gui, "Назад", () =>
@@ -1046,6 +1063,14 @@ namespace AstvardServerMod
                          || MenuState == StateFeatureRules) MenuState = StateSettings;
                 else if (MenuState == StateRuneMinutes) MenuState = StateSettings;
                 else if (MenuState == StateResourceRate) MenuState = StateSettings;
+                else if (MenuState == StateSortPlace || MenuState == StateSortZones
+                         || MenuState == StateSortMark || MenuState == StateSortSlots
+                         || MenuState == StateSortLift) MenuState = StateSorting;
+                else if (MenuState == StateSortZone) MenuState = StateSortZones;
+                else if (MenuState == StateSorting) MenuState = StateFeatures;
+                else if (MenuState == StateHelper) MenuState = StateFeatures;
+                else if (MenuState == StateRuneGrant) MenuState = StateRunes;
+                else if (MenuState == StateRunes) MenuState = StateAdmin;
                 else if (MenuState == StateSettings) MenuState = StateAdmin;
                 else if (MenuState == StatePlayerTemplates) MenuState = StateSharedCategories;
                 else if (MenuState == StatePlayerZone) MenuState = StateFeatures;
@@ -1060,6 +1085,18 @@ namespace AstvardServerMod
                 else MenuState = StateAdmin;
                 RefreshMenu();
             });
+
+            // «Назад» первой строкой на каждой странице. Сделано порядком детей, а не
+            // порядком создания: виджеты рождаются кучей по темам, и держать «Назад»
+            // первым среди них значило бы помнить об этом в каждом новом файле.
+            if (BackButton != null) BackButton.transform.SetAsFirstSibling();
+
+            // «Настройки» второй строкой, сразу под «Назад», на каждой странице, где она
+            // есть. Их три - админская, в «Постройках» и у игрока, - но видна всегда одна,
+            // а невидимые места в столбце не занимают, так что порядок между ними неважен.
+            PutSecond(SettingsButton);
+            PutSecond(PlayerSettingsButton);
+            PutSecond(BuildSettingsButton);
 
             RefreshMenu();
             Log.LogInfo("Astvard panel created.");
@@ -1285,6 +1322,7 @@ namespace AstvardServerMod
             SetActive(ZoneHint, admin && (MenuState == StateZone || MenuState == StateZoneOwner));
             SetActive(ZoneSizeInput, admin && (MenuState == StateZone || MenuState == StateZoneEdit));
             SetActive(ZoneAddButton, admin && MenuState == StateZone);
+            SetActive(ZoneShowButton, admin && MenuState == StateZone);
             SetActive(ZoneOthersButton, admin && MenuState == StateZone && ZoneOwners.Count > 0);
             SetActive(ZoneClearButton, admin && MenuState == StateZone);
 
@@ -1303,7 +1341,9 @@ namespace AstvardServerMod
             // has said what that is.
             SetActive(TerrainButton, MenuState == StateRoot && AnyTerrainAllowed);
             SetActive(BuildButton, admin && MenuState == StateAdmin);
+            SetActive(TestChestButton, admin && MenuState == StateBuild);
 
+            RefreshCheatLabels();
             SetActive(GodButton, admin && MenuState == StateCheats);
             SetActive(DebugModeButton, admin && MenuState == StateCheats);
             SetActive(FoodButton, admin && MenuState == StateCheats);
@@ -1398,6 +1438,9 @@ namespace AstvardServerMod
 
             RefreshPlayerBuildVisibility(admin);
             RefreshSettingsVisibility(admin);
+            RefreshRunePageVisibility(admin);
+            RefreshSortVisibility();
+            RefreshHelperVisibility(admin);
             RefreshBuildSettingsVisibility(admin);
             RebuildTemplateViews();
 
@@ -1517,7 +1560,10 @@ namespace AstvardServerMod
             SetActive(HeightInput, MenuState == StateTerrainForm);
             SetActive(ApplyButton, MenuState == StateTerrainForm);
 
-            SetActive(BackButton, (admin || IsPlayerSection(MenuState)) && MenuState != StateRoot);
+            // Везде, кроме корня. Прежнее условие перечисляло страницы игрока, и стоило
+            // добавить новую - «Сортировку», - как неадмин оставался на ней без выхода.
+            // Это второй раз: тот же список уже запирал админ-страницу с низким номером.
+            SetActive(BackButton, MenuState != StateRoot);
 
             KeepPanelOnScreen();
         }
@@ -1562,15 +1608,13 @@ namespace AstvardServerMod
         }
 
         // Pages every player can reach, admin or not.
-        private static bool IsPlayerSection(int state)
-        {
-            return state == StateFeatures || state == StateFill || state == StateCollect
-                   || state == StateTerrain || state == StateTerrainForm
-                   || state == StateRoad || state == StateBridge || IsRoadPage(state)
-                   || IsPlayerBuildPage(state) || state == StateRepair || state == StatePlayerZone;
-        }
-
         private static readonly string NEWLINE = "\n";
+
+        /// <summary>Ставит виджет сразу под «Назад».</summary>
+        private static void PutSecond(GameObject go)
+        {
+            if (go != null) go.transform.SetSiblingIndex(1);
+        }
 
         private static void SetActive(GameObject go, bool state)
         {

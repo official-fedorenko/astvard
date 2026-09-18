@@ -194,6 +194,7 @@ namespace AstvardServerMod
             ChoiceRule("repair", "Repair", "Ремонт", RuleGroup.Features, ChoicePaid,
                        "Чинит всегда даром. Платно —\nтопливо для заправки из сумки."),
             // Closed out of the box: every zone is ground the server keeps loaded for good.
+            ToggleRule("sort", "Sorting", "Сортировка", RuleGroup.Features, true),
             LimitRule("zone", "Zone", "Зона", RuleGroup.Features, false,
                       "радиус", MinZoneRadius, MaxZoneRadius, MinZoneRadius),
         };
@@ -206,6 +207,12 @@ namespace AstvardServerMod
         // it has, a player gets nothing - a tool the admins closed must not be open for the
         // moment it takes the answer to arrive.
         private static bool _playerRulesKnown;
+
+        /// <summary>Has the server said anything about what players may do yet.</summary>
+        internal static bool PlayerRulesKnown
+        {
+            get { return _playerRulesKnown; }
+        }
 
         private static string RuleSection(RuleGroup group)
         {

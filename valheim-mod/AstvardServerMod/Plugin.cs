@@ -83,6 +83,8 @@ namespace AstvardServerMod
             BindBuildPause(Config);
             BindPlayerRules(Config);
             BindCurrency(Config);
+            BindSorting(Config);
+            BindChestLabels(Config);
             BindWorldRates(Config);
             BindSiteLists(Config);
 
@@ -91,6 +93,8 @@ namespace AstvardServerMod
             Log.LogInfo("AstvardServerMod loaded");
 
             RegisterCommand(new AdminUnlockCommand());
+            // ОПЫТ: помощник. Убрать вместе с Plugin.HelperTest.cs.
+            RegisterCommand(new HelperTestCommand());
 
             if (GUIManager.IsHeadless())
             {
@@ -101,6 +105,7 @@ namespace AstvardServerMod
             ReloadTemplates();
             GUIManager.OnCustomGUIAvailable += CreatePanel;
             StartCoroutine(AutomationLoop());
+            StartCoroutine(SortingLoop());
         }
 
         /// <summary>
@@ -545,6 +550,10 @@ namespace AstvardServerMod
 
             if (_roadPreview != null) Destroy(_roadPreview);
             DestroyAreaPreview();
+            DestroySortZonePreview();
+            DestroyChestLabels();
+            DestroyZonePreview();
+            DestroyShownZone();
             SavePurses();
             _harmony?.UnpatchSelf();
         }

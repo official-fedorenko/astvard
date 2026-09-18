@@ -58,8 +58,17 @@ namespace AstvardServerMod
     {
         private static bool Prefix(Container __instance, Humanoid character, bool hold, ref bool __result)
         {
-            if (Plugin.PendingChestAssign == null || hold) return true;
+            if (hold) return true;
             if (character == null || character != Player.m_localPlayer) return true;
+
+            // The sorter's mark is armed the same way and spent on the same click.
+            if (Plugin.PendingSortMark != null)
+            {
+                __result = Plugin.MarkChest(__instance, Plugin.PendingSortMark.Value);
+                return false;
+            }
+
+            if (Plugin.PendingChestAssign == null) return true;
 
             __result = Plugin.SetChestRole(__instance, Plugin.PendingChestSupply,
                 Plugin.PendingChestAssign.Value);
@@ -81,9 +90,13 @@ namespace AstvardServerMod
 
             var collect = Plugin.IsCollectChest(__instance);
             var supply = Plugin.IsSupplyChest(__instance);
-            if (!collect && !supply) return;
+            var sorted = Plugin.SortMarkNote(__instance);
+            if (!collect && !supply && sorted.Length == 0) return;
 
             var roles = collect && supply ? "сбор · подача" : (collect ? "сбор" : "подача");
+            if (!collect && !supply) roles = sorted;
+            else if (sorted.Length > 0) roles += " · " + sorted;
+
             var marker = " <color=#FFCC44>· " + roles + "</color>";
             var lineEnd = __result.IndexOf('\n');
             __result = lineEnd < 0
@@ -384,6 +397,7 @@ namespace AstvardServerMod
             // into a collect chest instead. A real assignment never reaches here,
             // because the prefix suppresses the very Interact that would open it.
             Plugin.PendingChestAssign = null;
+            Plugin.PendingSortMark = null;
             // A player's panel needs the server's word on what they may build before it
             // can offer «Постройки»; once per connection, broadcasts carry the rest.
             Plugin.AskSharedListOnce();

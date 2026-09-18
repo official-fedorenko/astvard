@@ -210,7 +210,8 @@ namespace AstvardServerMod
         private static bool IsListPage(int state)
         {
             return state == StateTemplates || state == StateTemplateList || state == StateSharedCategories
-                   || state == StateSharedList || state == StatePlayerTemplates || state == StateAllowedList;
+                   || state == StateSharedList || state == StatePlayerTemplates || state == StateAllowedList
+                   || state == StateRunes || state == StateSortZones;
         }
 
         private static bool IsCategoryPage(int state)
@@ -230,7 +231,10 @@ namespace AstvardServerMod
                     return sharedOpen;
                 case StateSharedList:
                 case StateAllowedList:
+                case StateRunes:
                     return admin;
+                case StateSortZones:
+                    return RuleAllows("sort");
                 case StatePlayerTemplates:
                     return !admin;
                 default:
@@ -249,6 +253,8 @@ namespace AstvardServerMod
                 case StateSharedList: return SharedIn(SharedTemplates, _sharedCategory).Count;
                 case StatePlayerTemplates: return SharedIn(PlayerTemplates, _sharedCategory).Count;
                 case StateAllowedList: return AllowedTemplates().Count;
+                case StateRunes: return RosterShown().Count;
+                case StateSortZones: return SortingZones().Count;
                 default: return 0;
             }
         }

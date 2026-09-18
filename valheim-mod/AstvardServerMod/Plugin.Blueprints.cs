@@ -148,6 +148,7 @@ namespace AstvardServerMod
             get
             {
                 return IsPlacing || IsFencePreviewing || IsAreaPreviewing || IsWallPreviewing
+                       || IsSortZonePreviewing || IsZonePreviewing
                        || Time.time < _inputHeldUntil;
             }
         }
@@ -171,7 +172,9 @@ namespace AstvardServerMod
             get
             {
                 return RoadInProgress || BridgeInProgress || IsPlacing || IsFencePreviewing
-                       || IsAreaPreviewing || IsWallPreviewing || _escapeUsedFrame == Time.frameCount;
+                       || IsAreaPreviewing || IsWallPreviewing || IsSortZonePreviewing
+                       || IsZonePreviewing
+                       || _escapeUsedFrame == Time.frameCount;
             }
         }
 
@@ -540,12 +543,17 @@ namespace AstvardServerMod
             TickWorldRates();
             TickSiteLists();
             TickCurrencyLabel();
+            TickStateHud();
+            TickChestLabels();
             TickListScroll();
             UpdatePanelInputBlocking();
             UpdateRoadPreview();
             UpdateBridgePreview();
             UpdateFencePreview();
             UpdateAreaPreview();
+            UpdateSortZonePreview();
+            UpdateZonePreview();
+            UpdateShownZone();
             UpdateWallPreview();
             CheckBuildAskTimeout();
             TickPlayerBuildHint();
@@ -554,6 +562,8 @@ namespace AstvardServerMod
             // The fence's projection answers the same two keys a blueprint's does.
             if (HandleFencePreviewInput()) return;
             if (HandleAreaPreviewInput()) return;
+            if (HandleSortZonePreviewInput()) return;
+            if (HandleZonePreviewInput()) return;
             if (HandleWallPreviewInput()) return;
 
             // Escape gets the road and the bridge out of the way too, and it has to be

@@ -1,0 +1,678 @@
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
+
+namespace AstvardServerMod
+{
+    /// <summary>
+    /// Куда класть предмет: решение сортировщика, без Unity и без игры.
+    ///
+    /// The sorter itself is a walk over the containers around the player; this is the part
+    /// of it that decides anything, and the part where being wrong is expensive. A chest
+    /// that is not marked is a source - things are carried out of it - so reading «not
+    /// marked» as a category would turn every chest on the base into a bin and shuffle it
+    /// into itself. That is one off-by-one away, and it is why the mark is stored one
+    /// higher than the category it means.
+    ///
+    /// Kept beside Geometry.cs and Roster.cs for the same reason: the game cannot be asked
+    /// about any of this, and the tests can.
+    /// </summary>
+    public static class Sorting
+    {
+        /// <summary>
+        /// Groups a person would name, not the game's own item types. «Разное» is first
+        /// because it is also the answer for everything that fits nowhere else.
+        /// </summary>
+        public static readonly string[] CategoryTitles =
+        {
+            "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи"
+        };
+
+        /// <summary>The catch-all: what an item goes to when no bin wants it by name.</summary>
+        public const int Misc = 0;
+
+        // The rest, in the order of the titles above. Named, because the mapping from
+        // the game's item types lives in another file and a number would drift from it.
+        public const int Materials = 1;
+
+        public const int Food = 2;
+
+        public const int Weapons = 3;
+
+        public const int Armour = 4;
+
+        public const int Tools = 5;
+
+        public const int Trophies = 6;
+
+        public static int Count
+        {
+            get { return CategoryTitles.Length; }
+        }
+
+        public static bool IsCategory(int category)
+        {
+            return category >= 0 && category < CategoryTitles.Length;
+        }
+
+        public static string Title(int category)
+        {
+            return IsCategory(category) ? CategoryTitles[category] : "?";
+        }
+
+        /// <summary>
+        /// What goes into the chest's own field. Zero has to keep meaning «not marked», so
+        /// every category is written one higher than it is.
+        /// </summary>
+        public static int ToStored(int category)
+        {
+            return IsCategory(category) ? category + 1 : 0;
+        }
+
+        /// <summary>The category a chest was marked with, or -1 when it was not marked.</summary>
+        public static int FromStored(int stored)
+        {
+            var category = stored - 1;
+            return IsCategory(category) ? category : -1;
+        }
+
+        /// <summary>Is this chest a destination. Everything else in reach is a source.</summary>
+        public static bool IsBin(int stored)
+        {
+            return FromStored(stored) >= 0;
+        }
+
+        /// <summary>
+        /// Зона сортировки: где стоят сундуки, которые разбирает сортировщик.
+        ///
+        /// Square or round, chosen before it is placed, because bases are not round. A
+        /// circle wide enough to hold a long hall reaches half of what stands beside it; a
+        /// square laid along the hall does not. The shape belongs to the zone rather than to
+        /// a setting, so two zones on one base may differ.
+        ///
+        /// Radius means the reach from the middle either way - for a square that is half its
+        /// side. One number, so the ring and the box are the same thing to everything else.
+        /// </summary>
+        public sealed class Zone
+        {
+            public float X;
+
+            public float Z;
+
+            public float Radius;
+
+            public bool Square;
+
+            /// <summary>Degrees the square is turned by. A circle has no use for it.</summary>
+            public float Angle;
+
+            /// <summary>Что хозяин её назвал. Пусто — зовём по форме и размеру.</summary>
+            public string Name;
+        }
+
+        public const float MinZoneRadius = 4f;
+
+        // Past this it stops being a base and starts being a valley; the sorter walks every
+        // container inside it once a second.
+        public const float MaxZoneRadius = 64f;
+
+        public const int MaxZones = 32;
+
+        public static float ClampRadius(float radius)
+        {
+            if (radius < MinZoneRadius) return MinZoneRadius;
+            return radius > MaxZoneRadius ? MaxZoneRadius : radius;
+        }
+
+        /// <summary>Is this spot inside the zone. Height is not asked: a cellar is the base too.</summary>
+        public static bool Inside(Zone zone, float x, float z)
+        {
+            if (zone == null) return false;
+
+            var dx = x - zone.X;
+            var dz = z - zone.Z;
+            var reach = ClampRadius(zone.Radius);
+
+            // A circle looks the same from every side, so its angle is nothing to it.
+            if (!zone.Square) return dx * dx + dz * dz <= reach * reach;
+
+            // The square may be turned to lie along the hall, so the spot is asked in
+            // the square's own frame rather than in the world's.
+            ToLocal(zone.Angle, dx, dz, out var alongX, out var alongZ);
+            return Abs(alongX) <= reach && Abs(alongZ) <= reach;
+        }
+
+        /// <summary>
+        /// Do two zones share any ground. They are not allowed to: a chest inside both
+        /// belongs to both, and «why does this chest empty into two places» is a question
+        /// nobody should have to ask. Cheaper to refuse the second zone than to explain.
+        /// </summary>
+        public static bool Overlap(Zone a, Zone b)
+        {
+            if (a == null || b == null) return false;
+
+            var ar = ClampRadius(a.Radius);
+            var br = ClampRadius(b.Radius);
+            var dx = b.X - a.X;
+            var dz = b.Z - a.Z;
+
+            if (!a.Square && !b.Square) return dx * dx + dz * dz < (ar + br) * (ar + br);
+            if (a.Square && b.Square) return BoxesMeet(a, ar, b, br, dx, dz);
+
+            // One of each: the nearest point of the box to the middle of the circle
+            // decides, asked in the box's own frame so that a turned box is no harder
+            // than a straight one.
+            var boxFirst = a.Square;
+            var box = boxFirst ? a : b;
+            var boxReach = boxFirst ? ar : br;
+            var ringReach = boxFirst ? br : ar;
+            var toRing = boxFirst ? 1f : -1f;
+
+            ToLocal(box.Angle, dx * toRing, dz * toRing, out var localX, out var localZ);
+            var offX = localX - Clamp(localX, -boxReach, boxReach);
+            var offZ = localZ - Clamp(localZ, -boxReach, boxReach);
+            return offX * offX + offZ * offZ < ringReach * ringReach;
+        }
+
+        /// <summary>The first zone this spot falls into, or -1.</summary>
+        public static int ZoneAt(IList<Zone> zones, float x, float z)
+        {
+            return ZoneAt(zones, x, z, 0f);
+        }
+
+        /// <summary>
+        /// The first zone this spot falls into, counting an apron of `slack` metres round it.
+        ///
+        /// A cart is parked where it stops - at the gate, by the path, on the near side of
+        /// the wall - and its owner stands beside it, which is a step outside the zone their
+        /// chests are in. Read strictly, nothing happens and nothing explains why. The apron
+        /// is only about whether the sorter runs at all; what it picks up is decided by the
+        /// zone itself, not by this.
+        /// </summary>
+        public static int ZoneAt(IList<Zone> zones, float x, float z, float slack)
+        {
+            if (zones == null) return -1;
+
+            for (var i = 0; i < zones.Count; i++)
+            {
+                var zone = zones[i];
+                if (zone == null) continue;
+
+                if (slack <= 0f)
+                {
+                    if (Inside(zone, x, z)) return i;
+                    continue;
+                }
+
+                // Grown by the apron rather than measured to its edge: one shape, one answer,
+                // and a turned square grows the way it lies.
+                var wider = new Zone
+                {
+                    X = zone.X,
+                    Z = zone.Z,
+                    Radius = ClampRadius(zone.Radius) + slack,
+                    Square = zone.Square,
+                    Angle = zone.Angle,
+                };
+
+                if (Inside(wider, x, z)) return i;
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// The zones as one line of the config. Written by hand into a config file it is not,
+        /// but it is read back by a build that may be older or newer, so a record that does
+        /// not parse is dropped rather than guessed at.
+        /// </summary>
+        public static string Pack(IEnumerable<Zone> zones)
+        {
+            var text = new StringBuilder();
+            if (zones == null) return "";
+
+            foreach (var zone in zones)
+            {
+                if (zone == null) continue;
+                if (text.Length > 0) text.Append(';');
+
+                text.Append(zone.X.ToString("F1", Invariant)).Append(',')
+                    .Append(zone.Z.ToString("F1", Invariant)).Append(',')
+                    .Append(ClampRadius(zone.Radius).ToString("F1", Invariant)).Append(',')
+                    .Append(zone.Square ? '1' : '0').Append(',')
+                    .Append(NormaliseAngle(zone.Angle).ToString("F1", Invariant)).Append(',')
+                    .Append(CleanName(zone.Name));
+            }
+
+            return text.ToString();
+        }
+
+        public static List<Zone> Parse(string text)
+        {
+            var zones = new List<Zone>();
+            if (string.IsNullOrEmpty(text)) return zones;
+
+            foreach (var record in text.Split(';'))
+            {
+                var parts = record.Split(',');
+                if (parts.Length < 3) continue;
+
+                float x, z, radius;
+                if (!float.TryParse(parts[0], NumberStyles.Float, Invariant, out x)) continue;
+                if (!float.TryParse(parts[1], NumberStyles.Float, Invariant, out z)) continue;
+                if (!float.TryParse(parts[2], NumberStyles.Float, Invariant, out radius)) continue;
+
+                // The angle came later than the rest: a record written before it is a
+                // zone that was never turned, which is exactly what a missing field says.
+                float angle;
+                if (parts.Length < 5 || !float.TryParse(parts[4], NumberStyles.Float, Invariant, out angle))
+                    angle = 0f;
+
+                zones.Add(new Zone
+                {
+                    X = x,
+                    Z = z,
+                    Radius = ClampRadius(radius),
+                    Square = parts.Length > 3 && parts[3] == "1",
+                    Angle = NormaliseAngle(angle),
+                    Name = parts.Length > 5 ? CleanName(parts[5]) : "",
+                });
+
+                if (zones.Count >= MaxZones) break;
+            }
+
+            return zones;
+        }
+
+        /// <summary>
+        /// Имя, которое переживёт запись в строку конфига. Запятая там разделяет поля, а
+        /// точка с запятой — записи, так что имя с ними разорвало бы файл на куски и
+        /// потеряло бы все зоны следом.
+        /// </summary>
+        public static string CleanName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "";
+
+            var clean = name.Replace(',', ' ').Replace(';', ' ')
+                            .Replace('\n', ' ').Replace('\r', ' ')
+                            .Replace('\t', ' ').Trim();
+
+            return clean.Length > MaxZoneName ? clean.Substring(0, MaxZoneName).Trim() : clean;
+        }
+
+        /// <summary>Длиннее кнопка всё равно не покажет.</summary>
+        public const int MaxZoneName = 24;
+
+        /// <summary>The same turn said the same way, so two of them compare.</summary>
+        public static float NormaliseAngle(float angle)
+        {
+            if (float.IsNaN(angle) || float.IsInfinity(angle)) return 0f;
+
+            angle = angle % 360f;
+            return angle < 0f ? angle + 360f : angle;
+        }
+
+        // No Unity here, and no Mathf with it.
+        private const float Deg2Rad = 0.0174532924f;
+
+        /// <summary>An offset from the middle of a square, seen the way that square lies.</summary>
+        private static void ToLocal(float angle, float dx, float dz, out float alongX, out float alongZ)
+        {
+            var radians = NormaliseAngle(angle) * Deg2Rad;
+            var cos = (float)System.Math.Cos(radians);
+            var sin = (float)System.Math.Sin(radians);
+
+            alongX = dx * cos + dz * sin;
+            alongZ = -dx * sin + dz * cos;
+        }
+
+        /// <summary>
+        /// Two squares, either of them turned. Four axes - the two sides of one and the
+        /// two of the other - and a gap along any single one of them means they do not
+        /// meet. Squares nobody turned fall out of this as the plain comparison of
+        /// distances they were before there was an angle at all.
+        /// </summary>
+        private static bool BoxesMeet(Zone a, float ar, Zone b, float br, float dx, float dz)
+        {
+            for (var i = 0; i < 4; i++)
+            {
+                var along = (i < 2 ? a.Angle : b.Angle) + (i % 2 == 0 ? 0f : 90f);
+                var radians = NormaliseAngle(along) * Deg2Rad;
+                var axisX = (float)System.Math.Cos(radians);
+                var axisZ = (float)System.Math.Sin(radians);
+
+                var apart = Abs(dx * axisX + dz * axisZ);
+                if (apart >= Spread(a.Angle, ar, axisX, axisZ) + Spread(b.Angle, br, axisX, axisZ))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>How far a square of this reach, lying so, stretches along an axis.</summary>
+        private static float Spread(float angle, float reach, float axisX, float axisZ)
+        {
+            var radians = NormaliseAngle(angle) * Deg2Rad;
+            var cos = (float)System.Math.Cos(radians);
+            var sin = (float)System.Math.Sin(radians);
+
+            return reach * (Abs(cos * axisX + sin * axisZ) + Abs(-sin * axisX + cos * axisZ));
+        }
+
+        private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
+
+        private static float Abs(float value)
+        {
+            return value < 0f ? -value : value;
+        }
+
+        private static float Clamp(float value, float low, float high)
+        {
+            if (value < low) return low;
+            return value > high ? high : value;
+        }
+
+        // ---------------- раскладка внутри категории ----------------
+
+        /// <summary>
+        /// How many slots of a chest this many of one thing takes. Slots, not units, because
+        /// a chest fills by slots: five hundred wood is ten of them and thirty copper ore is
+        /// one, and that is the whole difference between «gets its own chest» and «goes in
+        /// with the odds and ends».
+        /// </summary>
+        public static int SlotsFor(int units, int stackSize)
+        {
+            if (units <= 0) return 0;
+            if (stackSize < 1) stackSize = 1;
+            return (units + stackSize - 1) / stackSize;
+        }
+
+        /// <summary>One chest of a category, as the plan sees it.</summary>
+        public sealed class BinState
+        {
+            public int Category;
+
+            /// <summary>How many slots it has at all.</summary>
+            public int Slots;
+
+            /// <summary>What it holds now: item name to units.</summary>
+            public Dictionary<string, int> Holds = new Dictionary<string, int>();
+
+            public int Held(string kind)
+            {
+                int units;
+                return Holds != null && Holds.TryGetValue(kind, out units) ? units : 0;
+            }
+
+            /// <summary>Everything in it that is not this kind - how mixed it already is.</summary>
+            public int HeldOther(string kind)
+            {
+                var other = 0;
+                if (Holds == null) return 0;
+
+                foreach (var pair in Holds)
+                    if (pair.Key != kind) other += pair.Value;
+
+                return other;
+            }
+        }
+
+        /// <summary>Everything of one kind the category has to hold - in its chests and on its way there.</summary>
+        public sealed class Load
+        {
+            public string Kind;
+
+            public int Category;
+
+            public int Units;
+
+            public int StackSize;
+        }
+
+        /// <summary>Where each kind belongs, and where everything else goes.</summary>
+        public sealed class Plan
+        {
+            /// <summary>
+            /// Kind to the chests kept for it alone. Nothing else is ever carried into one of
+            /// these: the empty slots are not waste, they are room for the next load.
+            /// </summary>
+            public readonly Dictionary<string, List<int>> Homes = new Dictionary<string, List<int>>();
+
+            /// <summary>Category to the chests that take whatever has no chest of its own.</summary>
+            public readonly Dictionary<int, List<int>> Mixed = new Dictionary<int, List<int>>();
+
+            // Which of the shared chests a kind is already in - the old rule, «туда, где уже
+            // лежит такое же», kept for the things that share.
+            internal readonly Dictionary<string, List<int>> Preferred = new Dictionary<string, List<int>>();
+
+            /// <summary>
+            /// Every chest this kind may be carried into, best first: its own, and then the
+            /// shared one for whatever did not fit. Overflow going to the shared chest is why
+            /// a full pile does not simply stay in the cart.
+            /// </summary>
+            public List<int> Where(string kind, int category)
+            {
+                var found = new List<int>();
+
+                List<int> home;
+                if (kind != null && Homes.TryGetValue(kind, out home)) found.AddRange(home);
+
+                List<int> shared;
+                if (kind != null && Preferred.TryGetValue(kind, out shared)) found.AddRange(shared);
+                else if (Mixed.TryGetValue(category, out shared)) found.AddRange(shared);
+
+                // «Разное» is the catch-all, and that is the whole reason it exists: a kind
+                // whose own category has no chest at all - wood when nobody marked anything
+                // «Материалы» - still has somewhere to go. Losing this was how a cart could
+                // stand in the zone, be counted, and never be emptied.
+                List<int> spare;
+                if (category != Misc && Mixed.TryGetValue(Misc, out spare))
+                    foreach (var bin in spare)
+                        if (!found.Contains(bin)) found.Add(bin);
+
+                return found;
+            }
+
+            /// <summary>
+            /// Is this chest where the kind is meant to live. A kind with a chest of its own
+            /// belongs only there - so what is left of it in the shared chest is carried home
+            /// as soon as there is room, rather than settling where it landed.
+            /// </summary>
+            public bool Belongs(string kind, int category, int bin)
+            {
+                List<int> home;
+                if (kind != null && Homes.TryGetValue(kind, out home)) return home.Contains(bin);
+
+                return Where(kind, category).Contains(bin);
+            }
+        }
+
+        /// <summary>
+        /// Splits every category between the chests marked for it.
+        ///
+        /// A pile big enough to matter - ownChestSlots slots or more - gets chests of its own,
+        /// as many as it needs, and they hold nothing else; everything that is one or a dozen
+        /// of something shares what is left. The odd thing about this is that it is worked out
+        /// afresh every sweep and kept nowhere, which is what makes it self-righting: a heap of
+        /// wood that grows past the threshold is given a chest on the next sweep without
+        /// anybody promoting it, and one that is spent goes back to sharing.
+        ///
+        /// One chest of a category is never given away, whatever the piles want. Without that
+        /// rule a category of one chest would dedicate it to the first big pile and then have
+        /// nowhere at all for the ore; with it, there is always somewhere for the odds and ends,
+        /// and the dedicated chests stay clean.
+        ///
+        /// Which chest a pile gets is decided by what is already in the chests, so the answer
+        /// reinforces itself instead of flapping: the chest holding the most wood is the wood
+        /// chest, and carrying wood into it only makes it more so. Ties fall to the order the
+        /// bins were given in, which the caller is expected to keep stable - by position, not
+        /// by whatever order the game handed them over in.
+        ///
+        /// With ownChestSlots at zero nothing is split: every chest of a category takes
+        /// everything, which is what this did before there was a plan.
+        /// </summary>
+        public static Plan MakePlan(IList<BinState> bins, IList<Load> loads, int ownChestSlots)
+        {
+            var plan = new Plan();
+            if (bins == null) return plan;
+
+            // Which chests each category has, in the order they were handed over.
+            var byCategory = new Dictionary<int, List<int>>();
+            for (var i = 0; i < bins.Count; i++)
+            {
+                if (bins[i] == null) continue;
+
+                List<int> list;
+                if (!byCategory.TryGetValue(bins[i].Category, out list))
+                {
+                    list = new List<int>();
+                    byCategory[bins[i].Category] = list;
+                }
+
+                list.Add(i);
+            }
+
+            var claimed = new HashSet<int>();
+
+            if (ownChestSlots > 0 && loads != null)
+            {
+                // Biggest piles first: they are the ones a chest of their own actually helps,
+                // and the ones that would otherwise swamp everything else.
+                var big = new List<Load>();
+                foreach (var load in loads)
+                {
+                    if (load == null || string.IsNullOrEmpty(load.Kind)) continue;
+                    if (SlotsFor(load.Units, load.StackSize) < ownChestSlots) continue;
+                    big.Add(load);
+                }
+
+                big.Sort((a, b) =>
+                {
+                    var bySlots = SlotsFor(b.Units, b.StackSize).CompareTo(SlotsFor(a.Units, a.StackSize));
+                    return bySlots != 0 ? bySlots : string.CompareOrdinal(a.Kind, b.Kind);
+                });
+
+                foreach (var load in big)
+                {
+                    List<int> ofCategory;
+                    if (!byCategory.TryGetValue(load.Category, out ofCategory)) continue;
+
+                    var free = new List<int>();
+                    foreach (var bin in ofCategory)
+                        if (!claimed.Contains(bin)) free.Add(bin);
+
+                    // The last one stays shared, always.
+                    var mayTake = free.Count - 1;
+                    if (mayTake < 1) continue;
+
+                    // The chest that already holds most of it, and among equals the one that
+                    // holds least of anything else - a chest half full of this is a better
+                    // home than an empty one somebody is about to want for something else.
+                    free.Sort((a, b) =>
+                    {
+                        var mine = bins[b].Held(load.Kind).CompareTo(bins[a].Held(load.Kind));
+                        if (mine != 0) return mine;
+
+                        var others = bins[a].HeldOther(load.Kind).CompareTo(bins[b].HeldOther(load.Kind));
+                        return others != 0 ? others : a.CompareTo(b);
+                    });
+
+                    var slots = SlotsFor(load.Units, load.StackSize);
+                    var home = new List<int>();
+
+                    foreach (var bin in free)
+                    {
+                        if (home.Count >= mayTake) break;
+                        if (home.Count > 0 && slots <= 0) break;
+
+                        home.Add(bin);
+                        claimed.Add(bin);
+                        slots -= bins[bin].Slots > 0 ? bins[bin].Slots : 1;
+                    }
+
+                    if (home.Count > 0) plan.Homes[load.Kind] = home;
+                }
+            }
+
+            foreach (var pair in byCategory)
+            {
+                var rest = new List<int>();
+                foreach (var bin in pair.Value)
+                    if (!claimed.Contains(bin)) rest.Add(bin);
+
+                plan.Mixed[pair.Key] = rest;
+            }
+
+            // Among the shared chests, a kind still prefers the one it is already in.
+            if (loads != null)
+            {
+                foreach (var load in loads)
+                {
+                    if (load == null || string.IsNullOrEmpty(load.Kind)) continue;
+
+                    List<int> mixed;
+                    if (!plan.Mixed.TryGetValue(load.Category, out mixed) || mixed.Count < 2) continue;
+
+                    var order = new List<int>(mixed);
+                    order.Sort((a, b) =>
+                    {
+                        var mine = bins[b].Held(load.Kind).CompareTo(bins[a].Held(load.Kind));
+                        return mine != 0 ? mine : a.CompareTo(b);
+                    });
+
+                    plan.Preferred[load.Kind] = order;
+                }
+            }
+
+            return plan;
+        }
+
+        /// <summary>One marked chest, as far as this decision is concerned.</summary>
+        public sealed class Bin
+        {
+            public int Category;
+
+            /// <summary>Already holds this very item - by far the strongest hint there is.</summary>
+            public bool HasSame;
+
+            /// <summary>Has room for it: a full chest is not an answer, it is a delay.</summary>
+            public bool HasRoom;
+        }
+
+        /// <summary>
+        /// Which bin this item belongs in, or -1 to leave it where it is.
+        ///
+        /// Three rules, in order. A chest that already holds this very item wins over
+        /// everything: that is what makes «этот под дерево» work without anyone naming a
+        /// single item - you put a stack of wood in it once, and wood goes there. Then the
+        /// category the chest was marked with. Then «Разное», which is where the things
+        /// nobody has made a place for end up.
+        ///
+        /// A full bin is skipped at every step rather than chosen and failed at, so an item
+        /// whose own chest is full still finds the category chest, and only then stays put.
+        /// It is never dropped on the ground - that is the automation's old sin and it is
+        /// not repeated here.
+        /// </summary>
+        public static int Choose(int itemCategory, IList<Bin> bins)
+        {
+            if (bins == null) return -1;
+
+            var byCategory = -1;
+            var byMisc = -1;
+
+            for (var i = 0; i < bins.Count; i++)
+            {
+                var bin = bins[i];
+                if (bin == null || !bin.HasRoom) continue;
+
+                if (bin.HasSame) return i;
+
+                if (byCategory < 0 && bin.Category == itemCategory) byCategory = i;
+                if (byMisc < 0 && bin.Category == Misc) byMisc = i;
+            }
+
+            if (byCategory >= 0) return byCategory;
+            return byMisc;
+        }
+    }
+}

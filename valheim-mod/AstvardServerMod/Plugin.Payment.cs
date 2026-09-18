@@ -76,7 +76,18 @@ namespace AstvardServerMod
 
         private static string ItemTitle(ItemDrop item)
         {
-            var name = item.m_itemData.m_shared.m_name;
+            return ItemTitle(item.m_itemData);
+        }
+
+        /// <summary>
+        /// Имя предмета словами. `m_shared.m_name` — не имя, а ключ перевода вида
+        /// `$item_bronzenails`, и показанный игроку он выглядит поломкой мода.
+        /// </summary>
+        private static string ItemTitle(ItemDrop.ItemData item)
+        {
+            if (item == null || item.m_shared == null) return "?";
+
+            var name = item.m_shared.m_name;
             return Localization.instance != null ? Localization.instance.Localize(name) : name;
         }
 

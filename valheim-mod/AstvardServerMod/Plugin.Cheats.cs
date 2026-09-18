@@ -366,8 +366,9 @@ namespace AstvardServerMod
                 }
 
                 // The prefab name, not m_shared.m_name: the latter is a token like
-                // $item_serpentstew, and Localization lives in an assembly we do not
-                // reference. An admin reading a log wants the prefab name anyway.
+                // $item_serpentstew. It could be turned into words - ItemTitle does
+                // exactly that - but this is a log line, and an admin reading one wants
+                // the prefab name they would type into a command.
                 given.Add(name);
             }
 

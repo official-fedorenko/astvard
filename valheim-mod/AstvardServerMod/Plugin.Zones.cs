@@ -22,6 +22,8 @@ namespace AstvardServerMod
 
         internal static GameObject ZoneAddButton;
 
+        internal static GameObject ZoneShowButton;
+
         internal static GameObject ZoneClearButton;
 
         internal static GameObject ZoneOthersButton;
@@ -200,12 +202,22 @@ namespace AstvardServerMod
 
         private static void ZoneCells(KeptZone zone, out Vector2s min, out Vector2s max)
         {
+            CellsFor(zone.X, zone.Z, zone.Radius, out min, out max);
+        }
+
+        /// <summary>
+        /// Which cells a zone of this radius, put down here, would keep awake. Split out
+        /// so the preview that shows them can call it instead of working them out beside
+        /// it: two copies of this would agree until somebody changed one.
+        /// </summary>
+        internal static void CellsFor(float x, float z, float radius, out Vector2s min, out Vector2s max)
+        {
             // Half-open on the far side: a cell owns [centre-32, centre+32), so treating
             // the far edge as inclusive would drag in the next cell on every axis and
             // quadruple a zone that fits in one.
             const float edge = 0.01f;
-            min = ZoneSystem.GetZone(new Vector3(zone.X - zone.Radius, 0f, zone.Z - zone.Radius));
-            max = ZoneSystem.GetZone(new Vector3(zone.X + zone.Radius - edge, 0f, zone.Z + zone.Radius - edge));
+            min = ZoneSystem.GetZone(new Vector3(x - radius, 0f, z - radius));
+            max = ZoneSystem.GetZone(new Vector3(x + radius - edge, 0f, z + radius - edge));
         }
 
         private static int ZoneCellCount(KeptZone zone)

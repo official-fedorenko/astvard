@@ -23,6 +23,8 @@ namespace AstvardServerMod
 
         internal static GameObject PlayerZoneSetButton;
 
+        internal static GameObject PlayerZoneShowButton;
+
         internal static GameObject PlayerZoneRemoveButton;
 
         /// <summary>What «Функции» gains for a player, each while the admins keep it open.</summary>
@@ -58,6 +60,8 @@ namespace AstvardServerMod
                 var at = player.transform.position;
                 ZRoutedRpc.instance?.InvokeRoutedRPC(RpcZoneMine, at.x, at.z, radius);
             });
+
+            PlayerZoneShowButton = MakeButton(gui, "Показать клетки", () => StartZonePreview(true));
 
             PlayerZoneRemoveButton = MakeButton(gui, "Убрать мою зону", () =>
             {
@@ -146,6 +150,7 @@ namespace AstvardServerMod
             SetActive(PlayerZoneHint, zonePage);
             SetActive(PlayerZoneRadiusInput, zonePage);
             SetActive(PlayerZoneSetButton, zonePage);
+            SetActive(PlayerZoneShowButton, zonePage);
             SetActive(PlayerZoneRemoveButton, zonePage);
             if (!zonePage) return;
 
