@@ -65,8 +65,6 @@ namespace AstvardServerMod
             if (label != null) label.text = IsAutoFillEnabled ? "Наполнение: вкл" : "Наполнение: выкл";
         }
 
-        private const float AutoCollectRadius = 8f;
-
         // Lives in the chest's own ZDO, so the assignment is part of the world: it
         // survives a relog and every player sees the same chest, not only whoever set it.
         private const string CollectChestKey = "astvard_collect";
@@ -137,13 +135,10 @@ namespace AstvardServerMod
         {
             if (prefab == null || amount <= 0) return false;
 
-            // An assigned chest is a decision made in the world, so it works for
-            // whoever happens to be nearby. The personal toggle only governs the
-            // guess-the-nearest-chest fallback.
-            var target = FindChest(origin, AssignedChestRadius, prefab, amount, true, ChestZoneSquare)
-                         ?? (IsAutoCollectEnabled
-                             ? FindChest(origin, AutoCollectRadius, prefab, amount, false, false)
-                             : null);
+            // Only a chest somebody pointed at. Guessing the nearest one meant a station
+            // reached into whatever happened to stand by it - a sorting bin, a chest its
+            // owner had called personal - and there was nothing to tell it otherwise.
+            var target = FindChest(origin, AssignedChestRadius, prefab, amount, true, ChestZoneSquare);
             if (target == null) return false;
 
             // A container saves itself to its ZDO only from the owner's side, so adding
@@ -267,7 +262,6 @@ namespace AstvardServerMod
             var pieces = new List<Piece>();
             var collectSpots = new List<Vector3>();
             var supplyChests = new List<Container>();
-            var anyChests = new List<Container>();
 
             while (true)
             {
@@ -283,21 +277,19 @@ namespace AstvardServerMod
                 // re-walking every loaded piece once for each of them.
                 collectSpots.Clear();
                 supplyChests.Clear();
-                anyChests.Clear();
                 foreach (var piece in pieces)
                 {
                     if (piece == null) continue;
                     var container = piece.GetComponentInChildren<Container>();
                     if (container == null) continue;
 
-                    anyChests.Add(container);
                     if (IsCollectChest(container)) collectSpots.Add(container.transform.position);
                     if (IsSupplyChest(container)) supplyChests.Add(container);
                 }
 
-                // With no supply chest and the toggle off there is nothing to feed
-                // from, so skip the reads and reflection the feeding half would do.
-                var feeding = IsAutoFillEnabled || supplyChests.Count > 0;
+                // Nothing assigned, or the half switched off: nothing to feed from, so
+                // skip the reads and reflection the feeding half would do.
+                var feeding = IsAutoFillEnabled && supplyChests.Count > 0;
 
                 // And with nowhere to put anything either, the whole second pass is
                 // waste: five GetComponentInChildren per piece, each a recursive walk of
@@ -306,7 +298,7 @@ namespace AstvardServerMod
                 // tree walks a second to reach a row of MayHarvest calls that can only
                 // answer false. The chest sweep above still has to run, since it is what
                 // decides this.
-                var harvesting = collectSpots.Count > 0 || IsAutoCollectEnabled;
+                var harvesting = IsAutoCollectEnabled && collectSpots.Count > 0;
                 if (!feeding && !harvesting) continue;
 
                 foreach (var piece in pieces)
@@ -316,36 +308,36 @@ namespace AstvardServerMod
                     var cooking = piece.GetComponentInChildren<CookingStation>();
                     if (cooking != null)
                     {
-                        if (MayHarvest(cooking, collectSpots, anyChests))
+                        if (harvesting && MayHarvest(cooking, collectSpots))
                             cooking.GetComponent<ZNetView>()
                                 .InvokeRPC("RPC_RemoveDoneItem", player.transform.position, 1);
-                        if (feeding) FillCooking(cooking, supplyChests, anyChests);
+                        if (feeding) FillCooking(cooking, supplyChests);
                     }
 
                     var beehive = piece.GetComponentInChildren<Beehive>();
-                    if (beehive != null && MayHarvest(beehive, collectSpots, anyChests))
+                    if (beehive != null && harvesting && MayHarvest(beehive, collectSpots))
                         beehive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
 
                     var fermenter = piece.GetComponentInChildren<Fermenter>();
                     if (fermenter != null)
                     {
-                        if (MayHarvest(fermenter, collectSpots, anyChests))
+                        if (harvesting && MayHarvest(fermenter, collectSpots))
                             fermenter.GetComponent<ZNetView>().InvokeRPC("RPC_Tap");
-                        if (feeding) FillFermenter(fermenter, supplyChests, anyChests);
+                        if (feeding) FillFermenter(fermenter, supplyChests);
                     }
 
                     var smelter = piece.GetComponentInChildren<Smelter>();
                     if (smelter != null)
                     {
-                        if (feeding) FillSmelter(smelter, supplyChests, anyChests);
+                        if (feeding) FillSmelter(smelter, supplyChests);
                         // Gated like its three siblings. Tipping the kiln out with
                         // nowhere to put the coal turns one fifty-stack at the end of
                         // the burn into fifty singles on the floor, one a second.
-                        if (MayHarvest(smelter, collectSpots, anyChests)) FlushSmelter(smelter);
+                        if (harvesting && MayHarvest(smelter, collectSpots)) FlushSmelter(smelter);
                     }
 
                     var fireplace = piece.GetComponentInChildren<Fireplace>();
-                    if (fireplace != null && feeding) FillFireplace(fireplace, supplyChests, anyChests);
+                    if (fireplace != null && feeding) FillFireplace(fireplace, supplyChests);
                 }
             }
         }
@@ -355,21 +347,11 @@ namespace AstvardServerMod
         /// somewhere to put the goods, harvesting unattended would just tip them onto
         /// the ground, which is worse than leaving them where they are.
         ///
-        /// That is what the comment said and what the code did not do. The toggle
-        /// returned true before the distance scan ran, so turning on «Сбор в сундук»
-        /// with no chest assigned harvested every owned hive, oven and fermenter within
-        /// sixty-four metres straight onto the floor - the exact outcome the check
-        /// exists to prevent. The two tiers now mirror TryStoreNearby, which had them
-        /// the right way round all along: an assigned chest is a decision made in the
-        /// world and counts whatever the toggle says, and the toggle only opens the
-        /// shorter guess-the-nearest-chest range.
-        ///
         /// It stays a proximity test. A chest that is in range but full still ends in a
         /// ground drop, because at this point nobody knows which item is about to
         /// appear; closing that would mean threading the product through every branch.
         /// </summary>
-        private static bool MayHarvest(Component producer, List<Vector3> assignedChests,
-                                       List<Container> anyChests)
+        private static bool MayHarvest(Component producer, List<Vector3> assignedChests)
         {
             if (!OwnedAndValid(producer)) return false;
 
@@ -377,13 +359,6 @@ namespace AstvardServerMod
 
             foreach (var chest in assignedChests)
                 if (InChestZone(origin, chest)) return true;
-
-            if (!IsAutoCollectEnabled) return false;
-
-            var range = AutoCollectRadius * AutoCollectRadius;
-            foreach (var chest in anyChests)
-                if (chest != null
-                    && (chest.transform.position - origin).sqrMagnitude <= range) return true;
 
             return false;
         }
@@ -398,18 +373,15 @@ namespace AstvardServerMod
 
         /// <summary>
         /// Removes one unit of anything the station accepts from a chest, and reports
-        /// which prefab it was. A chest explicitly put on supply duty is tried first and
-        /// reaches further; the personal toggle only enables the guess-the-nearest pass.
+        /// which prefab it was. Only from a chest put on supply duty: a station that
+        /// helped itself to the nearest one emptied whatever stood beside it.
         /// </summary>
         private static string TakeSupply(Vector3 origin, List<Container> supplyChests,
-                                         List<Container> anyChests, List<string> accepted)
+                                         List<string> accepted)
         {
             if (accepted.Count == 0) return null;
 
-            return TakeFrom(origin, supplyChests, AssignedChestRadius, accepted, ChestZoneSquare)
-                   ?? (IsAutoFillEnabled
-                       ? TakeFrom(origin, anyChests, AutoCollectRadius, accepted, false)
-                       : null);
+            return TakeFrom(origin, supplyChests, AssignedChestRadius, accepted, ChestZoneSquare);
         }
 
         private static string TakeFrom(Vector3 origin, List<Container> chests,
@@ -453,7 +425,7 @@ namespace AstvardServerMod
             return bestChest.GetInventory().RemoveItem(bestItem, 1) ? name : null;
         }
 
-        private static void FillSmelter(Smelter smelter, List<Container> supply, List<Container> any)
+        private static void FillSmelter(Smelter smelter, List<Container> supply)
         {
             if (!OwnedAndValid(smelter)) return;
 
@@ -466,7 +438,7 @@ namespace AstvardServerMod
             {
                 AcceptScratch.Clear();
                 AcceptScratch.Add(smelter.m_fuelItem.gameObject.name);
-                if (TakeSupply(origin, supply, any, AcceptScratch) != null)
+                if (TakeSupply(origin, supply, AcceptScratch) != null)
                     view.InvokeRPC("RPC_AddFuel");
             }
 
@@ -477,7 +449,7 @@ namespace AstvardServerMod
                     if (conversion != null && conversion.m_from != null)
                         AcceptScratch.Add(conversion.m_from.gameObject.name);
 
-                var ore = TakeSupply(origin, supply, any, AcceptScratch);
+                var ore = TakeSupply(origin, supply, AcceptScratch);
                 // 1.0 added a trailing cheated flag to RPC_AddOre. Sending the old
                 // single argument made the receiver read a bool past the end of the
                 // package: an EndOfStreamException thrown straight into this coroutine,
@@ -487,7 +459,7 @@ namespace AstvardServerMod
             }
         }
 
-        private static void FillCooking(CookingStation cooking, List<Container> supply, List<Container> any)
+        private static void FillCooking(CookingStation cooking, List<Container> supply)
         {
             if (!OwnedAndValid(cooking)) return;
 
@@ -499,7 +471,7 @@ namespace AstvardServerMod
             {
                 AcceptScratch.Clear();
                 AcceptScratch.Add(cooking.m_fuelItem.gameObject.name);
-                if (TakeSupply(origin, supply, any, AcceptScratch) != null)
+                if (TakeSupply(origin, supply, AcceptScratch) != null)
                     view.InvokeRPC("RPC_AddFuel");
             }
 
@@ -511,12 +483,12 @@ namespace AstvardServerMod
                 if (conversion != null && conversion.m_from != null)
                     AcceptScratch.Add(conversion.m_from.gameObject.name);
 
-            var raw = TakeSupply(origin, supply, any, AcceptScratch);
+            var raw = TakeSupply(origin, supply, AcceptScratch);
             // Same trailing cheated flag as the smelter, same crash without it.
             if (raw != null) view.InvokeRPC("RPC_AddItem", raw, false);
         }
 
-        private static void FillFermenter(Fermenter fermenter, List<Container> supply, List<Container> any)
+        private static void FillFermenter(Fermenter fermenter, List<Container> supply)
         {
             if (!OwnedAndValid(fermenter)) return;
 
@@ -533,7 +505,7 @@ namespace AstvardServerMod
                 if (conversion != null && conversion.m_from != null)
                     AcceptScratch.Add(conversion.m_from.gameObject.name);
 
-            var brew = TakeSupply(fermenter.transform.position, supply, any, AcceptScratch);
+            var brew = TakeSupply(fermenter.transform.position, supply, AcceptScratch);
             // Register<int, bool> in 1.0, not <string>. Sending the name made the
             // receiver read four bytes of UTF-8 as a hash, reject the unknown item,
             // and leave the brew destroyed - TakeSupply had already removed it from
@@ -541,7 +513,7 @@ namespace AstvardServerMod
             if (brew != null) view.InvokeRPC("RPC_AddItem", brew.GetStableHashCode(), false);
         }
 
-        private static void FillFireplace(Fireplace fireplace, List<Container> supply, List<Container> any)
+        private static void FillFireplace(Fireplace fireplace, List<Container> supply)
         {
             if (!OwnedAndValid(fireplace) || fireplace.m_fuelItem == null) return;
             if (fireplace.m_infiniteFuel) return;
@@ -551,7 +523,7 @@ namespace AstvardServerMod
 
             AcceptScratch.Clear();
             AcceptScratch.Add(fireplace.m_fuelItem.gameObject.name);
-            if (TakeSupply(fireplace.transform.position, supply, any, AcceptScratch) != null)
+            if (TakeSupply(fireplace.transform.position, supply, AcceptScratch) != null)
                 view.InvokeRPC("RPC_AddFuel");
         }
 

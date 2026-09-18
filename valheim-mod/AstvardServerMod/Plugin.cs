@@ -62,10 +62,17 @@ namespace AstvardServerMod
         {
             Log = Logger;
             Instance = this;
-            _autoCollect = Config.Bind("Функции", "AutoCollect", false,
-                "Складывать готовый продукт в ближайший сундук.");
-            _autoFill = Config.Bind("Функции", "AutoFill", false,
-                "Подавать сырьё и топливо из ближайшего сундука.");
+            // New keys, not the old AutoCollect/AutoFill: the switch no longer means what
+            // it used to. It used to open a guess-the-nearest-chest pass on top of the
+            // assigned chests; now it says whether that half runs at all. A stored «false»
+            // read under the new meaning would quietly turn off automation somebody had
+            // working, so the old value is left behind rather than reinterpreted.
+            _autoCollect = Config.Bind("Наполнение и сбор", "Collect", true,
+                "Складывать готовый продукт в назначенный сундук. Неназначенные сундуки "
+                + "станции не трогают вовсе.");
+            _autoFill = Config.Bind("Наполнение и сбор", "Fill", true,
+                "Подавать сырьё и топливо из сундука подачи. Неназначенные сундуки "
+                + "станции не трогают вовсе.");
 
             _localAdminCommands = Config.Bind("Функции", "LocalAdminCommands",
                 "debugmode fly nocost exploremap resetmap tod env resetenv wind resetwind",
