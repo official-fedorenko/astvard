@@ -668,6 +668,30 @@ a {
     color: var(--text-secondary);
 }
 
+/* То же, что в панели: поле выглядит как поле, даже если про .form-input забыли.
+   Страниц с полями на публичной части немного — вход и кабинет, — и тем легче
+   поставить рядом поле, про класс которого никто не вспомнит. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="submit"]):not([type="button"]):not([class*="ql-"]),
+select:not([class*="ql-"]),
+textarea:not([class*="ql-"]) {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    font-size: 14px;
+    color: var(--text-primary);
+    outline: none;
+    transition: var(--transition);
+    max-width: 100%;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="submit"]):not([type="button"]):not([class*="ql-"]):focus,
+select:not([class*="ql-"]):focus,
+textarea:not([class*="ql-"]):focus {
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 0 3px var(--accent-cyan-dim);
+}
+
 .form-input {
     background: var(--bg-surface);
     border: 1px solid var(--border);

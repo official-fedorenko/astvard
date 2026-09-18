@@ -442,6 +442,35 @@ main.main-content {
   color: hsl(var(--text-secondary));
 }
 
+/* Поле выглядит как поле панели, даже если про класс забыли. На этом уже обожглись:
+   поиск, написанный без .form-control, встал голым инпутом посреди тёмной страницы —
+   белая коробка системным шрифтом. Класс остаётся и нужен, он растягивает поле на всю
+   строку; вид же не должен зависеть от того, вспомнил ли про класс тот, кто писал
+   разметку, — это ровно та память, на которую полагаться нельзя.
+
+   Ширину здесь не трогаем: поле во всю строку посреди таблицы растянуло бы её. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="submit"]):not([type="button"]):not([class*="ql-"]),
+select:not([class*="ql-"]),
+textarea:not([class*="ql-"]) {
+  background-color: hsl(var(--bg-main));
+  border: 1px solid hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+  padding: 12px 16px;
+  font-size: 14px;
+  border-radius: var(--border-radius-sm);
+  outline: none;
+  transition: var(--transition-smooth);
+  font-family: var(--font-family);
+  max-width: 100%;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="submit"]):not([type="button"]):not([class*="ql-"]):focus,
+select:not([class*="ql-"]):focus,
+textarea:not([class*="ql-"]):focus {
+  border-color: hsl(var(--accent-purple));
+  box-shadow: 0 0 0 3px hsl(var(--accent-purple) / 0.15);
+}
+
 .form-control {
   width: 100%;
   background-color: hsl(var(--bg-main));
