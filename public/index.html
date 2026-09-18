@@ -997,15 +997,17 @@
 
         <p class="muted builds-sync" id="sortingSyncLine">Загрузка…</p>
 
-        <div class="toolbar-form">
-          <input type="text" id="sortingSearch" placeholder="Поиск по названию или ключу" autocomplete="off">
-          <label class="check-chip">
-            <input type="checkbox" id="sortingOnlyChosen">
-            <span>Только выбранные</span>
-          </label>
-        </div>
-
         <div class="table-container">
+          <div class="table-toolbar">
+            <div class="table-search">
+              <input type="text" id="sortingSearch" class="form-control"
+                     placeholder="Поиск по названию или ключу..." autocomplete="off">
+            </div>
+            <label class="check-chip">
+              <input type="checkbox" id="sortingOnlyChosen">
+              <span>Только выбранные</span>
+            </label>
+          </div>
           <div class="table-scroll">
             <table class="data-table">
               <thead>
