@@ -93,6 +93,8 @@ namespace AstvardServerMod
         private const int StateSetupGarden = 75; // настройки: огород
         private const int StateSetupLabels = 76; // настройки: подписи над сундуками
         private const int StateSortCrop = 77;   // сколько урожая держать на складе
+        private const int StateBrews = 78;      // что варить и сколько держать
+        private const int StateBrewOne = 79;    // один напиток: заказ и его цена
 
         internal static GameObject Panel;
 
@@ -808,6 +810,7 @@ namespace AstvardServerMod
 
             CreateSettingsWidgets(gui);
             CreateRunePageWidgets(gui);
+            CreateBrewPageWidgets(gui);
             CreateSortPageWidgets(gui);
             CreateChestZoneWidgets(gui);
             CreateChestRowWidgets(gui);
@@ -1498,6 +1501,7 @@ namespace AstvardServerMod
             RefreshRunePageVisibility(admin);
             RefreshSortVisibility();
             RefreshChestZoneVisibility();
+            RefreshBrewVisibility();
             RefreshChestRowVisibility();
             RefreshHelperVisibility(admin);
             RefreshBuildSettingsVisibility(admin);

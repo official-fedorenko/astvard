@@ -214,7 +214,8 @@ namespace AstvardServerMod
                    || state == StateRunes || state == StateSortZones
                    || state == StateSortCrew || state == StateSortInvite
                    || state == StateSortMark
-                   || state == StateSpawners || state == StateSpawnerList;
+                   || state == StateSpawners || state == StateSpawnerList
+                   || state == StateBrews;
         }
 
         private static bool IsCategoryPage(int state)
@@ -247,6 +248,8 @@ namespace AstvardServerMod
                 case StateSortCrew:
                 case StateSortInvite:
                     return RuleAllows("sort") && CrewPageOpen();
+                case StateBrews:
+                    return RuleAllows("brewing");
                 case StatePlayerTemplates:
                     return !admin;
                 default:
@@ -272,6 +275,7 @@ namespace AstvardServerMod
                 case StateSpawnerList: return SpawnerKindCount;
                 case StateSortCrew: return CrewZone() != null ? CrewZone().Members.Count : 0;
                 case StateSortInvite: return InviteChoices().Count;
+                case StateBrews: return KnownBrews().Count;
                 default: return 0;
             }
         }

@@ -475,6 +475,12 @@ namespace AstvardServerMod
                     pieces.Clear();
                     Piece.GetAllPiecesInRadius(player.transform.position, HarvestScanRadius, pieces);
 
+                    // Сколько бочек уже бродит, считается этим же обходом - другого у нас
+                    // нет. Решение варить смотрит на счёт прошлой секунды плюс то, что
+                    // поставили сейчас: иначе двадцать пустых бочек примут двадцать порций
+                    // заказа на шесть бутылок.
+                    BrewSweepStart();
+
                     // Sort the chests out of the same sweep. Asking per station would mean
                     // re-walking every loaded piece once for each of them.
                     collectSpots.Clear();
@@ -595,6 +601,10 @@ namespace AstvardServerMod
                             if (harvesting && MayHarvest(fermenter, collectSpots, inZone))
                                 fermenter.GetComponent<ZNetView>().InvokeRPC("RPC_Tap");
                             if (feeding) FillFermenter(fermenter, food);
+                            // Готовая основа из сундука идёт первой: варить новую, когда
+                            // одна лежит рядом, значит тратить мёд на то, что уже есть.
+                            if (feeding) TryBrewInto(fermenter, food);
+                            BrewSweepSaw(fermenter);
                         }
 
                         var smelter = piece.GetComponentInChildren<Smelter>();
@@ -648,6 +658,8 @@ namespace AstvardServerMod
                     // станций в зоне нет вовсе, а грядки растут часами, так что у него
                     // свой, редкий такт.
                     TickGarden(player, zone, ZoneBins.Count > 0 ? ZoneSupply : supplyChests);
+
+                    BrewSweepDone();
 
                     if (zone != null) SayZoneStations(zoneSmelters, zoneMine, zoneFires, tames);
                 }

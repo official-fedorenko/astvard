@@ -24,6 +24,7 @@
     <Compile Include="..\AstvardServerMod\Roster.cs" Link="Roster.cs" />
     <!-- Where an item goes and where the sorter looks for it. -->
     <Compile Include="..\AstvardServerMod\Sorting.cs" Link="Sorting.cs" />
+    <Compile Include="..\AstvardServerMod\Brewing.cs" Link="Brewing.cs" />
   </ItemGroup>
 
   <ItemGroup>
