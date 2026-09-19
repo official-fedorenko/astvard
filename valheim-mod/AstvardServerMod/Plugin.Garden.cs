@@ -374,13 +374,18 @@ namespace AstvardServerMod
         /// <summary>Возвращает саженцы на места, освобождённые прошлым проходом.</summary>
         private static int SowBeds(List<Container> supply)
         {
+            // Обнуление - до всех выходов, а не после. Стояло после, и счётчик прошлого
+            // прохода оставался в строке навсегда: «1 unsown for want of seeds» висело в
+            // логе и на странице ещё десять проходов спустя, хотя подсаживать было нечего
+            // вовсе. Диагностика, которая врёт, хуже её отсутствия - ровно этим здесь и
+            // занимались весь вечер.
+            _noSeeds = 0;
+            _noSapling = 0;
+
             if (!SowOn || Beds.Count == 0) return 0;
 
             var player = Player.m_localPlayer;
             if (player == null) return 0;
-
-            _noSeeds = 0;
-            _noSapling = 0;
 
             var creator = player.GetPlayerID();
             var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
