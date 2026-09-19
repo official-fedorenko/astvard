@@ -753,30 +753,49 @@ namespace AstvardServerMod
             public List<int> Where(string kind, int category)
             {
                 var found = new List<int>();
-
-                List<int> home;
-                if (kind != null && Homes.TryGetValue(kind, out home)) found.AddRange(home);
-
-                List<int> shared;
-                if (kind != null && Preferred.TryGetValue(kind, out shared)) found.AddRange(shared);
-                else if (Mixed.TryGetValue(category, out shared)) found.AddRange(shared);
-
-                // «Разное» is the catch-all, and that is the whole reason it exists: a kind
-                // whose own category has no chest at all - wood when nobody marked anything
-                // «Материалы» - still has somewhere to go. Losing this was how a cart could
-                // stand in the zone, be counted, and never be emptied.
-                List<int> spare;
-                if (category != Misc && Mixed.TryGetValue(Misc, out spare))
-                    foreach (var bin in spare)
-                        if (!found.Contains(bin)) found.Add(bin);
-
+                WhereInto(kind, category, found);
                 return found;
             }
 
             /// <summary>
-            /// Is this chest where the kind is meant to live. A kind with a chest of its own
+            /// То же самое, но в готовый список.
+            ///
+            /// The tidying pass asks this of every item in every marked chest, every second;
+            /// a fresh list for each of them is a heap of garbage for a question that is
+            /// usually answered «it is already in the right place».
+            /// </summary>
+            public void WhereInto(string kind, int category, List<int> into)
+            {
+                into.Clear();
+
+                List<int> home;
+                if (kind != null && Homes.TryGetValue(kind, out home)) into.AddRange(home);
+
+                List<int> shared;
+                if (kind != null && Preferred.TryGetValue(kind, out shared)) into.AddRange(shared);
+                else if (Mixed.TryGetValue(category, out shared)) into.AddRange(shared);
+
+                // «Разное» is the catch-all, and that is the whole reason it exists: a kind
+                // whose own category has no chest at all - wood when nobody marked anything
+                // «Материалы» - still has somewhere to go. Losing this was how a cart could
+                // stand in the zone, be counted, and never be emptied. It comes last, and
+                // that order is not decoration: the tidying pass reads it as «лучше или
+                // хуже», and a mushroom in the catch-all is pulled back to «Еда» by it.
+                List<int> spare;
+                if (category != Misc && Mixed.TryGetValue(Misc, out spare))
+                    foreach (var bin in spare)
+                        if (!into.Contains(bin)) into.Add(bin);
+            }
+
+            /// <summary>
+            /// Годится ли этот сундук для такого добра. A kind with a chest of its own
             /// belongs only there - so what is left of it in the shared chest is carried home
             /// as soon as there is room, rather than settling where it landed.
+            ///
+            /// «Годится», not «лучший»: the catch-all suits everything, and asking this about
+            /// a mushroom lying in «Разное» answers yes while «Еда» stands empty beside it.
+            /// Whoever needs «could it be better off elsewhere» reads the order of
+            /// <see cref="Where"/> instead.
             /// </summary>
             public bool Belongs(string kind, int category, int bin)
             {

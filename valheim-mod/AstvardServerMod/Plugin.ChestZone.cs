@@ -24,7 +24,7 @@ namespace AstvardServerMod
         {
             _chestZoneRadius = config.Bind("Наполнение и сбор", "ChestRadius", 24f,
                 "На сколько метров от печи, плавильни или улья ищется назначенный сундук, "
-                + "от 8 до 64. Меняется в игре: «Функции» → «Зона сундуков».");
+                + "от 8 до 64. Меняется в игре: «Функции» → «Работа с сундуками» → «Зона станций».");
 
             _chestZoneSquare = config.Bind("Наполнение и сбор", "ChestSquare", false,
                 "Считать эту зону квадратом. false — кругом. Дома у людей прямоугольные, "
@@ -180,7 +180,7 @@ namespace AstvardServerMod
                 SetAssignedChestRadius(ParseField(ChestZoneInput, AssignedChestRadius));
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     $"Сундуки ищутся в {AssignedChestRadius:0.#} м от станции");
-                MenuState = StateFeatures;
+                MenuState = StateChestWork;
                 RefreshMenu();
             });
 
@@ -199,7 +199,9 @@ namespace AstvardServerMod
 
         private static void RefreshChestZoneVisibility()
         {
-            SetLabel(ChestZoneButton, $"Зона сундуков: {AssignedChestRadius:0.#} м");
+            // «Зона станций», а не «сундуков»: меряется она от печи, плавильни и улья, и
+            // рядом с «Работой с сундуками» прежнее имя читалось как ещё одна их настройка.
+            SetLabel(ChestZoneButton, $"Зона станций: {AssignedChestRadius:0.#} м");
             SetLabel(ChestZoneShowButton, _chestZoneShown ? "Подсветка: вкл" : "Подсветка: выкл");
             SetLabel(ChestZoneShapeButton, ChestZoneSquare ? "Форма: квадрат" : "Форма: круг");
 
@@ -210,7 +212,7 @@ namespace AstvardServerMod
                             + $"Круг рисуется вокруг тебя —{NEWLINE}станций много, и обводить{NEWLINE}"
                             + $"каждую значило бы закрыть{NEWLINE}базу кольцами.";
 
-            SetActive(ChestZoneButton, MenuState == StateFeatures);
+            SetActive(ChestZoneButton, MenuState == StateChestWork);
 
             var page = MenuState == StateChestZone;
             SetActive(ChestZoneHint, page);

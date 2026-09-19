@@ -32,16 +32,31 @@ namespace AstvardServerMod
         // что кнопка не работает.
         private const int SortRecheckMoves = 12;
 
-        private const float SortRecheckFor = 15f;
+        // Сколько перепроверка живёт, если её никто не остановит. Кончается она не по
+        // часам, а по работе - проходом, которому нечего было переложить, - но предел
+        // нужен: раскладка, которая почему-то колеблется, иначе гоняла бы сундуки весь
+        // вечер, а игрок видел бы только «Перепроверяю…» на кнопке.
+        private const float SortRecheckMax = 60f;
+
+        private const int SortRecheckCap = 600;
+
+        private static bool _rechecking;
 
         private static float _recheckUntil;
 
         private static int _recheckMoved;
 
+        // Дошло ли дело хоть до одного прохода. Нет - значит игрок вне зоны или в этой
+        // зоне сейчас разбирает другой, и «всё на своих местах» было бы неправдой:
+        // никто ничего не смотрел.
+        private static bool _recheckRan;
+
+        private static bool _recheckQuiet;
+
         /// <summary>Идёт ли сейчас перепроверка — страница подписывает этим кнопку.</summary>
         internal static bool Rechecking
         {
-            get { return Time.realtimeSinceStartup < _recheckUntil; }
+            get { return _rechecking; }
         }
 
         /// <summary>
@@ -53,13 +68,66 @@ namespace AstvardServerMod
         /// old arrangement standing until the base goes quiet, and from the outside that
         /// is indistinguishable from «не работает».
         /// </summary>
-        internal static void StartRecheck()
+        /// <param name="quiet">
+        /// Запущена сама, а не кнопкой: молчит, пока не доложит итог. Пометка сундука и так
+        /// отвечает игроку своей строкой, и вторая поверх неё стёрла бы первую.
+        /// </param>
+        internal static void StartRecheck(bool quiet = false)
         {
-            _recheckUntil = Time.realtimeSinceStartup + SortRecheckFor;
-            _recheckMoved = 0;
+            var already = _rechecking;
 
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                "Перепроверяю сундуки в зоне");
+            _rechecking = true;
+            _recheckUntil = Time.realtimeSinceStartup + SortRecheckMax;
+
+            // Повторный запуск продлевает начатое, а не начинает заново: с зажатым Shift
+            // помечают стену сундуков подряд, и счёт переложенного должен быть один.
+            if (!already)
+            {
+                _recheckMoved = 0;
+                _recheckRan = false;
+                _recheckQuiet = quiet;
+
+                if (!quiet)
+                    Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                        "Перепроверяю сундуки в зоне");
+            }
+            else if (!quiet)
+            {
+                _recheckQuiet = false;
+            }
+        }
+
+        /// <summary>
+        /// Конец перепроверки — и слово о том, чем она кончилась.
+        ///
+        /// Three endings, because they mean different things to whoever pressed the button:
+        /// something was put right, everything already was, or it never got to look at all -
+        /// the player is outside every zone, or somebody else is working this one. Saying
+        /// «всё на своих местах» for the last of those would be a lie about work nobody did.
+        /// </summary>
+        private static void EndRecheck()
+        {
+            var ran = _recheckRan;
+            var moved = _recheckMoved;
+            var quiet = _recheckQuiet;
+
+            _rechecking = false;
+            _recheckRan = false;
+            _recheckMoved = 0;
+            _recheckQuiet = false;
+
+            if (ran)
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    moved > 0
+                        ? $"Перепроверено: переложено {moved}"
+                        : "Перепроверено: всё на своих местах");
+            else if (!quiet)
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "Перепроверять нечего: сортировка сейчас не идёт");
+
+            // Кнопка подписана состоянием, и без этого она осталась бы «Перепроверяю…»
+            // до следующего открытия панели.
+            RefreshMenu();
         }
 
         // A square reaches to its corner, which is further than its half-side. The sweep
@@ -439,7 +507,10 @@ namespace AstvardServerMod
         /// </summary>
         internal static bool MarkChest(Container container, int mark)
         {
-            PendingSortMark = null;
+            // Shift: пометка остаётся в руках, и следующий открытый сундук получит ту же.
+            // Стена сундуков размечается за один проход, а не за десять заходов в панель.
+            var again = HoldingShift;
+            PendingSortMark = again ? (int?)mark : null;
 
             var view = ViewOf(container);
             if (view == null || !view.IsValid()) return false;
@@ -454,7 +525,14 @@ namespace AstvardServerMod
                 : mark >= 0 ? $"под «{Sorting.Title(mark)}»"
                 : "без пометки — из него разбирают";
 
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Сундук {said}");
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                again ? $"Сундук {said} · Shift — помечай дальше" : $"Сундук {said}");
+
+            // Пометка - это и есть смена раскладки: у категории появился сундук, или у неё
+            // его отняли, и то, что лежит по соседству, с этой секунды лежит не там. Ждать,
+            // пока три хода в секунду разгребут это между повозками, незачем - и просить об
+            // этом кнопкой тоже: момент известен точно.
+            StartRecheck(quiet: true);
             return false;
         }
 
@@ -518,6 +596,9 @@ namespace AstvardServerMod
                 // перезахода. Жалуемся один раз и живём дальше.
                 try
                 {
+                    // Предел живёт здесь, а не в самой проверке: проход, до которого дело не
+                    // дошло, ничего не переложит и не закончит её сам.
+                    if (_rechecking && Time.realtimeSinceStartup > _recheckUntil) EndRecheck();
 
                     var player = Player.m_localPlayer;
                     if (player == null || !SortingOn || !RuleAllows("sort")) continue;
@@ -622,7 +703,8 @@ namespace AstvardServerMod
                     var recheck = Rechecking;
                     var budget = recheck ? SortRecheckMoves : SortMovesPerSweep;
 
-                    var moved = recheck ? TidyBins(bins, plan, budget) : 0;
+                    var tidied = recheck ? TidyBins(bins, plan, budget) : 0;
+                    var moved = tidied;
                     if (moved < budget) moved += SweepOnce(sources, bins, plan, budget - moved);
 
                     // Then put right what is already in the marked chests: a pile that grew
@@ -631,15 +713,17 @@ namespace AstvardServerMod
                     // coming in all evening never tidies itself at all.
                     if (!recheck) moved += TidyBins(bins, plan, Mathf.Max(1, budget - moved));
 
-                    if (recheck) _recheckMoved += moved;
+                    if (recheck)
+                    {
+                        _recheckRan = true;
+                        _recheckMoved += moved;
 
-                    // The pass is over: say what came of it, because «ничего не двинулось»
-                    // and «кнопка не нажалась» look the same from where the player stands.
-                    if (recheck && !Rechecking)
-                        Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                            _recheckMoved > 0
-                                ? $"Перепроверено: переложено {_recheckMoved}"
-                                : "Перепроверено: всё на своих местах");
+                        // Проход, которому нечего было переложить, и есть конец работы.
+                        // Пятнадцать секунд, стоявшие здесь раньше, были числом с потолка:
+                        // на стене сундуков они кончались посередине, а на прибранной базе
+                        // тянулись ещё десять секунд после того, как всё уже легло.
+                        if (tidied <= 0 || _recheckMoved >= SortRecheckCap) EndRecheck();
+                    }
 
                     if (moved <= 0) continue;
 
@@ -840,6 +924,9 @@ namespace AstvardServerMod
         /// it for ever with its own chest standing empty beside it, and a chest emptied of
         /// what it was kept for would never go back to being shared.
         /// </summary>
+        /// <summary>Куда этот предмет годится, лучшее впереди; список переиспользуется.</summary>
+        private static readonly List<int> Targets = new List<int>();
+
         private static int TidyBins(List<Container> bins, Sorting.Plan plan, int budget)
         {
             var moved = 0;
@@ -856,8 +943,31 @@ namespace AstvardServerMod
                     var item = items[i];
                     if (item == null || item.m_shared == null) continue;
 
-                    // Where it belongs already, which is most of everything most sweeps.
-                    if (plan.Belongs(item.m_shared.m_name, CategoryOf(item), at)) continue;
+                    // Не «годится ли здесь», а «нет ли места лучше». «Разное» годится для
+                    // всего - оно для того и есть, - и по старой проверке предмет, однажды
+                    // туда попавший, оставался там навсегда: грибы лежали в «Разном» при
+                    // пустом сундуке «Еда» рядом, и перепроверка честно отвечала, что всё
+                    // на своих местах.
+                    plan.WhereInto(item.m_shared.m_name, CategoryOf(item), Targets);
+
+                    var rank = Targets.IndexOf(at);
+                    if (rank == 0) continue;
+
+                    // Не годится вовсе - годится любой из списка; годится, но не лучший -
+                    // только те, что стоят впереди него.
+                    var limit = rank < 0 ? Targets.Count : rank;
+                    var better = false;
+
+                    for (var t = 0; t < limit && !better; t++)
+                    {
+                        var to = Targets[t];
+                        if (to == at || to < 0 || to >= bins.Count) continue;
+
+                        var room = bins[to].GetInventory();
+                        better = room != null && room.CanAddItem(item);
+                    }
+
+                    if (!better) continue;
 
                     if (Deliver(bins[at], bins, plan, item, at) > 0) moved++;
                 }

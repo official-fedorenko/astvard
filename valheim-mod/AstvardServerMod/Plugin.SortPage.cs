@@ -905,6 +905,7 @@ namespace AstvardServerMod
             SetActive(SortLiftButton, page);
             SetActive(SortPlaceButton, page);
             SetActive(SortZonesButton, page);
+            SetActive(SortRecheckButton, page);
             SetActive(SortMarkButton, page);
 
             var placing = allowed && MenuState == StateSortPlace;

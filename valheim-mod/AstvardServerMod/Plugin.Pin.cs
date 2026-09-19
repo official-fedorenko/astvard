@@ -60,6 +60,22 @@ namespace AstvardServerMod
             return true;
         }
 
+        /// <summary>
+        /// Держит ли игрок Shift — «и дальше», как при постройке.
+        ///
+        /// One meaning in one place: Shift on a click keeps the projection in hand, and Shift
+        /// on a chest keeps the mark or the assignment armed for the next one. Anything that
+        /// is done to a wall of chests one at a time reads it, so it is here, beside the other
+        /// keys every tool shares, rather than as a line copied into each of them.
+        ///
+        /// The game does not take Shift from us: at the click it is «бег», which has nothing
+        /// to do with either, and «alt» for an interaction is Left Alt, not this.
+        /// </summary>
+        internal static bool HoldingShift
+        {
+            get { return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift); }
+        }
+
         private static void SayPinned(bool pinned)
         {
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, pinned ? PinnedMessage : UnpinnedMessage);

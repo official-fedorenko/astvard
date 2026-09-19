@@ -186,6 +186,16 @@ namespace AstvardServerMod
 
         private static float _ghostPinnedHeading;
 
+        // Shift при клике: поставить и остаться с проекцией в руках, как в играх, где
+        // одно и то же ставят десятком подряд. Стена сундуков - ровно такой случай: без
+        // этого на каждую пару приходится заново открывать панель и жать кнопку.
+        private static bool _keepInHand;
+
+        // Была ли эта постройка бесплатной постройкой игрока. Сама постройка этот признак
+        // гасит (BuildOnServerWord), и без него следующая в руках прошла бы мимо паузы,
+        // которую сервер держит именно по нему.
+        private static bool _keepFree;
+
         // Placement adjustments driven by Q/E and shift+Q/E.
         private static float _placeYaw;
 
@@ -460,15 +470,18 @@ namespace AstvardServerMod
             // server's word belongs to the placement before.
             _playerPlacement = false;
             _playerPaidPlacement = false;
+            // И обычной: на постройку садится только то, что само об этом попросит после.
+            _onSurface = false;
             ClearBuildAsk();
             if (_fillSeeding) EndFloorSeed();
             SpawnGhosts();
             _placeYaw = 0f;
             _placeHeight = 0f;
             _ghostPinned = false;
+            _keepInHand = false;
             IsPlacing = true;
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                "ЛКМ — поставить, Esc — отменить, P — закрепить");
+                "ЛКМ — поставить (с Shift — и дальше), Esc — отменить, P — закрепить");
         }
 
         /// <summary>
@@ -495,6 +508,7 @@ namespace AstvardServerMod
         {
             IsPlacing = false;
             _ghostPinned = false;
+            _keepInHand = false;
             if (_fillSeeding) EndFloorSeed();
             ClearGhosts();
             Log.LogInfo("[AstvardServerMod] Placement cancelled.");
@@ -663,6 +677,11 @@ namespace AstvardServerMod
 
             if (Input.GetMouseButtonDown(0) && !_building)
             {
+                // Читается до всех отказов ниже: клик, который ничем не кончился, руки
+                // не освобождает, и с Shift он тоже ничего не меняет.
+                _keepInHand = shift;
+                _keepFree = _playerPlacement;
+
                 if (RefuseWhileBuilding())
                 {
                     _inputHeldUntil = Time.time + 0.3f;
@@ -727,7 +746,16 @@ namespace AstvardServerMod
         private static void ToggleGhostPin(Player player)
         {
             _ghostPinned = !_ghostPinned;
-            if (_ghostPinned)
+            if (_ghostPinned && _onSurface && GhostRoot != null)
+            {
+                // Ряд закрепляется там, где он сейчас стоит, а не перед игроком: он уже
+                // сидит на постройке, и прыжок к ногам был бы потерей найденного места.
+                // Поворот и высота прибавляются к закреплённому каждый кадр, поэтому
+                // запоминаем их без них же.
+                _ghostPinnedAt = GhostRoot.transform.position - Vector3.up * _placeHeight;
+                _ghostPinnedHeading = GhostRoot.transform.eulerAngles.y - _placeYaw;
+            }
+            else if (_ghostPinned)
             {
                 var forward = GhostForward(player);
                 _ghostPinnedAt = player.transform.position + forward * PlacementDistance;
@@ -748,6 +776,13 @@ namespace AstvardServerMod
         private static void UpdateGhostTransform(Player player)
         {
             if (GhostRoot == null) return;
+
+            // Ряд сундуков ищет не землю перед игроком, а постройку под прицелом.
+            if (_onSurface)
+            {
+                UpdateSurfaceGhost(player);
+                return;
+            }
 
             Vector3 position;
             float heading;
@@ -994,7 +1029,9 @@ namespace AstvardServerMod
                 // levelled underneath would already have decided what it was resting on.
                 // Asked here as well as where the switch is drawn: a page open since before
                 // the admins closed levelling would otherwise still level.
-                if (IsLevelGroundEnabled && (IsAdminUnlocked || RuleAllows("level"))
+                // Не для того, что ставится на постройку: сундуки на полке второго этажа
+                // не повод рыть площадку под домом.
+                if (IsLevelGroundEnabled && !_onSurface && (IsAdminUnlocked || RuleAllows("level"))
                     && ClipboardHasBuildPieces())
                 {
                     // Its pieces join the step, so undoing that pad takes the build with it.
@@ -1068,8 +1105,35 @@ namespace AstvardServerMod
                 ClearGhosts();
                 _building = false;
                 if (record.Running) EndBuild(record);
+
+                // Shift при клике: то же самое снова в руках. Отменённую на полпути не
+                // возвращаем - её только что убрали, и вернуть её значит спорить с тем,
+                // кто нажал «Отменить постройку».
+                if (_keepInHand && !record.Cancelled) KeepInHand();
                 RefreshMenu();
             }
+        }
+
+        /// <summary>
+        /// Ещё одна такая же в руках — по Shift при клике.
+        ///
+        /// The same clipboard, the same turn and the same height: what is being put down ten
+        /// times over is the same thing each time, and re-aiming it from scratch is the work
+        /// this is meant to save. Only the pin is dropped - a pinned preview would build the
+        /// next one into the one just built.
+        /// </summary>
+        private static void KeepInHand()
+        {
+            _keepInHand = false;
+            if (Clipboard.Count == 0 || Player.m_localPlayer == null) return;
+
+            // Put back exactly as it was marked: the build clears the free-build flag, and
+            // without it the next one would go up without asking the server about the pause.
+            _playerPlacement = _keepFree;
+
+            SpawnGhosts();
+            _ghostPinned = false;
+            IsPlacing = true;
         }
 
         /// <summary>

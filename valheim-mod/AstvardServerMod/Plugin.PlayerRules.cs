@@ -198,6 +198,10 @@ namespace AstvardServerMod
             // Open: a zone is one man's corner of the base, and who works in it is his
             // business. Closed, zones still work - only nobody new can be written in.
             ToggleRule("sharezone", "SharedZones", "Общие зоны", RuleGroup.Features, true),
+            // Платно, как пол и забор: пара сундуков - это материалы, а разобранный молотом
+            // сундук отдаёт их назад.
+            ChoiceRule("chests", "Chests", "Сундуки", RuleGroup.Features, ChoicePaid,
+                       "Пара сундуков на постройку.\nДаром — с паузой между\nпостройками, платно — без неё."),
             LimitRule("zone", "Zone", "Зона", RuleGroup.Features, false,
                       "радиус", MinZoneRadius, MaxZoneRadius, MinZoneRadius),
         };

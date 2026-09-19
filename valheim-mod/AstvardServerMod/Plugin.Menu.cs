@@ -83,6 +83,8 @@ namespace AstvardServerMod
         private const int StateChestZone = 65;  // даль, с которой станции видят сундуки
         private const int StateSortCrew = 66;   // кто вписан в зону сортировки
         private const int StateSortInvite = 67; // кого из тех, кто в игре, вписать
+        private const int StateChestRow = 68;   // пара сундуков по середине постройки
+        private const int StateChestWork = 69;  // всё про сундуки: подача, сбор, зона, установка
 
         internal static GameObject Panel;
 
@@ -225,6 +227,14 @@ namespace AstvardServerMod
             FeaturesButton = MakeButton(gui, "Функции", () =>
             {
                 MenuState = StateFeatures;
+                RefreshMenu();
+            });
+
+            // Четыре кнопки про сундуки стояли вперемешку с остальными «Функциями», а
+            // занимаются одним и тем же делом и нужны обычно подряд.
+            ChestWorkButton = MakeButton(gui, "Работа с сундуками", () =>
+            {
+                MenuState = StateChestWork;
                 RefreshMenu();
             });
 
@@ -792,6 +802,7 @@ namespace AstvardServerMod
             CreateRunePageWidgets(gui);
             CreateSortPageWidgets(gui);
             CreateChestZoneWidgets(gui);
+            CreateChestRowWidgets(gui);
             CreateHelperWidgets(gui);
             CreateTestChestWidget(gui);
 
@@ -1073,7 +1084,9 @@ namespace AstvardServerMod
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;
                 else if (MenuState == StateSortCrew) MenuState = StateSortZone;
                 else if (MenuState == StateSortInvite) MenuState = StateSortCrew;
-                else if (MenuState == StateChestZone) MenuState = StateFeatures;
+                else if (MenuState == StateChestZone) MenuState = StateChestWork;
+                else if (MenuState == StateChestRow) MenuState = StateChestWork;
+                else if (MenuState == StateChestWork) MenuState = StateFeatures;
                 else if (MenuState == StateSorting) MenuState = StateFeatures;
                 else if (MenuState == StateHelper) MenuState = StateFeatures;
                 else if (MenuState == StateRuneGrant) MenuState = StateRunes;
@@ -1081,7 +1094,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateSettings) MenuState = StateAdmin;
                 else if (MenuState == StatePlayerTemplates) MenuState = StateSharedCategories;
                 else if (MenuState == StatePlayerZone) MenuState = StateFeatures;
-                else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateFeatures;
+                else if (MenuState == StateFill || MenuState == StateCollect) MenuState = StateChestWork;
                 else if (MenuState == StateZoneEdit) MenuState = StateZone;
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
                 else if (MenuState == StateZoneOthers) MenuState = StateZone;
@@ -1309,8 +1322,9 @@ namespace AstvardServerMod
 
             // Everything below is open to every player, not just admins.
             SetActive(FeaturesButton, MenuState == StateRoot);
-            SetActive(FillCategoryButton, MenuState == StateFeatures);
-            SetActive(CollectCategoryButton, MenuState == StateFeatures);
+            SetActive(ChestWorkButton, MenuState == StateFeatures);
+            SetActive(FillCategoryButton, MenuState == StateChestWork);
+            SetActive(CollectCategoryButton, MenuState == StateChestWork);
 
             SetActive(FillHint, MenuState == StateFill);
             SetActive(FillButton, MenuState == StateFill);
@@ -1448,6 +1462,7 @@ namespace AstvardServerMod
             RefreshRunePageVisibility(admin);
             RefreshSortVisibility();
             RefreshChestZoneVisibility();
+            RefreshChestRowVisibility();
             RefreshHelperVisibility(admin);
             RefreshBuildSettingsVisibility(admin);
             RebuildTemplateViews();

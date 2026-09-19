@@ -316,7 +316,8 @@ namespace AstvardServerMod
         private static void SayClosedToPlayers(string name)
         {
             var what = name == "#floor" ? "Пол" : name == "#wall" ? "Стену" : name == "#fence" ? "Забор"
-                : name == "#copy" ? "Копию" : name == "#bridge" ? "Мост" : $"«{name}»";
+                : name == "#copy" ? "Копию" : name == "#bridge" ? "Мост"
+                : name == "#chests" ? "Сундуки" : $"«{name}»";
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"{what} админ больше не разрешает");
             AskSharedList();
         }

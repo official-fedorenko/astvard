@@ -1302,5 +1302,32 @@ namespace AstvardServerMod
             var height = deck - ground[index];
             return height > 0f ? height : 0f;
         }
+
+        /// <summary>
+        /// Где стоит каждая деталь ряда, считая от его середины поперёк. Ряд всегда
+        /// симметричен: пара сундуков на плите должна закрыть её ровно, а не съехать на
+        /// полшага, и решать это «на глаз» стрелками - работа, которую никто не просил.
+        /// </summary>
+        internal static float[] RowOffsets(float width, float gap, int count)
+        {
+            if (count <= 0) return new float[0];
+
+            var step = width + gap;
+            var offsets = new float[count];
+            for (var i = 0; i < count; i++)
+                offsets[i] = (i - (count - 1) * 0.5f) * step;
+
+            return offsets;
+        }
+
+        /// <summary>
+        /// Сколько ряд займёт поперёк. Щелей на один меньше, чем деталей - на этом легко
+        /// ошибиться, а ошибка выходит ровно в одну щель и видна только на широкой полке.
+        /// </summary>
+        internal static float RowSpan(float width, float gap, int count)
+        {
+            if (count <= 0) return 0f;
+            return count * width + (count - 1) * gap;
+        }
     }
 }

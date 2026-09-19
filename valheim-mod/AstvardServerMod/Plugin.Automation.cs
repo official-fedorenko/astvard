@@ -23,6 +23,9 @@ namespace AstvardServerMod
 
         internal static GameObject UnassignChestButton;
 
+        /// <summary>«Функции» → «Работа с сундуками»: подача, сбор, зона и установка вместе.</summary>
+        internal static GameObject ChestWorkButton;
+
         internal static GameObject FillCategoryButton;
 
         internal static GameObject CollectCategoryButton;
@@ -103,7 +106,10 @@ namespace AstvardServerMod
         /// </summary>
         internal static bool SetChestRole(Container container, bool supply, bool enabled)
         {
-            PendingChestAssign = null;
+            // Shift: назначение остаётся в руках, как и пометка сортировщика. Подача и сбор
+            // назначаются пачкой у одной мастерской, а не по одному сундуку за заход.
+            var again = HoldingShift;
+            PendingChestAssign = again ? (bool?)enabled : null;
 
             var view = ViewOf(container);
             if (view == null || !view.IsValid()) return false;
@@ -125,7 +131,8 @@ namespace AstvardServerMod
                     ? (enabled ? "Сундук назначен на подачу" : "Подача с сундука снята")
                     : (enabled ? "Сундук назначен для сбора" : "Сундук отвязан");
 
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, message);
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                again ? message + " · Shift — назначай дальше" : message);
             Log.LogInfo("[AstvardServerMod] Chest " + (supply ? "supply " : "collect ")
                         + (enabled ? "set" : "cleared") + ".");
             return true;
