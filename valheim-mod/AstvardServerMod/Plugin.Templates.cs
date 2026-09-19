@@ -212,7 +212,8 @@ namespace AstvardServerMod
             return state == StateTemplates || state == StateTemplateList || state == StateSharedCategories
                    || state == StateSharedList || state == StatePlayerTemplates || state == StateAllowedList
                    || state == StateRunes || state == StateSortZones
-                   || state == StateSortCrew || state == StateSortInvite;
+                   || state == StateSortCrew || state == StateSortInvite
+                   || state == StateSortMark;
         }
 
         private static bool IsCategoryPage(int state)
@@ -235,6 +236,8 @@ namespace AstvardServerMod
                 case StateRunes:
                     return admin;
                 case StateSortZones:
+                    return RuleAllows("sort");
+                case StateSortMark:
                     return RuleAllows("sort");
                 case StateSortCrew:
                 case StateSortInvite:
@@ -259,6 +262,7 @@ namespace AstvardServerMod
                 case StateAllowedList: return AllowedTemplates().Count;
                 case StateRunes: return RosterShown().Count;
                 case StateSortZones: return SortingZones().Count;
+                case StateSortMark: return MarkChoices().Count;
                 case StateSortCrew: return CrewZone() != null ? CrewZone().Members.Count : 0;
                 case StateSortInvite: return InviteChoices().Count;
                 default: return 0;

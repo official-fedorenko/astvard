@@ -186,6 +186,7 @@ namespace AstvardServerMod
 
                 here.Add(peer.m_uid);
                 SendSortKinds(peer);
+                SendSortCats(peer);
 
                 var theirs = new List<Sorting.Zone>();
                 foreach (var zone in ServerZones)

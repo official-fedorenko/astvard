@@ -1040,12 +1040,23 @@ test('постройки: кому открыта постройка решае�
 
 async function resetSorting() {
   await pool.query('DELETE FROM game_sort_items');
+  await pool.query('DELETE FROM game_sort_categories');
   await pool.query('INSERT INTO game_sort_sync (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
   await pool.query("UPDATE game_sort_sync SET revision = 0, seeded = false, categories = ''," +
                    ' mod_seen_at = NULL, mod_applied_revision = 0');
 }
 
 const sortRow = (...fields) => fields.join('|');
+
+// Один вход на все проверки сортировки. У входа свой предел попыток на адрес (восемь), а
+// в тестах адрес у всех один: каждый лишний «войти» приближает не свой тест, а следующий
+// за ним к отказу 429 — и выглядит это как поломка там, где её нет.
+let sortingCookie = null;
+
+async function sortingLogin() {
+  if (!sortingCookie) sortingCookie = await loginAs('superadmin', '1234qwer', '10.50.2.1');
+  return sortingCookie;
+}
 
 async function sortingPush(lines) {
   const res = await fetch(`${baseUrl}/api/game/sorting`, {
@@ -1065,7 +1076,7 @@ const sortingItem = (answer, kind) => answer.json.items.find((item) => item.kind
 
 test('сортировка: каталог от мода, пачка с сайта — одна ревизия, снятый выбор не «Разное»', async () => {
   await resetSorting();
-  const cookie = await loginAs('superadmin', '1234qwer', '10.50.2.1');
+  const cookie = await sortingLogin();
 
   assert.deepStrictEqual((await sortingPull(0)).lines, ['seed needed'], 'пустой сайт просит каталог');
 
@@ -1113,8 +1124,60 @@ test('сортировка: каталог от мода, пачка с сайт
   assert.ok(!(await sortingPull(0)).lines.some((line) => line.startsWith('$test_sort_hide=')));
 });
 
+test('сортировка: полки заводит админ, и номер у них вечный', async () => {
+  await resetSorting();
+  const cookie = await sortingLogin();
+  const cats = (body, extra = {}) => api('/api/admin/sorting/categories',
+    { method: 'POST', body, ...extra });
+  const edit = (body) => api('/api/admin/sorting/categories', { method: 'PATCH', cookie, body });
+
+  await sortingPush(['#categories Разное|Материалы|Еда',
+    sortRow('$test_cat_ore', 'Руда', 'Material', 1)]);
+
+  // Засев: полки пришли от мода и встали по своим номерам.
+  const seeded = await api('/api/admin/sorting', { cookie });
+  assert.deepStrictEqual(seeded.json.categories, ['Разное', 'Материалы', 'Еда']);
+  assert.strictEqual(seeded.json.categoryRows[0].builtIn, true, 'пришедшие от мода — встроенные');
+
+  // Второй каталог засев не повторяет: имя, изменённое здесь, остаётся здешним.
+  assert.strictEqual((await edit({ id: 2, title: 'Харчи' })).status, 200);
+  await sortingPush(['#categories Разное|Материалы|Еда',
+    sortRow('$test_cat_ore', 'Руда', 'Material', 1)]);
+  assert.strictEqual((await api('/api/admin/sorting', { cookie })).json.categories[2], 'Харчи');
+
+  // Новая полка берёт следующий номер и уезжает моду отдельной строкой.
+  const added = await cats({ title: 'Слитки' }, { cookie });
+  assert.strictEqual(added.status, 200);
+  assert.strictEqual(added.json.id, 3);
+
+  let pull = await sortingPull(0);
+  assert.ok(pull.lines.includes('cat 3=Слитки'));
+  assert.ok(pull.lines.includes('cat 2=Харчи'), 'переименование доезжает до мода');
+
+  // На новую полку можно положить предмет.
+  assert.strictEqual((await api('/api/admin/sorting/item',
+    { method: 'PATCH', cookie, body: { kind: '$test_cat_ore', category: 3 } })).status, 200);
+  assert.ok((await sortingPull(0)).lines.includes('$test_cat_ore=3'));
+
+  // Убранная полка уходит из ответа, и выбор, который на неё ссылался, снимается:
+  // иначе он остался бы указывать в пустоту.
+  assert.strictEqual((await edit({ id: 3, removed: true })).status, 200);
+  pull = await sortingPull(0);
+  assert.ok(!pull.lines.some((line) => line.startsWith('cat 3=')));
+  assert.ok(!pull.lines.some((line) => line.startsWith('$test_cat_ore=')));
+
+  // А номер за ней остаётся навсегда: в сундуках в игре лежит именно он.
+  assert.strictEqual((await cats({ title: 'Уголь' }, { cookie })).json.id, 4);
+
+  // Встроенную убрать нельзя, занятое имя занять нельзя, мусор не проходит.
+  assert.strictEqual((await edit({ id: 0, removed: true })).status, 409);
+  assert.strictEqual((await cats({ title: 'Уголь' }, { cookie })).status, 409);
+  assert.strictEqual((await cats({ title: 'а=б' }, { cookie })).status, 400);
+  assert.strictEqual((await cats({ title: 'Ничья' })).status, 401, 'без входа — никак');
+});
+
 test('сортировка: пачка проверяет полку, ревизию зря не тратит и чужих не пускает', async () => {
-  const cookie = await loginAs('superadmin', '1234qwer', '10.50.2.2');
+  const cookie = await sortingLogin();
   const batch = (body, extra = {}) => api('/api/admin/sorting/items', { method: 'PATCH', body, ...extra });
 
   assert.strictEqual((await batch({ kinds: [], category: 1 }, { cookie })).status, 400);

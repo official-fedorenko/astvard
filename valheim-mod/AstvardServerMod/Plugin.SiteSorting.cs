@@ -145,6 +145,7 @@ namespace AstvardServerMod
             var lines = answer.Split('\n');
             var revision = _siteSortingApplied;
             var chosen = new System.Text.StringBuilder();
+            var cats = new System.Text.StringBuilder();
             var count = 0;
 
             foreach (var line in lines)
@@ -159,10 +160,27 @@ namespace AstvardServerMod
                     continue;
                 }
 
+                // «cat 8=Слитки» - сами категории, а не выбор для предмета. Мод постарше
+                // такую строку молча пропустит: ключом станет «cat 8», значением - имя,
+                // которое числом не читается. Так и задумано - формат обязан терпеть
+                // старого клиента.
+                if (trimmed.StartsWith("cat "))
+                {
+                    if (cats.Length > 0) cats.Append(';');
+                    cats.Append(trimmed.Substring(4).Trim());
+                    continue;
+                }
+
                 if (chosen.Length > 0) chosen.Append(';');
                 chosen.Append(trimmed);
                 count++;
             }
+
+            // Категории раньше выбора: выбор ссылается на их номера, и применить его
+            // раньше значило бы на одно мгновение раскладывать по списку, которого уже нет.
+            // Пустой список не применяется вовсе - это «сайт про них не сказал», а не
+            // «категорий нет»: сайт всегда присылает их целиком, встроенные в том числе.
+            ApplyCategories(cats.ToString());
 
             var packed = chosen.ToString();
             if (revision == _siteSortingApplied && packed == Sorting.PackChosen()) return;
@@ -240,11 +258,14 @@ namespace AstvardServerMod
         private IEnumerator PostCatalogue(string url, string token, System.Action<bool> done)
         {
             var body = new System.Text.StringBuilder();
+
+            // Засев, а не эхо: сайту отдаются встроенные имена мода, а не те, что он сам
+            // же и прислал. Дальше список его, и второй засев он игнорирует.
             body.Append("#categories ");
-            for (var i = 0; i < Sorting.Count; i++)
+            for (var i = 0; i < Sorting.CategoryTitles.Length; i++)
             {
                 if (i > 0) body.Append('|');
-                body.Append(Sorting.Title(i));
+                body.Append(Sorting.CategoryTitles[i]);
             }
 
             body.Append('\n');
@@ -377,6 +398,13 @@ namespace AstvardServerMod
 
         private const string RpcSortKinds = "AstvardSortKinds";
 
+        private const string RpcSortCats = "AstvardSortCats";
+
+        /// <summary>Категории строкой, как их раздают клиентам.</summary>
+        internal static string SortCatsPacked = "";
+
+        private static readonly Dictionary<long, string> SortCatsSent = new Dictionary<long, string>();
+
         private static string _sortKindsPacked = "";
 
         private static readonly Dictionary<long, string> SortKindsSent = new Dictionary<long, string>();
@@ -384,6 +412,7 @@ namespace AstvardServerMod
         internal static void RegisterSiteSortingRpcs(ZRoutedRpc rpc)
         {
             rpc.Register<string>(RpcSortKinds, OnSortKinds);
+            rpc.Register<string>(RpcSortCats, OnSortCats);
         }
 
         /// <summary>
@@ -399,6 +428,41 @@ namespace AstvardServerMod
 
             SortKindsSent[peer.m_uid] = _sortKindsPacked;
             ZRoutedRpc.instance?.InvokeRoutedRPC(peer.m_uid, RpcSortKinds, _sortKindsPacked);
+        }
+
+        /// <summary>
+        /// Категории - своей RPC, а не довеском к выбору.
+        ///
+        /// Two things in one string would have to be told apart by both ends, and the end
+        /// that matters here is the one we do not control: a client on an older build,
+        /// which would read the whole thing as choices and make nonsense of it. An RPC it
+        /// never registered it simply never hears.
+        /// </summary>
+        private static void SendSortCats(ZNetPeer peer)
+        {
+            if (peer == null || peer.m_socket == null) return;
+            if (SortCatsPacked.Length == 0) return;
+
+            string last;
+            if (SortCatsSent.TryGetValue(peer.m_uid, out last) && last == SortCatsPacked) return;
+
+            SortCatsSent[peer.m_uid] = SortCatsPacked;
+            ZRoutedRpc.instance?.InvokeRoutedRPC(peer.m_uid, RpcSortCats, SortCatsPacked);
+        }
+
+        private static void OnSortCats(long sender, string text)
+        {
+            var net = ZNet.instance;
+            if (net == null || net.IsServer()) return;
+
+            var was = Sorting.PackCategories();
+            ApplyCategories(text);
+            if (Sorting.PackCategories() == was) return;
+
+            // Имя категории раскладку не двигает, а вот убранная категория - двигает: выбор
+            // предмета, который на неё ссылался, снова решает мод. Момент известен точно,
+            // значит и ждать нечего - молча, игрок этого не нажимал.
+            StartRecheck(quiet: true);
         }
 
         private static void OnSortKinds(long sender, string text)

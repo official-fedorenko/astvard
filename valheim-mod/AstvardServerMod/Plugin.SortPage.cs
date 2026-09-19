@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Jotunn.Managers;
 using UnityEngine;
 using UnityEngine.UI;
@@ -62,7 +63,26 @@ namespace AstvardServerMod
 
         internal static GameObject SortMarkHint;
 
-        internal static readonly GameObject[] SortMarkButtons = new GameObject[Sorting.Count];
+        // Столько же, сколько у любого длинного списка в панели, и не потому, что
+        // категорий так мало: их число задаёт сайт и знать его заранее нельзя, а
+        // виджеты заводятся один раз. Длиннее страницы - листается «Выше» и «Ниже».
+        internal static readonly GameObject[] SortMarkButtons = new GameObject[MaxTemplateButtons];
+
+        /// <summary>Категории, которыми сейчас можно пометить сундук.</summary>
+        private static readonly List<int> MarkChoiceList = new List<int>();
+
+        internal static List<int> MarkChoices()
+        {
+            MarkChoiceList.Clear();
+
+            // Убранная категория своего номера не теряет, но и кнопки ей больше не нужно:
+            // пометить ею сундук - значит завести приёмник, которому никто ничего не
+            // положит.
+            for (var i = 0; i < Sorting.Count; i++)
+                if (Sorting.IsCategory(i)) MarkChoiceList.Add(i);
+
+            return MarkChoiceList;
+        }
 
         internal static GameObject SortPrivateButton;
 
@@ -156,6 +176,7 @@ namespace AstvardServerMod
 
             SortMarkButton = MakeButton(gui, "Пометить сундук", () =>
             {
+                _itemOffset = 0;
                 MenuState = StateSortMark;
                 RefreshMenu();
             });
@@ -193,10 +214,19 @@ namespace AstvardServerMod
 
             SortMarkHint = MakeText(gui, "");
 
-            for (var i = 0; i < Sorting.Count; i++)
+            for (var i = 0; i < MaxTemplateButtons; i++)
             {
-                var category = i;
-                SortMarkButtons[i] = MakeButton(gui, Sorting.Title(i), () => ArmSortMark(category));
+                var index = i;
+                SortMarkButtons[i] = MakeButton(gui, "", () =>
+                {
+                    // Кнопка помнит своё место на странице, а не категорию: список может
+                    // смениться с сайта между открытием панели и нажатием.
+                    var choices = MarkChoices();
+                    var at = MenuPaging.Clamp(_itemOffset, choices.Count, MaxTemplateButtons) + index;
+                    if (at >= choices.Count) return;
+
+                    ArmSortMark(choices[at]);
+                });
             }
 
             SortPrivateButton = MakeButton(gui, "Личный", () => ArmSortMark(MarkPrivate));
@@ -1168,7 +1198,16 @@ namespace AstvardServerMod
 
             var marking = allowed && MenuState == StateSortMark;
             SetActive(SortMarkHint, marking);
-            foreach (var button in SortMarkButtons) SetActive(button, marking);
+            var choices = MarkChoices();
+            var from = MenuPaging.Clamp(_itemOffset, choices.Count, MaxTemplateButtons);
+            for (var i = 0; i < SortMarkButtons.Length; i++)
+            {
+                var at = from + i;
+                var show = marking && at < choices.Count;
+
+                if (show) SetLabel(SortMarkButtons[i], Sorting.Title(choices[at]));
+                SetActive(SortMarkButtons[i], show);
+            }
             SetActive(SortPrivateButton, marking);
             SetActive(SortHoldButton, marking);
             SetActive(SortClearButton, marking);

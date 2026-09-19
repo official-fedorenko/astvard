@@ -1001,6 +1001,22 @@
              перепись — подо что готовить стену сундуков, — и фильтр. -->
         <div class="shelf-chips" id="sortingShelves"></div>
 
+        <!-- Полки заводит и переименовывает админ. Номер полки лежит в самих сундуках в
+             игре, поэтому он выдаётся раз и навсегда: переименование бесплатно, а
+             убранная полка свой номер уносит с собой и никому его не отдаёт. -->
+        <details class="shelf-editor" id="sortingCategories">
+          <summary>Настроить полки</summary>
+          <p class="muted">Имя можно менять когда угодно — сундуки в игре помечены номером, а не
+             словом. Убрать можно только свою полку, и предметы с неё вернутся под решение
+             сервера. Игровой сервер подхватит это за минуту.</p>
+          <div id="sortingCategoriesBody"></div>
+          <form class="toolbar-form" id="sortingCategoryAdd">
+            <input type="text" id="sortingCategoryTitle" class="form-control" maxlength="24"
+                   placeholder="Новая полка, например «Слитки»">
+            <button class="btn" type="submit">Добавить полку</button>
+          </form>
+        </details>
+
         <div class="table-container">
           <div class="table-toolbar">
             <div class="toolbar-form">

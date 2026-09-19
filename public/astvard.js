@@ -1065,6 +1065,41 @@ function renderSortingTypes() {
   select.value = types.includes(chosen) ? chosen : '';
 }
 
+/**
+ * Редактор полок. Номер показан рядом с именем нарочно: он и есть то, чем помечены
+ * сундуки в игре, и по нему потом читается лог сервера.
+ */
+function renderSortingCategories() {
+  const box = document.getElementById('sortingCategoriesBody');
+  if (!box) return;
+
+  const rows = sortingState.categoryRows || [];
+  if (!rows.length) {
+    box.innerHTML = '<p class="muted">Сервер ещё не присылал список полок.</p>';
+    return;
+  }
+
+  box.innerHTML = rows.map((row) => {
+    const marks = [];
+    if (row.builtIn) marks.push('<span class="badge badge-muted">встроенная</span>');
+    if (row.removed) marks.push('<span class="badge badge-warning">убрана</span>');
+
+    // Встроенную убрать нельзя: по ней сервер раскладывает сам, когда о предмете
+    // ничего не сказано, и полка без имени осталась бы над половиной базы.
+    const toggle = row.builtIn
+      ? ''
+      : `<button class="btn btn-sm btn-secondary shelf-toggle" data-id="${row.id}"`
+        + ` data-removed="${row.removed}">${row.removed ? 'Вернуть' : 'Убрать'}</button>`;
+
+    return `<div class="shelf-row${row.removed ? ' removed' : ''}" data-id="${row.id}">`
+      + `<span class="shelf-row__id">№${row.id}</span>`
+      + `<input type="text" class="form-control shelf-title" maxlength="24"`
+      + ` data-id="${row.id}" value="${escapeHtml(row.title)}">`
+      + marks.join(' ') + toggle
+      + '</div>';
+  }).join('');
+}
+
 function renderSortingCount(shown) {
   const line = document.getElementById('sortingCount');
   if (!line) return;
@@ -1132,6 +1167,7 @@ function renderSorting() {
 
   renderSortingSync();
   renderSortingShelves();
+  renderSortingCategories();
   renderSortingTypes();
   renderSortingBulk();
 
@@ -1272,12 +1308,21 @@ function bindSortingHandlers() {
 
     if (e.target.closest('#sortingBulkApply')) return sortingBulkApply();
 
+    const toggle = e.target.closest('.shelf-toggle');
+    if (toggle) return sortingToggleCategory(Number(toggle.dataset.id), toggle.dataset.removed !== 'true');
+
     // Тап по свёрнутой карточке — как в таблицах выше. Галочка и список из этого
     // исключены: по ним тап значит своё.
     if (!astvardCardsMode() || e.target.closest('button, a, label, input, select')) return undefined;
     const row = e.target.closest('#sortingItemsBody tr[data-kind]');
     if (row) showSortingDetail(row.dataset.kind);
     return undefined;
+  });
+
+  document.addEventListener('submit', (e) => {
+    if (e.target.id !== 'sortingCategoryAdd') return;
+    e.preventDefault();
+    sortingAddCategory();
   });
 
   document.addEventListener('input', (e) => {
@@ -1299,6 +1344,9 @@ function bindSortingHandlers() {
       return renderSortingBulk();
     }
 
+    const title = e.target.closest('.shelf-title');
+    if (title) return sortingRenameCategory(Number(title.dataset.id), title.value);
+
     const pick = e.target.closest('.sorting-pick');
     if (!pick) return undefined;
 
@@ -1319,6 +1367,75 @@ function bindSortingHandlers() {
     showToast(`${item ? item.title || kind : kind}: ${pick.value === '' ? 'решает сервер' : `«${sortingTitle(Number(pick.value))}»`}`);
     return undefined;
   });
+}
+
+/** Новая полка. Номер выдаёт сервер — здесь его не выбирают и выбрать нельзя. */
+async function sortingAddCategory() {
+  const field = document.getElementById('sortingCategoryTitle');
+  const title = field ? field.value.trim() : '';
+  if (!title) return;
+
+  const res = await fetch('/api/admin/sorting/categories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return showToast(data.message || 'Не удалось завести полку', 'error');
+
+  if (field) field.value = '';
+  showToast(`Полка «${title}» заведена под номером ${data.id}`);
+  return loadSortingSection();
+}
+
+async function sortingRenameCategory(id, title) {
+  const name = String(title || '').trim();
+  const was = (sortingState.categoryRows || []).find((row) => row.id === id);
+  if (!was || name === was.title) return undefined;
+
+  const res = await fetch('/api/admin/sorting/categories', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, title: name })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(data.message || 'Не удалось переименовать', 'error');
+    return loadSortingSection();
+  }
+
+  showToast(`«${was.title}» теперь «${name}»`);
+  return loadSortingSection();
+}
+
+async function sortingToggleCategory(id, removed) {
+  const row = (sortingState.categoryRows || []).find((one) => one.id === id);
+  if (!row) return undefined;
+
+  if (removed) {
+    const yes = await confirmDialog(
+      `Сундуки, помеченные «${row.title}», останутся помеченными — сервер знает их по номеру, `
+      + 'а не по имени, и разнесёт то, что в них лежит, по остальным полкам. Предметы, '
+      + 'отправленные на эту полку, вернутся под решение сервера.',
+      { title: `Убрать полку «${row.title}»?`, okText: 'Убрать', danger: true }
+    );
+
+    if (!yes) return undefined;
+  }
+
+  const res = await fetch('/api/admin/sorting/categories', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, removed })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return showToast(data.message || 'Не вышло', 'error');
+
+  showToast(removed ? `Полка «${row.title}» убрана` : `Полка «${row.title}» вернулась`);
+  return loadSortingSection();
 }
 
 bindSortingHandlers();

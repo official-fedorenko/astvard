@@ -29,6 +29,21 @@ namespace AstvardServerMod
             "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи", "Лут"
         };
 
+        /// <summary>
+        /// Живой список категорий: номер - имя. Встроенные выше - это его начало и его
+        /// запас на случай, если снаружи ничего не сказали.
+        ///
+        /// The number is what lies in the chest itself, so it has to be forever. Renaming
+        /// is free, a new category takes the next number, and removing one leaves an empty
+        /// place rather than closing the gap: shift the neighbours and a whole wall of
+        /// marked chests starts keeping something other than what is written on it, with
+        /// nothing to tell anybody it happened.
+        /// </summary>
+        private static readonly List<string> Titles = new List<string>(CategoryTitles);
+
+        /// <summary>Дальше этого номера список не растёт: ответ снаружи бывает и мусором.</summary>
+        public const int MaxCategories = 64;
+
         /// <summary>The catch-all: what an item goes to when no bin wants it by name.</summary>
         public const int Misc = 0;
 
@@ -137,19 +152,85 @@ namespace AstvardServerMod
             return text.ToString();
         }
 
-        public static int Count
+        /// <summary>
+        /// Чужой список категорий: «номер=имя», через точку с запятой.
+        ///
+        /// An empty text puts the built-in list back, because that is «nobody told us
+        /// anything» rather than «there are no categories». A number left out of the text
+        /// keeps its place and loses its name: chests marked with it stay bins, and what
+        /// is in them moves out to where it belongs by itself.
+        /// </summary>
+        public static void ReadCategories(string text)
         {
-            get { return CategoryTitles.Length; }
+            Titles.Clear();
+
+            if (!string.IsNullOrEmpty(text))
+            {
+                foreach (var record in text.Split(';'))
+                {
+                    var at = record.IndexOf('=');
+                    if (at <= 0) continue;
+
+                    int id;
+                    if (!int.TryParse(record.Substring(0, at).Trim(), NumberStyles.Integer,
+                            Invariant, out id)) continue;
+
+                    if (id < 0 || id >= MaxCategories) continue;
+
+                    var title = record.Substring(at + 1).Trim();
+                    if (title.Length == 0) continue;
+
+                    while (Titles.Count <= id) Titles.Add("");
+                    Titles[id] = title;
+                }
+            }
+
+            // Встроенные всегда на своих местах. Переименовать их можно, потерять - нет:
+            // «Разное» есть ответ для всего, чему не нашлось места, и остаться без него
+            // из-за одной опечатки в ответе сайта было бы слишком дорого.
+            for (var i = 0; i < CategoryTitles.Length; i++)
+            {
+                while (Titles.Count <= i) Titles.Add("");
+                if (Titles[i].Length == 0) Titles[i] = CategoryTitles[i];
+            }
         }
 
+        /// <summary>Тот же список строкой - для сравнения и для записи в конфиг.</summary>
+        public static string PackCategories()
+        {
+            var text = new StringBuilder();
+
+            for (var i = 0; i < Titles.Count; i++)
+            {
+                if (Titles[i].Length == 0) continue;
+
+                if (text.Length > 0) text.Append(';');
+                text.Append(i.ToString(Invariant)).Append('=').Append(Titles[i]);
+            }
+
+            return text.ToString();
+        }
+
+        public static int Count
+        {
+            get { return Titles.Count; }
+        }
+
+        /// <summary>Категория, которой можно пометить сундук: она есть и у неё есть имя.</summary>
         public static bool IsCategory(int category)
         {
-            return category >= 0 && category < CategoryTitles.Length;
+            return category >= 0 && category < Titles.Count && Titles[category].Length > 0;
         }
 
         public static string Title(int category)
         {
-            return IsCategory(category) ? CategoryTitles[category] : "?";
+            if (category < 0) return "?";
+            if (category < Titles.Count && Titles[category].Length > 0) return Titles[category];
+
+            // Сундук помечен номером, которого мы не знаем: категорию убрали на сайте, или
+            // список ещё не доехал. Имя-заглушка честнее вопросительного знака - по нему
+            // видно, что это незнакомый номер, а не поломка.
+            return "Категория " + category.ToString(Invariant);
         }
 
         /// <summary>
@@ -161,11 +242,18 @@ namespace AstvardServerMod
             return IsCategory(category) ? category + 1 : 0;
         }
 
-        /// <summary>The category a chest was marked with, or -1 when it was not marked.</summary>
+        /// <summary>
+        /// The category a chest was marked with, or -1 when it was not marked.
+        ///
+        /// Любая пометка читается как приёмник, даже если имени для этого номера сейчас
+        /// нет. Прочитать незнакомый номер как «не помечен» значило бы превратить полный
+        /// сундук в источник и вынести его - а незнакомым он бывает по самым будничным
+        /// причинам: категорию убрали на сайте, список ещё не доехал, клиент зашёл раньше
+        /// сервера.
+        /// </summary>
         public static int FromStored(int stored)
         {
-            var category = stored - 1;
-            return IsCategory(category) ? category : -1;
+            return stored > 0 ? stored - 1 : -1;
         }
 
         /// <summary>Is this chest a destination. Everything else in reach is a source.</summary>

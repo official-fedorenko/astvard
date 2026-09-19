@@ -271,6 +271,13 @@ namespace AstvardServerMod
                 + "перестают жечь, разошёлся — начинают снова. 0 — без предела. "
                 + "«Функции» → «Сортировка» → «Уголь на складе».");
 
+            _sortCategories = config.Bind("Сортировка", "Categories", "",
+                "Служебное: категории, как их назвал сайт, — «номер=имя» через точку с запятой. "
+                + "Ставится само, руками не нужно. Пусто — встроенные восемь. Номер вечен: имя "
+                + "меняется, а то, что уже лежит в помеченных сундуках, от этого не переезжает.");
+
+            Sorting.ReadCategories(_sortCategories.Value);
+
             _feedCooking = config.Bind("Сортировка", "FeedCooking", true,
                 "Класть ли еду на всё, где она готовится: костёр с подставкой, железную "
                 + "кухню, печь для хлеба. false — кухни стоят, запасы целы. "
@@ -349,6 +356,33 @@ namespace AstvardServerMod
         internal static void SetCoalKeep(int amount)
         {
             if (_coalKeep != null) _coalKeep.Value = Mathf.Clamp(amount, 0, 100000);
+        }
+
+        private static BepInEx.Configuration.ConfigEntry<string> _sortCategories;
+
+        /// <summary>
+        /// Принимает список категорий снаружи и запоминает его.
+        ///
+        /// Kept in the config rather than in memory alone because the names are what the
+        /// player reads off a wall of chests, and a client that starts before the server
+        /// has answered would otherwise show «Категория 9» over a chest that has been
+        /// «Слитки» all week. The numbers are safe either way - a mark is a mark - but a
+        /// wall that cannot be read is a wall that gets re-marked by hand.
+        /// </summary>
+        internal static void ApplyCategories(string packed)
+        {
+            if (string.IsNullOrEmpty(packed)) return;
+
+            var was = Sorting.PackCategories();
+            Sorting.ReadCategories(packed);
+
+            var now = Sorting.PackCategories();
+            if (now == was) return;
+
+            if (_sortCategories != null) _sortCategories.Value = now;
+            SortCatsPacked = now;
+
+            Log.LogInfo($"[AstvardServerMod] Sorting: the site named {Sorting.Count} categories.");
         }
 
         private static BepInEx.Configuration.ConfigEntry<bool> _feedCooking;

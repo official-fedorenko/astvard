@@ -70,6 +70,48 @@ module.exports = async function handleGameSorting(req, res, sessionUser, parsedU
       return sendJson(res, 200, { success: true, revision: result.revision, changed: result.changed });
     }
 
+    // Сами категории: завести, переименовать, убрать. Номер при этом не меняется
+    // никогда — он лежит в сундуках в игре, и сдвинуть его значит переписать их все.
+    if (parsedUrl.pathname === '/api/admin/sorting/categories' && method === 'POST') {
+      let body;
+      try {
+        body = await getJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { success: false, message: 'Некорректный запрос' });
+      }
+
+      const result = await sorting.addCategory(body.title, actor.username);
+      if (result.error) return sendJson(res, result.status, { success: false, message: result.error });
+
+      logAction(actor, `Сортировка: новая категория «${result.title}» (№${result.id})`);
+      return sendJson(res, 200, { success: true, revision: result.revision, id: result.id });
+    }
+
+    if (parsedUrl.pathname === '/api/admin/sorting/categories' && method === 'PATCH') {
+      let body;
+      try {
+        body = await getJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { success: false, message: 'Некорректный запрос' });
+      }
+
+      if (body.removed !== undefined) {
+        const result = await sorting.removeCategory(body.id, body.removed, actor.username);
+        if (result.error) return sendJson(res, result.status, { success: false, message: result.error });
+
+        logAction(actor, result.removed
+          ? `Сортировка: категория «${result.title}» убрана`
+          : `Сортировка: категория «${result.title}» возвращена`);
+        return sendJson(res, 200, { success: true, revision: result.revision });
+      }
+
+      const result = await sorting.renameCategory(body.id, body.title, actor.username);
+      if (result.error) return sendJson(res, result.status, { success: false, message: result.error });
+
+      logAction(actor, `Сортировка: категория «${result.was}» теперь «${result.title}»`);
+      return sendJson(res, 200, { success: true, revision: result.revision });
+    }
+
     return sendJson(res, 404, { success: false, message: 'API endpoint не найден' });
   } catch (err) {
     logger.error('[sorting] админка:', err.message);

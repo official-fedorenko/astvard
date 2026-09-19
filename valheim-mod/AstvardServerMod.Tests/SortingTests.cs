@@ -44,12 +44,24 @@ public class SortingTests
     }
 
     [Fact]
-    public void NonsenseInTheChestIsNotACategory()
+    public void AnUnknownNumberInTheChestIsStillAMark()
     {
+        // This used to read an unknown number as «not marked», which was safe only while
+        // the list of categories could not change. Now that the site owns it, an unknown
+        // number is the everyday case - a category taken away, or a list that has not
+        // arrived yet - and reading it as «not marked» would turn a full chest into a
+        // source and carry it off. So a mark is a mark, and only its name is missing.
         Assert.Equal(-1, Sorting.FromStored(-5));
-        Assert.Equal(-1, Sorting.FromStored(999));
-        Assert.Equal(0, Sorting.ToStored(999));     // nothing to store: leave it unmarked
-        Assert.Equal("?", Sorting.Title(999));
+        Assert.Equal(-1, Sorting.FromStored(0));
+
+        Assert.Equal(998, Sorting.FromStored(999));
+        Assert.True(Sorting.IsBin(999));
+        Assert.Equal("Категория 998", Sorting.Title(998));
+
+        // Пометить сундук несуществующей категорией по-прежнему нечем: это спрашивают
+        // там, где выбор делает человек, и выбирать ему не из чего.
+        Assert.Equal(0, Sorting.ToStored(999));
+        Assert.False(Sorting.IsCategory(998));
     }
 
     // ---------------- where an item goes ----------------

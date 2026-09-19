@@ -1066,7 +1066,7 @@ namespace AstvardServerMod
                          MenuState == StateForceDelete ||
                          MenuState == StateWeather) MenuState = StateCheats;
                 else if (MenuState == StateWind || MenuState == StateEnv) MenuState = StateWeather;
-                else if (MenuState == StateSpawners) MenuState = StateBuild;
+                else if (MenuState == StateSpawners) MenuState = StateCheats;
                 else if (MenuState == StateFood) MenuState = StateCheats;
                 else if (MenuState == StateSpawnerList) MenuState = StateSpawners;
                 else if (MenuState == StateTemplateSource) MenuState = IsAdminUnlocked ? StateBuild : StatePlayerBuild;
@@ -1375,7 +1375,10 @@ namespace AstvardServerMod
             // возможности, а не переставляет меню - искать привычный пункт в другом месте
             // только потому, что ты админ, незачем.
             SetActive(BuildButton, admin && MenuState == StateRoot);
-            SetActive(TestChestButton, admin && MenuState == StateBuild);
+            // Сундук для проверки и спавнеры уехали в «Читы» по просьбе хозяина: на
+            // странице «Построек» остаётся то, что строят, а эти двое - про пробу и
+            // про тварей, то есть ровно то, чем «Читы» и заняты.
+            SetActive(TestChestButton, admin && MenuState == StateCheats);
 
             RefreshCheatLabels();
             SetActive(GodButton, admin && MenuState == StateCheats);
@@ -1437,7 +1440,7 @@ namespace AstvardServerMod
             SetActive(CopyButton, admin && MenuState == StateBuild);
             SetActive(PasteButton, admin && MenuState == StateBuild);
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
-            SetActive(SpawnerButton, admin && MenuState == StateBuild);
+            SetActive(SpawnerButton, admin && MenuState == StateCheats);
             SetActive(FenceButton, admin && MenuState == StateBuild);
             // The fence page is a player's too, while the admins keep fences open to them.
             var fencePage = MenuState == StateFence && RuleAllows("fence");

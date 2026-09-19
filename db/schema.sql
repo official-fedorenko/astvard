@@ -404,6 +404,20 @@ CREATE TABLE IF NOT EXISTS game_sort_items (
       updated_by TEXT
     );
 
+-- Категории сортировщика. Номер — это то, что лежит в самом сундуке в игре, поэтому
+-- он выдаётся раз и навсегда: переименовать можно, а сдвинуть нельзя, иначе стена
+-- помеченных сундуков разом станет хранить не то, что на ней написано. Убранная
+-- категория остаётся строкой с removed = true — её номер не переиспользуется никогда.
+CREATE TABLE IF NOT EXISTS game_sort_categories (
+      id INTEGER PRIMARY KEY,
+      title TEXT NOT NULL,
+      built_in BOOLEAN NOT NULL DEFAULT false,
+      removed BOOLEAN NOT NULL DEFAULT false,
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ,
+      updated_by TEXT
+    );
+
 CREATE TABLE IF NOT EXISTS game_sort_sync (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       revision INTEGER NOT NULL DEFAULT 0,
