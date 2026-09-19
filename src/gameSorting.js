@@ -57,8 +57,25 @@ function categoryList(text) {
 // едут в мод, вертикальная черта — засев, а длинное имя не влезает на кнопку в игре.
 const TITLE_RE = /^[^;=|\r\n]{1,24}$/;
 
-/** Категории как они есть в базе, включая убранные. */
-function categoryRows() {
+/**
+ * Категории как они есть в базе, включая убранные.
+ *
+ * Если таблица пуста, а мод когда-то присылал свой список строкой, — засеваем из неё.
+ * Это тот же засев, только с другого конца: на боевом сайте таблица появляется с
+ * выкаткой, а каталог от мода приходит лишь при следующем запуске игрового сервера, и
+ * между этими двумя событиями админка осталась бы без полок — то есть и без выбора для
+ * предметов, хотя он там давно сделан.
+ */
+async function categoryRows() {
+  const rows = await all('SELECT id, title, built_in, removed, updated_by, updated_at'
+                         + ' FROM game_sort_categories ORDER BY id');
+  if (rows.length) return rows;
+
+  const now = await state();
+  const titles = categoryList(now.categories);
+  if (!titles.length) return rows;
+
+  await seedCategories(titles);
   return all('SELECT id, title, built_in, removed, updated_by, updated_at'
              + ' FROM game_sort_categories ORDER BY id');
 }

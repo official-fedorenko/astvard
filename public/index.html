@@ -185,22 +185,6 @@
             <i data-lucide="folder" style="width: 48px; height: 48px; color: var(--accent-purple); margin-bottom: 12px;"></i>
             <h3 style="margin: 0; font-size: 16px; color: var(--text-primary);">Общие</h3>
           </div>
-          <div class="media-folder-card" onclick="openMediaCategory('tools', 'Инструменты')" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--accent-cyan)'" onmouseout="this.style.borderColor='var(--border-color)'">
-            <i data-lucide="wrench" style="width: 48px; height: 48px; color: var(--accent-cyan); margin-bottom: 12px;"></i>
-            <h3 style="margin: 0; font-size: 16px; color: var(--text-primary);">Инструменты</h3>
-          </div>
-          <div class="media-folder-card" onclick="openMediaCategory('avatars', 'Аватары')" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--accent-amber)'" onmouseout="this.style.borderColor='var(--border-color)'">
-            <i data-lucide="users" style="width: 48px; height: 48px; color: var(--accent-amber); margin-bottom: 12px;"></i>
-            <h3 style="margin: 0; font-size: 16px; color: var(--text-primary);">Аватары</h3>
-          </div>
-          <div class="media-folder-card" onclick="openMediaCategory('articles', 'Статьи')" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--text-secondary)'" onmouseout="this.style.borderColor='var(--border-color)'">
-            <i data-lucide="file-text" style="width: 48px; height: 48px; color: var(--text-secondary); margin-bottom: 12px;"></i>
-            <h3 style="margin: 0; font-size: 16px; color: var(--text-primary);">Статьи</h3>
-          </div>
-          <div class="media-folder-card" onclick="openMediaCategory('support', 'Поддержка')" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--accent-green)'" onmouseout="this.style.borderColor='var(--border-color)'">
-            <i data-lucide="life-buoy" style="width: 48px; height: 48px; color: var(--accent-green); margin-bottom: 12px;"></i>
-            <h3 style="margin: 0; font-size: 16px; color: var(--text-primary);">Поддержка</h3>
-          </div>
         </div>
 
         <!-- FILES VIEW -->
@@ -222,8 +206,7 @@
             <div style="margin-top: 16px; display: none;">
               <select id="uploadCategorySelect" class="form-control" style="width: 150px; display: inline-block;">
                 <option value="general">Общие</option>
-                <option value="tools">Инструменты</option>
-                <option value="avatars">Аватары</option>
+                  <option value="avatars">Аватары</option>
                 <option value="articles">Статьи</option>
                 <option value="support">Поддержка</option>
               </select>
@@ -238,7 +221,6 @@
             <select id="mediaCategorySelect" class="form-control" style="width: 200px; display: none;">
               <option value="all">Все категории</option>
               <option value="general">Общие</option>
-              <option value="tools">Инструменты</option>
               <option value="avatars">Аватары</option>
               <option value="articles">Статьи</option>
               <option value="support">Поддержка</option>
@@ -250,14 +232,6 @@
             <button type="button" class="btn btn-secondary" onclick="openStandardAvatarsModal()">
               <i data-lucide="users"></i>
               <span>Стандартные аватары</span>
-            </button>
-          </div>
-
-          <!-- Иконки категорий инструментов (показывается только в папке «Инструменты») -->
-          <div id="categoryIconsPanel" style="display: none; margin-bottom: 24px;">
-            <button type="button" class="btn btn-secondary" onclick="openCategoryIconsModal()">
-              <i data-lucide="shapes"></i>
-              <span>Стандартные иконки категорий</span>
             </button>
           </div>
 
@@ -312,54 +286,6 @@
                 <span>Скачать копию базы данных</span>
               </a>
               <div style="font-size: 12px; color: hsl(var(--text-muted)); margin-top: 6px;">Скачивает файл db.sqlite целиком. Восстановление: остановите сервер, замените db.sqlite этим файлом, перезапустите.</div>
-            </div>
-
-            <!-- Superadmin-only: тестовые сотрудники -->
-            <div id="testEmployeesBox" class="test-box superadmin-only">
-              <div class="test-box-title">Тестовые сотрудники (только Superadmin)</div>
-              <div class="test-box-buttons">
-                <button type="button" id="addTestEmpBtn" class="btn">
-                  <i data-lucide="user-plus"></i><span>Добавить</span>
-                </button>
-                <button type="button" id="removeTestEmpBtn" class="btn btn-secondary" style="color:#ff6b6b;">
-                  <i data-lucide="user-minus"></i><span>Удалить</span>
-                </button>
-              </div>
-              <div class="test-box-description">Демо-набор из 5 сотрудников с аккаунтами (пароль 1234qwer). Реальные записи не затрагиваются.</div>
-            </div>
-
-            <!-- Superadmin-only test tools (add/remove) -->
-            <div id="testToolsBox" class="test-box superadmin-only">
-              <div class="test-box-title">Тестовые инструменты</div>
-              <div class="test-box-buttons">
-                <button type="button" id="addTestToolBtn" class="btn btn-secondary" style="color:#20c997;">
-                  <i data-lucide="tool-plus"></i><span>Добавить</span>
-                </button>
-                <button type="button" id="removeTestToolBtn" class="btn btn-secondary" style="color:#ff6b6b;">
-                  <i data-lucide="tool-minus"></i><span>Удалить</span>
-                </button>
-              </div>
-              <div class="test-box-description">Демо-набор из 8 инструментов (Bosch, DeWalt) на складе. Реальные записи не затрагиваются.</div>
-            </div>
-
-            <!-- Superadmin-only: полная очистка склада (раздел «Инструмент») -->
-            <div id="clearToolsCatalogBox" class="test-box superadmin-only">
-              <div style="color: #ff6b6b; font-size: 13px; font-weight: 600; margin-bottom: 8px;">⚠️ Очистка склада (раздел «Инструмент»)</div>
-              <button type="button" id="clearToolsCatalogBtn" class="btn btn-danger" style="background: #3a1f1f; border: 1px solid #ff6b6b; color: #ff6b6b;">
-                <i data-lucide="trash-2"></i>
-                <span>Очистить склад</span>
-              </button>
-              <div class="test-box-description">Удалит ВСЕ инструменты со склада (раздел «Инструмент»), включая реальные записи (не только тестовые). Не путать со справочником моделей ниже. Действие необратимо.</div>
-            </div>
-
-            <!-- Superadmin-only: очистка справочника моделей (раздел «Каталог») -->
-            <div id="clearCatalogModelsBox" class="test-box superadmin-only">
-              <div style="color: #ff6b6b; font-size: 13px; font-weight: 600; margin-bottom: 8px;">⚠️ Очистка справочника моделей (раздел «Каталог»)</div>
-              <button type="button" id="clearCatalogModelsBtn" class="btn btn-danger" style="background: #3a1f1f; border: 1px solid #ff6b6b; color: #ff6b6b;">
-                <i data-lucide="trash-2"></i>
-                <span>Очистить справочник моделей</span>
-              </button>
-              <div class="test-box-description">Удалит ВСЕ стандартные модели (Bosch/DeWalt и т.д.) из справочника «Каталог». После этого пропадёт быстрое автозаполнение формы при добавлении инструмента. Действие необратимо.</div>
             </div>
 
             <!-- Superadmin-only demo reset (very handy when presenting the project) -->
@@ -854,13 +780,6 @@
           <input type="text" id="chatSettingsAdminName" class="form-control" placeholder="Администрация" maxlength="60">
           <div style="font-size:12px; color:hsl(var(--text-muted)); margin-top:4px;">Это имя видит пользователь у сообщений от админов, вместо логина.</div>
         </div>
-        <div class="form-group">
-          <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-            <input type="checkbox" id="chatSettingsShowEmployeeName" style="width:18px; height:18px; accent-color: hsl(var(--accent-purple));">
-            <span>Показывать настоящее ФИО сотрудника вместо общего имени</span>
-          </label>
-          <div style="font-size:12px; color:hsl(var(--text-muted)); margin-top:4px;">Если включено и у ответившего админа есть карточка сотрудника — покажется его ФИО.</div>
-        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="closeChatSettingsModal()">Отмена</button>
@@ -940,19 +859,6 @@
 
 
 
-
-
-
-
-  <!-- Lightbox для фото инструмента / авто -->
-  <div id="photoLightbox" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:2000; align-items:center; justify-content:center; cursor:zoom-out;">
-    <img id="photoLightboxImg" src="" style="max-width:92vw; max-height:92vh; border-radius:8px;">
-  </div>
-
-
-
-
-
   <!-- MEDIA PICKER MODAL DIALOG -->
   <div class="modal-overlay" id="mediaPickerModalOverlay">
     <div class="modal" style="max-width: 800px;">
@@ -968,7 +874,6 @@
           <select id="mediaPickerCategorySelect" class="form-control" style="width: 200px;">
             <option value="all">Все категории</option>
             <option value="general">Общие</option>
-            <option value="tools">Инструменты</option>
             <option value="avatars">Аватары</option>
             <option value="articles">Статьи</option>
             <option value="support">Поддержка</option>

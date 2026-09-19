@@ -18,21 +18,10 @@ const handleMedia = require('./src/routes/media');
 const handleSettings = require('./src/routes/settings');
 const handleSupport = require('./src/routes/support');
 const handleUsers = require('./src/routes/users');
-const handleEmployees = require('./src/routes/employees');
-const handleTools = require('./src/routes/tools');
-const handleVehicles = require('./src/routes/vehicles');
-const handleToolCatalog = require('./src/routes/toolCatalog');
-const handleCatalogModels = require('./src/routes/catalogModels');
-const handleCategoryIcons = require('./src/routes/categoryIcons');
-const handleBrands = require('./src/routes/brands');
 const handleNotifications = require('./src/routes/notifications');
-const handleRequests = require('./src/routes/requests');
-const handleWorklogs = require('./src/routes/worklogs');
 const handleStandardAvatars = require('./src/routes/standardAvatars');
 const handleLogs = require('./src/routes/logs');
 const handleResetDemo = require('./src/routes/resetDemo');
-const handleTestEmployees = require('./src/routes/testEmployees');
-const handleTestTools = require('./src/routes/testTools');
 const handleBackup = require('./src/routes/backup');
 const handleTwoFactor = require('./src/routes/twoFactor');
 const handleAuth = require('./src/routes/auth');
@@ -277,11 +266,8 @@ const server = http.createServer(async (req, res) => {
     return handleAuth(req, res, user, parsedUrl, method);
   }
 
-  // Cabinet (own profile / мой инструмент / моё авто — needed for cabinet.html after login)
-  if (pathname === '/api/cabinet/me' || pathname === '/api/cabinet/profile' ||
-      pathname === '/api/cabinet/my-card' ||
-      pathname === '/api/cabinet/my-tools' || pathname === '/api/cabinet/tool-photo' ||
-      pathname === '/api/cabinet/my-vehicles' || pathname === '/api/cabinet/vehicle-photo') {
+  // Cabinet (свой профиль — нужен cabinet.html после входа)
+  if (pathname === '/api/cabinet/me' || pathname === '/api/cabinet/profile') {
     return handleCabinet(req, res, user, parsedUrl, method);
   }
 
@@ -297,64 +283,9 @@ const server = http.createServer(async (req, res) => {
     return handleArticles(req, res, user, parsedUrl, method);
   }
 
-  // CRUD employees (учёт сотрудников)
-  if (pathname.startsWith('/api/crud/employees')) {
-    return handleEmployees(req, res, user, parsedUrl, method);
-  }
-
-  // Инструмент: CRUD инвентаря + выдача/возврат/история + справочник категорий
-  if (pathname.startsWith('/api/crud/tools') || pathname.startsWith('/api/tools/') ||
-      pathname.startsWith('/api/crud/tool-categories')) {
-    return handleTools(req, res, user, parsedUrl, method);
-  }
-
-  // Автопарк: CRUD инвентаря транспорта + выдача/возврат/история + справочник типов
-  if (pathname.startsWith('/api/crud/vehicles') || pathname.startsWith('/api/vehicles/') ||
-      pathname.startsWith('/api/crud/vehicle-categories')) {
-    return handleVehicles(req, res, user, parsedUrl, method);
-  }
-
-  // Справочник моделей (стандартный каталог) для подсказок при добавлении инструмента
-  if (pathname === '/api/tool-catalog' && method === 'GET') {
-    return handleToolCatalog(req, res, user);
-  }
-
-  // Управление стандартным каталогом инструмента (Superadmin для изменений)
-  if (pathname === '/api/catalog-models' || pathname === '/api/catalog-models/clear') {
-    return handleCatalogModels(req, res, user, parsedUrl, method);
-  }
-
-  // Схема полей каталога по категориям (для адаптивной модалки)
-  if (pathname === '/api/catalog-schema' && method === 'GET') {
-    if (!user) return sendJson(res, 401, { success: false, message: 'Неавторизован' });
-    const { FIELD_DEFS, CATEGORY_FIELDS, DEFAULT_FIELDS } = require('./src/catalogSchema');
-    return sendJson(res, 200, { success: true, fieldDefs: FIELD_DEFS, categoryFields: CATEGORY_FIELDS, defaultFields: DEFAULT_FIELDS });
-  }
-
-
-  // Универсальные заявления (пользователь создаёт, админ одобряет)
-  if (pathname === '/api/request-types' || pathname.startsWith('/api/requests')) {
-    return handleRequests(req, res, user, parsedUrl, method);
-  }
-
-  // Учёт рабочего времени (пользователь вносит свои часы, админ видит всех)
-  if (pathname.startsWith('/api/worklogs')) {
-    return handleWorklogs(req, res, user, parsedUrl, method);
-  }
-
   // Media
   if (pathname === '/api/media') {
     return handleMedia(req, res, user, parsedUrl, method, { UPLOADS_DIR });
-  }
-
-  // Иконки категорий инструментов (просмотр / переопределение)
-  if (pathname === '/api/category-icons') {
-    return handleCategoryIcons(req, res, user, parsedUrl, method);
-  }
-
-  // Реестр брендов инструмента с иконками
-  if (pathname === '/api/brands') {
-    return handleBrands(req, res, user, parsedUrl, method);
   }
 
   // Внутренние уведомления от администрации (личный кабинет + отправка из админки)
@@ -395,21 +326,6 @@ const server = http.createServer(async (req, res) => {
   // Superadmin-only: reset demo data
   if (pathname === '/api/admin/reset-demo' && method === 'POST') {
     return handleResetDemo(req, res, user, parsedUrl, method, { UPLOADS_DIR, reloadSettingsCache });
-  }
-
-  // Тестовые сотрудники (добавить/удалить) — только Superadmin
-  if (pathname.startsWith('/api/admin/test-employees/')) {
-    return handleTestEmployees(req, res, user, parsedUrl, method);
-  }
-
-  // Тестовые инструменты (добавить/удалить) — только Superadmin
-  if (pathname.startsWith('/api/admin/test-tools/')) {
-    return handleTestTools(req, res, user, parsedUrl, method);
-  }
-
-  // Полная очистка каталога инструментов (включая реальные записи) — только Superadmin
-  if (pathname.startsWith('/api/admin/tools-catalog/')) {
-    return handleTestTools(req, res, user, parsedUrl, method);
   }
 
   // Superadmin-only: download a full backup of the SQLite database

@@ -36,9 +36,6 @@ const { db, pool, dbReady, seedDefaults, hashPassword } = require('../db');
 const { totp } = require('../src/totp');
 
 let baseUrl;
-// id инструмента, который тесты публичной карточки создают для себя сами:
-// автосид демо-инструмента отключён, поэтому на свежей БД tools пустая.
-let publicToolId;
 
 before(async () => {
   // Schema creation + default-user/article seeding in db.js is async — wait
@@ -51,9 +48,7 @@ before(async () => {
   // выключенными, и следующий прогон падал на наследстве прошлого.
   await pool.query(`
     TRUNCATE users, sessions, settings, articles, media, logs, notifications,
-             notification_reads, support_messages, support_tickets, tools,
-             tool_assignments, tool_photos, tool_requests, requests, servers,
-             employees, work_logs, vehicles, vehicle_assignments, vehicle_photos
+             notification_reads, support_messages, support_tickets, servers
     RESTART IDENTITY CASCADE`);
   await seedDefaults();
 
@@ -63,17 +58,6 @@ before(async () => {
   const { port } = server.address();
   baseUrl = `http://127.0.0.1:${port}`;
 
-  // Инструмент для тестов публичной карточки (/api/public/tool).
-  publicToolId = await new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO tools (name, category, brand, model, serial_number,
-                          inventory_number, status, purchase_date, notes)
-       VALUES (?, ?, ?, ?, ?, ?, 'available', '2024-01-15', ?)`,
-      ['Тестовый перфоратор', 'Перфоратор', 'Bosch', 'GBH 2-28',
-       'TEST-SN-0001', 'INV-TEST-0001', 'Служебная заметка (не для публичной карточки)'],
-      function (err) { err ? reject(err) : resolve(this.lastID); }
-    );
-  });
 });
 
 after(async () => {
@@ -115,24 +99,6 @@ test('public settings endpoint returns key/value pairs without auth', async () =
   const { status, json } = await api('/api/public/settings');
   assert.strictEqual(status, 200);
   assert.ok(json.some(s => s.key === 'site_name'));
-});
-
-test('public tool card endpoint returns identification fields without auth and hides service data', async () => {
-  const { status, json } = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(status, 200);
-  assert.strictEqual(json.success, true);
-  assert.ok(json.tool);
-  assert.strictEqual(json.tool.id, publicToolId);
-  assert.ok(json.tool.name);
-  // Служебные данные не должны утекать в публичную карточку.
-  assert.strictEqual(json.tool.notes, undefined);
-  assert.strictEqual(json.history, undefined);
-  assert.strictEqual(json.stats, undefined);
-});
-
-test('public tool card endpoint returns 404 for a missing tool', async () => {
-  const { status } = await api('/api/public/tool?id=999999');
-  assert.strictEqual(status, 404);
 });
 
 test('login rejects a wrong password', async () => {
@@ -205,12 +171,6 @@ test('типов аккаунта нет: заводится игрок, и со
   assert.ok(made_user, 'аккаунт завёлся');
   assert.strictEqual(made_user.account_type, undefined, 'типа аккаунта в ответе нет');
   assert.strictEqual(made_user.role, 'User');
-
-  // Карточка сотрудника из этой ручки больше не заводится: раздел «Сотрудники»
-  // остался при своих кнопках, но из пользователей туда хода нет.
-  const cards = await pool.query('SELECT count(*)::int AS n FROM employees WHERE email = $1',
-                                 ['player-test@example.com']);
-  assert.strictEqual(cards.rows[0].n, 0, 'карточки сотрудника быть не должно');
 
   // Правка того же аккаунта тоже не знает про тип.
   const changed = await api(`/api/users?id=${made_user.id}`, {
@@ -311,103 +271,6 @@ test('admin static pages redirect to login when there is no session', async () =
   const res = await fetch(`${baseUrl}/admin/`, { redirect: 'manual' });
   assert.strictEqual(res.status, 302);
   assert.ok(res.headers.get('location').includes('/admin/login.html'));
-});
-
-test('public tool card respects GLOBAL visibility settings and enable switch', async () => {
-  // Свежий логин админа (superadmin-сессию к этому моменту уже разлогинили).
-  const login = await api('/api/auth/login', {
-    method: 'POST', ip: '10.0.9.9',
-    body: { username: 'admin', password: '1234qwer' }
-  });
-  assert.strictEqual(login.status, 200);
-  const cookie = login.cookie;
-
-  // По умолчанию карточка включена и показывает все поля.
-  const def = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(def.status, 200);
-  assert.ok(def.json.tool.serial_number);
-
-  // Глобально прячем серийный/инвентарный номера и статус.
-  const saved = await api('/api/settings', {
-    method: 'POST', cookie,
-    body: {
-      public_card_enabled: 'true',
-      public_card_show_serial: 'false',
-      public_card_show_inventory: 'false',
-      public_card_show_status: 'false'
-    }
-  });
-  assert.strictEqual(saved.status, 200);
-
-  // Публичная карточка больше не отдаёт скрытые поля, но имя/бренд на месте.
-  const pub = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(pub.status, 200);
-  assert.ok(pub.json.tool.name);
-  assert.ok(pub.json.tool.brand);
-  assert.strictEqual(pub.json.tool.serial_number, undefined);
-  assert.strictEqual(pub.json.tool.inventory_number, undefined);
-  assert.strictEqual(pub.json.tool.status, undefined);
-
-  // Глобально выключаем карточку — публичный доступ закрыт (404).
-  const off = await api('/api/settings', {
-    method: 'POST', cookie, body: { public_card_enabled: 'false' }
-  });
-  assert.strictEqual(off.status, 200);
-  const pubOff = await api(`/api/public/tool?id=${publicToolId}`);
-  assert.strictEqual(pubOff.status, 404);
-});
-
-test('worklogs: user adds own entry, sees it; admin sees summary; user is forbidden from summary', async () => {
-  // Свежий пользователь заводится прямо в базе: формы регистрации в портале нет,
-  // аккаунт появляется входом через Steam. У дефолтного `user` предыдущий тест
-  // включил 2FA, поэтому нужен чистый.
-  await new Promise((resolve, reject) => {
-    db.run(
-      "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'User')",
-      ['worker_wl', 'worker_wl@example.com', hashPassword('password123')],
-      (err) => (err ? reject(err) : resolve())
-    );
-  });
-  const reg = await api('/api/auth/login', {
-    method: 'POST', ip: '10.20.1.1',
-    body: { username: 'worker_wl', password: 'password123' }
-  });
-  assert.strictEqual(reg.status, 200);
-  const uc = reg.cookie;
-  assert.ok(uc && uc.startsWith('session='));
-
-  // Добавляем запись
-  const add = await api('/api/worklogs', {
-    method: 'POST', cookie: uc,
-    body: { work_date: '2026-08-22', hours: 8, note: 'Тест' }
-  });
-  assert.strictEqual(add.status, 201);
-
-  // Некорректные часы отклоняются
-  const bad = await api('/api/worklogs', {
-    method: 'POST', cookie: uc, body: { work_date: '2026-08-22', hours: 99 }
-  });
-  assert.strictEqual(bad.status, 400);
-
-  // Свои записи + итог
-  const mine = await api('/api/worklogs/mine', { cookie: uc });
-  assert.strictEqual(mine.status, 200);
-  assert.ok(mine.json.entries.length >= 1);
-  assert.ok(mine.json.total >= 8);
-
-  // Пользователю нельзя смотреть сводку по всем
-  const denied = await api('/api/worklogs/summary', { cookie: uc });
-  assert.strictEqual(denied.status, 403);
-
-  // Админ видит сводку с этим пользователем
-  const alogin = await api('/api/auth/login', {
-    method: 'POST', ip: '10.20.2.2',
-    body: { username: 'admin', password: '1234qwer' }
-  });
-  assert.strictEqual(alogin.status, 200);
-  const sum = await api('/api/worklogs/summary', { cookie: alogin.cookie });
-  assert.strictEqual(sum.status, 200);
-  assert.ok(sum.json.users.some(u => u.username === 'worker_wl' && u.total_hours >= 8));
 });
 
 // === Наш сервер: руны и общие постройки из файлов мода ===
@@ -1178,6 +1041,13 @@ test('сортировка: полки заводит админ, и номер 
   const seeded = await api('/api/admin/sorting', { cookie });
   assert.deepStrictEqual(seeded.json.categories, ['Разное', 'Материалы', 'Еда']);
   assert.strictEqual(seeded.json.categoryRows[0].builtIn, true, 'пришедшие от мода — встроенные');
+
+  // Таблица пуста, а строка от мода есть — так выглядит сайт сразу после выкатки,
+  // пока игровой сервер не перезапускался. Полки обязаны появиться сами, иначе
+  // админка осталась бы без выбора для предметов, который там давно сделан.
+  await pool.query('DELETE FROM game_sort_categories');
+  const healed = await api('/api/admin/sorting', { cookie });
+  assert.deepStrictEqual(healed.json.categories, ['Разное', 'Материалы', 'Еда']);
 
   // Встроенные восемь зашиты в мод, и сайт их не переименовывает: показывать здесь
   // одно, а в игре другое — хуже, чем не давать трогать вовсе.

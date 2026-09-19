@@ -113,14 +113,6 @@ async function checkSession() {
       if (resetBox) resetBox.style.display = 'block';
       const backupBox = document.getElementById('backupBox');
       if (backupBox) backupBox.style.display = 'block';
-      const testEmpBox = document.getElementById('testEmployeesBox');
-      if (testEmpBox) testEmpBox.classList.add('visible');
-      const testToolsBox = document.getElementById('testToolsBox');
-      if (testToolsBox) testToolsBox.classList.add('visible');
-      const clearToolsBox = document.getElementById('clearToolsCatalogBox');
-      if (clearToolsBox) clearToolsBox.classList.add('visible');
-      const clearCatalogModelsBox = document.getElementById('clearCatalogModelsBox');
-      if (clearCatalogModelsBox) clearCatalogModelsBox.classList.add('visible');
     }
   } catch (err) {
     console.error('Session check error:', err);
@@ -812,8 +804,6 @@ window.showMediaFolders = () => {
   document.getElementById('mediaFoldersGrid').style.display = 'grid';
   document.getElementById('mediaFilesView').style.display = 'none';
   document.getElementById('mediaSearch').value = '';
-  const iconsPanel = document.getElementById('categoryIconsPanel');
-  if (iconsPanel) iconsPanel.style.display = 'none';
   const avPanel = document.getElementById('standardAvatarsPanel');
   if (avPanel) avPanel.style.display = 'none';
 };
@@ -826,12 +816,6 @@ window.openMediaCategory = (category, title) => {
   document.getElementById('mediaFoldersGrid').style.display = 'none';
   document.getElementById('mediaFilesView').style.display = 'block';
 
-  // Раздел «Иконки категорий» показываем только внутри папки «Инструменты».
-  const iconsPanel = document.getElementById('categoryIconsPanel');
-  if (iconsPanel) {
-    // Показываем только кнопку; сами иконки грузятся при открытии модалки.
-    iconsPanel.style.display = category === 'tools' ? 'block' : 'none';
-  }
 
   // Раздел «Стандартные аватары» показываем только внутри папки «Аватары».
   const avPanel = document.getElementById('standardAvatarsPanel');
@@ -958,7 +942,6 @@ window.openChatSettingsModal = async () => {
     const map = {};
     (rows || []).forEach(r => { map[r.key] = r.value; });
     document.getElementById('chatSettingsAdminName').value = map.support_admin_display_name || 'Администрация';
-    document.getElementById('chatSettingsShowEmployeeName').checked = map.support_show_employee_name === 'true';
   } catch (e) {
     showToast('Не удалось загрузить настройки чата', 'error');
   }
@@ -969,14 +952,12 @@ window.closeChatSettingsModal = () => {
 };
 window.saveChatSettings = async () => {
   const name = document.getElementById('chatSettingsAdminName').value.trim() || 'Администрация';
-  const showEmployeeName = document.getElementById('chatSettingsShowEmployeeName').checked;
   try {
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        support_admin_display_name: name,
-        support_show_employee_name: showEmployeeName ? 'true' : 'false'
+        support_admin_display_name: name
       })
     });
     if (res.ok) {
