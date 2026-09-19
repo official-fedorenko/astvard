@@ -4,10 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const logger = require('../logger');
 
-// Для набора URL'ов определяет, к чему/к кому привязан каждый файл:
-// - фото инструмента (основное или в галерее) → { type:'tool', label, holder }
-// - аватар пользователя → { type:'user', label }
-// Возвращает объект { [file_url]: attachment } через колбэк.
+// Для набора URL'ов определяет, к чему привязан каждый файл. Инструмент и его
+// галерея отсюда ушли вместе с разделом: осталось единственное, к чему файл
+// может быть привязан, — аватар игрока.
 function resolveAttachments(urls, cb) {
   const unique = [...new Set((urls || []).filter(Boolean))];
   if (unique.length === 0) return cb({});
@@ -15,43 +14,14 @@ function resolveAttachments(urls, cb) {
   const ph = unique.map(() => '?').join(',');
   const map = {};
 
-  // Инструменты: основное фото + текущий держатель (через активное назначение).
-  const toolSql = `
-    SELECT t.photo_url AS url, t.name, holder.username AS holder
-    FROM tools t
-    LEFT JOIN tool_assignments ta ON ta.tool_id = t.id AND ta.returned_at IS NULL
-    LEFT JOIN employees e ON e.id = ta.employee_id
-    LEFT JOIN users holder ON holder.id = e.user_id
-    WHERE t.photo_url IN (${ph})`;
-
-  db.all(toolSql, unique, (e1, toolRows) => {
-    (toolRows || []).forEach(r => {
-      map[r.url] = { type: 'tool', label: r.name, holder: r.holder || null };
+  db.all(`SELECT avatar_url AS url, username FROM users WHERE avatar_url IN (${ph})`, unique, (err, rows) => {
+    (rows || []).forEach((r) => {
+      map[r.url] = { type: 'user', label: r.username };
     });
-
-    // Фото из галереи инструмента + кто загрузил.
-    const gallerySql = `
-      SELECT tp.photo_url AS url, t.name, up.username AS uploader
-      FROM tool_photos tp
-      JOIN tools t ON t.id = tp.tool_id
-      LEFT JOIN users up ON up.id = tp.uploaded_by
-      WHERE tp.photo_url IN (${ph})`;
-
-    db.all(gallerySql, unique, (e2, galRows) => {
-      (galRows || []).forEach(r => {
-        if (!map[r.url]) map[r.url] = { type: 'tool', label: r.name, holder: r.uploader || null };
-      });
-
-      // Аватары пользователей.
-      db.all(`SELECT avatar_url AS url, username FROM users WHERE avatar_url IN (${ph})`, unique, (e3, userRows) => {
-        (userRows || []).forEach(r => {
-          if (!map[r.url]) map[r.url] = { type: 'user', label: r.username };
-        });
-        cb(map);
-      });
-    });
+    cb(map);
   });
 }
+
 
 module.exports = async function handleMedia(req, res, user, parsedUrl, method, { UPLOADS_DIR }) {
   if (!user) return sendJson(res, 401, { success: false, message: 'Неавторизован' });

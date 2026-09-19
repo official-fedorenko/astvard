@@ -12,10 +12,8 @@ module.exports = async function handleUsers(req, res, user, parsedUrl, method) {
     // в UI не появится полноценная пагинация.
     const { limit, offset } = parsePagination(parsedUrl);
     db.all(
-      `SELECT u.id, u.username, u.email, u.role, u.avatar_url, u.created_at,
-              e.first_name, e.last_name
+      `SELECT u.id, u.username, u.email, u.role, u.avatar_url, u.created_at
        FROM users u
-       LEFT JOIN employees e ON e.user_id = u.id
        ORDER BY u.id DESC LIMIT ? OFFSET ?`,
       [limit, offset], (err, rows) => {
       if (err) return sendJson(res, 500, { message: 'Ошибка базы данных' });

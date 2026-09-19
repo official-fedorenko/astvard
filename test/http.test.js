@@ -179,9 +179,8 @@ test('типов аккаунта нет: заводится игрок, и со
     body: { role: 'Admin', account_type: 'employee' }
   });
   assert.strictEqual(changed.status, 200);
-  const after = await pool.query('SELECT role, account_type FROM users WHERE id = $1', [made_user.id]);
+  const after = await pool.query('SELECT role FROM users WHERE id = $1', [made_user.id]);
   assert.strictEqual(after.rows[0].role, 'Admin', 'роль меняется как раньше');
-  assert.strictEqual(after.rows[0].account_type, 'client', 'колонка осталась со своим значением по умолчанию');
 });
 
 test('logout invalidates the session server-side, not just on the client', async () => {
@@ -1049,19 +1048,27 @@ test('сортировка: полки заводит админ, и номер 
   const healed = await api('/api/admin/sorting', { cookie });
   assert.deepStrictEqual(healed.json.categories, ['Разное', 'Материалы', 'Еда']);
 
-  // Встроенные восемь зашиты в мод, и сайт их не переименовывает: показывать здесь
+  // Мод принёс полку, которой здесь не было, и переименовал свою: встроенные идут
+  // за ним, потому что в игре имя всё равно будет его.
+  await sortingPush(['#categories Разное|Материалы|Снедь|Руда',
+    sortRow('$test_cat_ore', 'Руда', 'Material', 1)]);
+  const grown = await api('/api/admin/sorting', { cookie });
+  assert.deepStrictEqual(grown.json.categories, ['Разное', 'Материалы', 'Снедь', 'Руда']);
+  assert.strictEqual(grown.json.categoryRows[3].builtIn, true);
+
+  // Встроенные зашиты в мод, и сайт их не переименовывает: показывать здесь
   // одно, а в игре другое — хуже, чем не давать трогать вовсе.
   assert.strictEqual((await edit({ id: 2, title: 'Харчи' })).status, 409);
-  assert.strictEqual((await api('/api/admin/sorting', { cookie })).json.categories[2], 'Еда');
+  assert.strictEqual((await api('/api/admin/sorting', { cookie })).json.categories[2], 'Снедь');
 
   // Новая полка берёт следующий номер и уезжает моду отдельной строкой.
   const added = await cats({ title: 'Слитки' }, { cookie });
   assert.strictEqual(added.status, 200);
-  assert.strictEqual(added.json.id, 3);
+  assert.strictEqual(added.json.id, 4);
 
   let pull = await sortingPull(0);
-  assert.ok(pull.lines.includes('cat 3=Слитки'));
-  assert.ok(pull.lines.includes('cat 2=Еда'), 'встроенные уезжают моду как были');
+  assert.ok(pull.lines.includes('cat 4=Слитки'));
+  assert.ok(pull.lines.includes('cat 2=Снедь'), 'встроенные уезжают моду как были');
 
   // На новую полку можно положить предмет.
   assert.strictEqual((await api('/api/admin/sorting/item',
@@ -1070,13 +1077,13 @@ test('сортировка: полки заводит админ, и номер 
 
   // Убранная полка уходит из ответа, и выбор, который на неё ссылался, снимается:
   // иначе он остался бы указывать в пустоту.
-  assert.strictEqual((await edit({ id: 3, removed: true })).status, 200);
+  assert.strictEqual((await edit({ id: 4, removed: true })).status, 200);
   pull = await sortingPull(0);
-  assert.ok(!pull.lines.some((line) => line.startsWith('cat 3=')));
+  assert.ok(!pull.lines.some((line) => line.startsWith('cat 4=')));
   assert.ok(!pull.lines.some((line) => line.startsWith('$test_cat_ore=')));
 
   // А номер за ней остаётся навсегда: в сундуках в игре лежит именно он.
-  assert.strictEqual((await cats({ title: 'Уголь' }, { cookie })).json.id, 4);
+  assert.strictEqual((await cats({ title: 'Уголь' }, { cookie })).json.id, 5);
 
   // Встроенную убрать нельзя, занятое имя занять нельзя, мусор не проходит.
   assert.strictEqual((await edit({ id: 0, removed: true })).status, 409);

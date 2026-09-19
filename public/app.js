@@ -1558,11 +1558,9 @@ function escapeHtml(text) {
   return text.replace(/[&<>"']/g, function(m) { return map[m]; });
 }
 
-// Имя+фамилия для сотрудников (карточка привязана к аккаунту), иначе —
-// логин (у клиентов карточки сотрудника нет).
+// Имя игрока — его ник: ничего другого сайт о нём не знает.
 function userDisplayName(u) {
-  const full = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
-  return full || u.username;
+  return u.username;
 }
 
 // API: Users loader

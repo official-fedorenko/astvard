@@ -103,22 +103,48 @@ async function categoryTitles() {
 }
 
 /**
- * Засев категорий из того, что прислал мод. Только пока их нет вовсе: дальше список
- * здешний, и второй засев его не трогает — иначе перезапуск игрового сервера возвращал
- * бы имена, которые админ переименовал утром.
+ * Встроенные полки — те, что прислал мод. Он им и хозяин: их нельзя ни переименовать,
+ * ни убрать здесь, так что список сверяется с ним при каждом каталоге.
+ *
+ * Своя полка на месте встроенной — случай, которого быть не должно (свои выдаются с
+ * номеров за встроенными), но если мод однажды принесёт больше полок, чем приносил,
+ * такое место может оказаться занятым. Тогда молчать нельзя: в игре имя всё равно будет
+ * модовское, и расхождение надо хотя бы назвать.
  */
 async function seedCategories(titles) {
   if (!titles.length) return;
 
-  const have = await get('SELECT count(*)::int AS n FROM game_sort_categories');
-  if (have && have.n > 0) return;
+  const rows = await all('SELECT id, title, built_in FROM game_sort_categories');
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  let added = 0;
+  let renamed = 0;
 
   for (let id = 0; id < titles.length; id += 1) {
-    await run('INSERT INTO game_sort_categories (id, title, built_in) VALUES (?, ?, true)'
-              + ' ON CONFLICT (id) DO NOTHING', [id, titles[id]]);
+    const row = byId.get(id);
+
+    if (!row) {
+      await run('INSERT INTO game_sort_categories (id, title, built_in) VALUES (?, ?, true)'
+                + ' ON CONFLICT (id) DO NOTHING', [id, titles[id]]);
+      added += 1;
+      continue;
+    }
+
+    if (!row.built_in) {
+      logger.warn(`[sorting] полка №${id} «${row.title}» заведена здесь, а мод считает её `
+                  + `встроенной «${titles[id]}» — в игре будет имя мода`);
+      continue;
+    }
+
+    if (row.title !== titles[id]) {
+      await run('UPDATE game_sort_categories SET title = ? WHERE id = ?', [titles[id], id]);
+      renamed += 1;
+    }
   }
 
-  logger.info(`[sorting] категории засеяны модом: ${titles.length}`);
+  if (added || renamed) {
+    logger.info(`[sorting] встроенные полки от мода: ${titles.length}, новых ${added}, `
+                + `переименовано ${renamed}`);
+  }
 }
 
 /**

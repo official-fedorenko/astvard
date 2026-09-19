@@ -709,7 +709,7 @@ async function sitemapXml() {
 // "X-Robots-Tag: noindex" rather than being closed in robots.txt: a crawler kept
 // out by robots.txt never sees the noindex, and a URL it only knows from a link
 // can still end up in the results as a bare address.
-const PRIVATE_PAGES = new Set(['/cabinet.html', '/login.html', '/register.html', '/tool.html', '/vehicle.html']);
+const PRIVATE_PAGES = new Set(['/cabinet.html', '/login.html', '/register.html']);
 
 function isPrivatePath(pathname) {
   return pathname.startsWith('/admin') || pathname.startsWith('/api/') || PRIVATE_PAGES.has(pathname);
