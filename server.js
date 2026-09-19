@@ -429,8 +429,16 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(301, { Location: `/${parsedUrl.search}` });
     return res.end();
   }
-  if (pathname === '/') {
-    const { html, settings } = await seo.renderHome();
+  // Публичные страницы идут по таблице из src/seo.js: адрес → кусок разметки. Раньше
+  // здесь была одна главная с якорями, и у раздела не было ни своего адреса, ни своего
+  // заголовка в выдаче.
+  if (pathname.length > 1 && pathname.endsWith('/') && seo.pageByPath.has(pathname.slice(0, -1))) {
+    res.writeHead(301, { Location: `${pathname.slice(0, -1)}${parsedUrl.search}` });
+    return res.end();
+  }
+  const publicPage = seo.pageByPath.get(pathname);
+  if (publicPage) {
+    const { html, settings } = await seo.renderPage(publicPage.key);
     return sendPublicHtml(res, html, settings);
   }
   if (pathname === '/robots.txt') {
@@ -441,10 +449,6 @@ const server = http.createServer(async (req, res) => {
     const xml = await seo.sitemapXml();
     res.writeHead(200, { 'Content-Type': MIME_TYPES['.xml'], 'Cache-Control': 'public, max-age=3600' });
     return res.end(xml);
-  }
-  if (pathname === '/news' || pathname === '/news/') {
-    res.writeHead(301, { Location: '/#articles-section' });
-    return res.end();
   }
   if (pathname.startsWith('/news/')) {
     const match = pathname.match(seo.NEWS_PATH_RE);

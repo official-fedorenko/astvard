@@ -1,0 +1,65 @@
+      <!-- HERO -->
+      <section class="hero" id="home">
+        <div class="hero__badge">
+          <i data-lucide="sparkles" style="width: 14px; height: 14px; color: var(--accent-cyan);"></i> 
+          Сервер Valheim · вход через Steam
+        </div>
+        <h1 class="hero__title" id="heroTitle">{{hero_title}}</h1>
+        <p class="hero__subtitle" id="heroSubtitle">{{site_description}}</p>
+        <div class="hero__actions">
+          <a href="/api/auth/steam" rel="nofollow" class="btn btn--primary" id="heroRegisterBtn">Войти через Steam</a>
+          <a href="#servers-section" class="btn btn--ghost">Наши серверы</a>
+        </div>
+      </section>
+
+      <!-- SERVERS -->
+      <section class="section" id="servers-section">
+        <h2 class="section__title">Игровые серверы</h2>
+        <div class="articles-grid" id="serversGrid">
+          <p style="color: var(--text-muted, #a0a0ab);">Загрузка...</p>
+        </div>
+      </section>
+
+      <!-- Куда идти дальше: на главной только двери, содержимое — на своих страницах -->
+      <section class="section" id="parts">
+        <h2 class="section__title">Разделы</h2>
+        <p class="section__subtitle">Всё по местам — заходи в нужное</p>
+        <div class="feature-grid">
+          <a class="feature-card" href="/join">
+            <span class="feature-card__head">
+              <span class="feature-card__icon"><i data-lucide="log-in"></i></span>
+              <span class="feature-card__title">Как попасть</span>
+            </span>
+            <span class="feature-card__text">Вход через Steam, заявка на доступ и адрес сервера в игре.</span>
+          </a>
+          <a class="feature-card" href="/mod">
+            <span class="feature-card__head">
+              <span class="feature-card__icon"><i data-lucide="wand-sparkles"></i></span>
+              <span class="feature-card__title">Что умеет мод</span>
+            </span>
+            <span class="feature-card__text">Панель в игре: постройки по шаблонам, рельеф, сортировка сундуков, руны.</span>
+          </a>
+          <a class="feature-card" href="/server">
+            <span class="feature-card__head">
+              <span class="feature-card__icon"><i data-lucide="hammer"></i></span>
+              <span class="feature-card__title">Наш сервер</span>
+            </span>
+            <span class="feature-card__text">Руны за время в игре и постройки, которые выложены общими.</span>
+          </a>
+          <a class="feature-card" href="/news">
+            <span class="feature-card__head">
+              <span class="feature-card__icon"><i data-lucide="newspaper"></i></span>
+              <span class="feature-card__title">Новости</span>
+            </span>
+            <span class="feature-card__text">Что меняется на серверах и вокруг игры.</span>
+          </a>
+        </div>
+      </section>
+
+      <!-- Свежие новости: три штуки, остальное — на своей странице -->
+      <section class="section" id="latest">
+        <h2 class="section__title">Свежее</h2>
+        <p class="section__subtitle">Последние записи — <a class="text-link" href="/news">все новости</a></p>
+        <div class="articles-grid">{{{latest_articles}}}
+        </div>
+      </section>

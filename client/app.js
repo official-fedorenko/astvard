@@ -1,5 +1,21 @@
 // The texts, the year and the list of articles come in the HTML from the server
 // (src/seo.js). What is left here depends on who is looking.
+// Ссылки вида /#mod раздавали, пока сайт был одной страницей с якорями. Теперь у
+// разделов свои адреса, и такая ссылка должна доехать туда, а не оставить человека
+// на главной, где этого раздела больше нет.
+const MOVED_SECTIONS = {
+  '#join': '/join',
+  '#server': '/server',
+  '#mod': '/mod',
+  '#articles-section': '/news',
+  '#about': '/about',
+  '#contact': '/about'
+};
+
+if (window.location.pathname === '/' && MOVED_SECTIONS[window.location.hash]) {
+  window.location.replace(MOVED_SECTIONS[window.location.hash]);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   lucide.createIcons();
   await checkAuth(); // Проверяем сессию и обновляем навбар

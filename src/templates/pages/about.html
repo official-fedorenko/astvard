@@ -1,0 +1,58 @@
+      <!-- ABOUT SECTION -->
+      <section class="section section--alt" id="about">
+        <h1 class="section__title" id="aboutTitle">{{about_title}}</h1>
+        <p class="section__subtitle" id="aboutSubtitle">{{about_subtitle}}</p>
+        
+        <div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;">
+          <div class="card" style="border-top: 4px solid var(--accent-purple);">
+            <div class="card__icon"><i data-lucide="edit-3"></i></div>
+            <h3 class="card__title" id="aboutCard1Title">{{about_card1_title}}</h3>
+            <p class="card__text" id="aboutCard1Text">{{about_card1_text}}</p>
+          </div>
+          <div class="card" style="border-top: 4px solid var(--accent-cyan);">
+            <div class="card__icon"><i data-lucide="shield-check"></i></div>
+            <h3 class="card__title" id="aboutCard2Title">{{about_card2_title}}</h3>
+            <p class="card__text" id="aboutCard2Text">{{about_card2_text}}</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- CONTACT SECTION -->
+      <section class="section" id="contact">
+        <h2 class="section__title" id="contactTitle">{{contact_title}}</h2>
+        <p class="section__subtitle" id="contactSubtitle">{{contact_subtitle}}</p>
+        
+        <div class="contact-grid">
+          <div class="contact-info">
+            <div class="contact-item">
+              <span class="contact-item__icon"><i data-lucide="mail" style="color: var(--accent-cyan)"></i></span>
+              <div>
+                <strong>Электронная почта</strong>
+                <p id="contactEmail">{{contact_email}}</p>
+              </div>
+            </div>
+            <div class="contact-item">
+              <span class="contact-item__icon"><i data-lucide="map-pin" style="color: var(--accent-purple)"></i></span>
+              <div>
+                <strong>Наш офис</strong>
+                <p id="contactAddress">{{contact_address}}</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+            <div id="supportAuthPrompt" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 20px; padding: 40px 30px; text-align: center; backdrop-filter: var(--glass-blur); max-width: 450px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+              <div style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, rgba(138,43,226,0.1), rgba(0,210,255,0.1)); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                <i data-lucide="message-square" style="width: 24px; height: 24px; stroke: var(--accent-cyan);"></i>
+              </div>
+              <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">Обратная связь и поддержка</h3>
+              <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 24px;" id="supportPromptText">
+                Чтобы написать в службу поддержки или оставить обратную связь, пожалуйста, авторизуйтесь в вашем личном кабинете.
+              </p>
+              <div id="supportActionButtons" style="display: flex; gap: 12px; justify-content: center;">
+                <a href="/api/auth/steam" rel="nofollow" class="btn btn--primary" style="text-decoration: none; padding: 12px 24px;">Войти через Steam</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>

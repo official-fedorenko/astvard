@@ -628,12 +628,73 @@ test('главная уходит с сервера готовой: тексты
     assert.ok(ld['@graph'].some((node) => node['@type'] === 'WebSite'));
 
     assert.ok(html.includes(`href="/news/${published}-dobro-pozhalovat-v-astvard"`), 'статья — ссылка на свою страницу');
-    // Шаг «Попроси доступ» говорит, что будет с заявкой сейчас.
-    assert.ok(html.includes('Заявку смотрит админ'));
+    // Главная теперь витрина: сами разделы живут по своим адресам.
+    for (const link of ['/join', '/mod', '/server', '/news']) {
+      assert.ok(html.includes(`href="${link}"`), `на главной нет ссылки на ${link}`);
+    }
   } finally {
     await resetSetting('hero_title');
     await resetSetting('seo_title');
   }
+});
+
+test('у каждого раздела свой адрес: заголовок, канонический адрес, h1 и подсвеченный пункт меню', async () => {
+  const base = process.env.APP_URL ? process.env.APP_URL.replace(/\/+$/, '') : 'http://localhost:3001';
+  const pages = [
+    ['/', null],
+    ['/server', 'Наш сервер'],
+    ['/mod', 'Что умеет мод'],
+    ['/join', 'Как попасть'],
+    ['/news', 'Новости'],
+    ['/about', 'О проекте']
+  ];
+
+  for (const [pagePath, navLabel] of pages) {
+    const res = await fetch(`${baseUrl}${pagePath}`);
+    assert.strictEqual(res.status, 200, pagePath);
+    assert.strictEqual(res.headers.get('x-robots-tag'), null, `${pagePath} закрыт от индекса`);
+    const html = await res.text();
+
+    assert.ok(!html.includes('{{'), `${pagePath}: остались незаполненные места`);
+    assert.ok(html.includes(`<link rel="canonical" href="${base}${pagePath}">`), `${pagePath}: канонический адрес`);
+    assert.match(html, /<h1[^>]*>[^<]/, `${pagePath}: нет заголовка h1`);
+    assert.match(html, /<meta name="description" content="[^"]{40,}">/, `${pagePath}: описание для поиска`);
+    assert.ok(html.includes('aria-current="page"'), `${pagePath}: пункт меню не подсвечен`);
+
+    const ld = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+    assert.ok(ld['@graph'].some((node) => node['@type'] === 'WebSite'), `${pagePath}: нет WebSite`);
+    if (navLabel) {
+      assert.ok(html.includes(`<span>${navLabel}</span>`), `${pagePath}: нет пункта меню «${navLabel}»`);
+      // У внутренней страницы есть хлебные крошки, у главной их быть не должно.
+      assert.ok(ld['@graph'].some((node) => node['@type'] === 'BreadcrumbList'), `${pagePath}: нет хлебных крошек`);
+    } else {
+      assert.ok(!ld['@graph'].some((node) => node['@type'] === 'BreadcrumbList'), 'у главной крошек нет');
+    }
+  }
+});
+
+test('один адрес на раздел: со слэшем на конце уводит на адрес без него', async () => {
+  for (const pagePath of ['/server/', '/mod/', '/join/', '/news/', '/about/']) {
+    const res = await fetch(`${baseUrl}${pagePath}`, { redirect: 'manual' });
+    assert.strictEqual(res.status, 301, pagePath);
+    assert.strictEqual(res.headers.get('location'), pagePath.slice(0, -1), pagePath);
+  }
+});
+
+test('содержимое разъехалось по страницам: мод, заявка и лента — каждое у себя', async () => {
+  const { published } = await seededArticleIds();
+
+  const mod = await (await fetch(`${baseUrl}/mod`)).text();
+  assert.ok(mod.split('data-feature=').length - 1 >= 20, 'на странице мода плитки возможностей');
+  assert.ok(mod.includes('id="featureModal"'), 'на странице мода есть окно с пояснением');
+
+  const join = await (await fetch(`${baseUrl}/join`)).text();
+  assert.ok(join.includes('Заявку смотрит админ'), 'шаг про заявку на своей странице');
+
+  const news = await (await fetch(`${baseUrl}/news`)).text();
+  assert.ok(news.includes(`href="/news/${published}-dobro-pozhalovat-v-astvard"`), 'статья в ленте');
+  assert.ok(!news.includes('id="featureModal"'), 'окно мода не таскается по всем страницам');
+  assert.ok(!news.includes('data-feature='), 'плитки мода не таскаются по всем страницам');
 });
 
 test('у статьи один адрес: старые и неполные ведут на него, черновик и мусор — 404', async () => {
@@ -684,6 +745,9 @@ test('robots.txt и sitemap.xml: служебное закрыто, в карт�
   assert.strictEqual(res.status, 200);
   assert.match(res.headers.get('content-type'), /^application\/xml/);
   const xml = await res.text();
+  for (const pagePath of ['/', '/server', '/mod', '/join', '/news', '/about']) {
+    assert.ok(xml.includes(`${pagePath}</loc>`), `в карте сайта нет ${pagePath}`);
+  }
   assert.ok(xml.includes(`/news/${published}-dobro-pozhalovat-v-astvard</loc>`));
   assert.ok(!xml.includes(`/news/${draft}-`), 'черновика в карте нет');
   assert.match(xml, /<lastmod>\d{4}-\d{2}-\d{2}T/);
@@ -754,18 +818,28 @@ test('CSP пускает каждый скрипт и стиль, который
   };
 
   const checked = [];
-  for (const dir of ['public', 'client']) {
-    const root = path.join(__dirname, '..', dir);
-    for (const file of fs.readdirSync(root).filter((name) => name.endsWith('.html'))) {
-      const html = fs.readFileSync(path.join(root, file), 'utf8');
+  const pages = [];
+  const walk = (place) => {
+    for (const entry of fs.readdirSync(place, { withFileTypes: true })) {
+      const full = path.join(place, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.html')) pages.push(full);
+    }
+  };
+  // src/templates — разметка публичных страниц: оболочка, куски и страница статьи.
+  for (const dir of ['public', 'client', 'src/templates']) walk(path.join(__dirname, '..', dir));
+  {
+    for (const file of pages) {
+      const dir = path.relative(path.join(__dirname, '..'), path.dirname(file));
+      const html = fs.readFileSync(file, 'utf8');
       for (const [, url] of html.matchAll(/<script\b[^>]*\bsrc="(https?:\/\/[^"]+)"/g)) {
-        assert.ok(allows('script-src', url), `${dir}/${file}: ${url}`);
+        assert.ok(allows('script-src', url), `${dir}/${path.basename(file)}: ${url}`);
         checked.push(url);
       }
       for (const [tag] of html.matchAll(/<link\b[^>]*>/g)) {
         const href = /\bhref="(https?:\/\/[^"]+)"/.exec(tag);
         if (!href || !/\brel="stylesheet"/.test(tag)) continue;
-        assert.ok(allows('style-src', href[1]), `${dir}/${file}: ${href[1]}`);
+        assert.ok(allows('style-src', href[1]), `${dir}/${path.basename(file)}: ${href[1]}`);
         checked.push(href[1]);
       }
     }

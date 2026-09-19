@@ -354,49 +354,151 @@ function articleCards(articles) {
           </article>`).join('');
 }
 
-async function renderHome() {
-  const [settings, template] = await Promise.all([
+/**
+ * Страницы сайта: адрес, кусок разметки в templates/pages, место в меню и то, что
+ * читает поисковик. Раньше всё это жило одной страницей с якорями, и каждая новая
+ * тема делала её длиннее: у раздела не было ни своего адреса, ни своего заголовка в
+ * выдаче, а ссылку на него нельзя было дать иначе как «промотай вниз».
+ *
+ * Заголовок и описание главной задаёт админ в настройках — её читают в выдаче первой;
+ * у остальных они написаны здесь, потому что зависят от того, что на странице, а не от
+ * вкуса.
+ */
+const PAGES = [
+  {
+    key: 'home', path: '/', file: 'home.html', nav: 'Главная', icon: 'home',
+    scripts: ['/astvard-home.js'],
+    title: (s) => text(s, 'seo_title'),
+    description: (s) => text(s, 'seo_description'),
+    changefreq: 'daily', priority: '1.0'
+  },
+  {
+    key: 'server', path: '/server', file: 'server.html', nav: 'Наш сервер', icon: 'hammer',
+    scripts: ['/astvard-home.js'],
+    title: (s) => `Наш сервер Valheim: руны и общие постройки — ${text(s, 'site_name')}`,
+    description: () => 'Что сейчас на сервере Valheim: руны за время в игре, часы игроков и постройки, '
+      + 'которые выложены общими для всех.',
+    changefreq: 'daily', priority: '0.8'
+  },
+  {
+    key: 'mod', path: '/mod', file: 'mod.html', nav: 'Что умеет мод', icon: 'wand-sparkles',
+    scripts: ['/mod-features.js'],
+    title: (s) => `Мод для Valheim: что он умеет — ${text(s, 'site_name')}`,
+    description: () => 'Панель управления прямо в игре: постройки по шаблонам, работа с рельефом, '
+      + 'сортировка сундуков, автоматика и руны. Что делает каждая возможность, где её искать и во что обойдётся.',
+    changefreq: 'weekly', priority: '0.9'
+  },
+  {
+    key: 'join', path: '/join', file: 'join.html', nav: 'Как попасть', icon: 'log-in',
+    title: (s) => `Как попасть на сервер Valheim — ${text(s, 'site_name')}`,
+    description: () => 'Три шага: войти через Steam, попросить доступ и добавить сервер в игре. '
+      + 'Мод ставить необязательно — на сервер пускают и без него.',
+    changefreq: 'monthly', priority: '0.9'
+  },
+  {
+    key: 'news', path: '/news', file: 'news.html', nav: 'Новости', icon: 'newspaper',
+    title: (s) => `Новости сервера — ${text(s, 'site_name')}`,
+    description: () => 'Что меняется на серверах Valheim и вокруг игры: обновления мода, правила, события.',
+    changefreq: 'weekly', priority: '0.7'
+  },
+  {
+    key: 'about', path: '/about', file: 'about.html', nav: 'О проекте', icon: 'info',
+    // Название сайта админ часто уже вписал в заголовок раздела: «Об Astvard — Astvard»
+    // читается как заикание.
+    title: (s) => {
+      const own = text(s, 'about_title');
+      const site = text(s, 'site_name');
+      return own.includes(site) ? `${own} — сервер Valheim` : `${own} — ${site}`;
+    },
+    description: (s) => clip(plainText(text(s, 'about_subtitle')), 160) || text(s, 'seo_description'),
+    changefreq: 'monthly', priority: '0.5'
+  }
+];
+
+const pageByPath = new Map(PAGES.map((page) => [page.path, page]));
+
+// Меню строит сервер, а не скрипт: открытая страница должна быть подсвечена и у того,
+// кто скриптов не исполняет, а ссылка — вести на адрес, а не на якорь.
+function navHtml(activeKey) {
+  const items = PAGES.map((page) => {
+    const here = page.key === activeKey;
+    return `          <li>
+            <a href="${page.path}" class="sidebar__link${here ? ' active' : ''}"${here ? ' aria-current="page"' : ''}>
+              <span class="sidebar__link-icon"><i data-lucide="${page.icon}"></i></span>
+              <span>${escapeHtml(page.nav)}</span>
+            </a>
+          </li>`;
+  }).join('\n');
+
+  return `        <ul class="sidebar__menu">\n${items}\n        </ul>`;
+}
+
+async function renderPage(key) {
+  const page = PAGES.find((p) => p.key === key);
+  if (!page) throw new Error(`[seo] нет такой страницы: ${key}`);
+
+  const [settings, layout, body] = await Promise.all([
     loadSettings(),
-    fs.readFile(path.join(CLIENT_DIR, 'index.html'), 'utf8')
+    fs.readFile(path.join(TEMPLATES_DIR, 'layout.html'), 'utf8'),
+    fs.readFile(path.join(TEMPLATES_DIR, 'pages', page.file), 'utf8')
   ]);
+
   let articles = [];
-  try {
-    articles = await publishedArticles();
-  } catch (err) {
-    logger.error('[seo] статьи для главной не прочитались:', err.message);
+  if (key === 'home' || key === 'news') {
+    try {
+      articles = await publishedArticles();
+    } catch (err) {
+      logger.error('[seo] статьи не прочитались:', err.message);
+    }
   }
 
   const url = siteUrl();
-  const title = text(settings, 'seo_title');
-  const description = text(settings, 'seo_description');
+  const title = page.title(settings);
+  const description = page.description(settings);
   const head = headTags(settings, {
     title,
     description,
-    pagePath: '/',
+    pagePath: page.path,
     jsonLd: {
       '@context': 'https://schema.org',
       '@graph': [
         ...siteGraph(settings),
         {
           '@type': 'WebPage',
-          '@id': `${url}/#webpage`,
-          url: `${url}/`,
+          '@id': `${url}${page.path}#webpage`,
+          url: `${url}${page.path}`,
           name: title,
           description,
           inLanguage: 'ru-RU',
           isPartOf: { '@id': `${url}/#website` }
-        }
+        },
+        // У главной хлебных крошек нет: она и есть корень.
+        ...(page.key === 'home' ? [] : [{
+          '@type': 'BreadcrumbList',
+          itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'Главная', item: `${url}/` },
+            { '@type': 'ListItem', position: 2, name: page.nav, item: `${url}${page.path}` }
+          ]
+        }])
       ]
     }
   });
 
-  const values = { head, articles: articleCards(articles), year: new Date().getFullYear() };
-  for (const key of [
+  const values = {
+    head,
+    nav: navHtml(page.key),
+    scripts: (page.scripts || []).map((src) => `  <script src="${src}"></script>`).join('\n'),
+    year: new Date().getFullYear(),
+    articles: articleCards(articles),
+    // На главной — только три свежих, остальное на своей странице.
+    latest_articles: articleCards(articles.slice(0, 3))
+  };
+  for (const settingKey of [
     'site_name', 'hero_title', 'site_description', 'about_title', 'about_subtitle',
     'about_card1_title', 'about_card1_text', 'about_card2_title', 'about_card2_text',
     'contact_title', 'contact_subtitle', 'contact_email', 'contact_address'
   ]) {
-    values[key] = text(settings, key);
+    values[settingKey] = text(settings, settingKey);
   }
   values.community_links = communityLinks(settings);
   values.mod_download = modDownload(settings);
@@ -406,7 +508,9 @@ async function renderHome() {
     ? 'Сейчас заявки принимаются сразу: через десяток секунд после нажатия можно заходить.'
     : 'Заявку смотрит админ, ответ появится там же, в кабинете.';
 
-  return { html: fill(template, values), settings };
+  // Кусок заполняется первым: подставленное значение второй раз не просматривается,
+  // иначе текст статьи с двойными скобками внутри стал бы полем шаблона.
+  return { html: fill(layout, { ...values, content: fill(body, values) }), settings };
 }
 
 // The first picture of the article becomes its preview, if it is one a scraper can
@@ -511,7 +615,13 @@ async function sitemapXml() {
   const newest = articles.reduce((max, a) => Math.max(max, stamp(a)), 0);
 
   const entries = [
-    { loc: `${url}/`, lastmod: newest ? iso(newest) : null, changefreq: 'daily', priority: '1.0' },
+    // У главной и «Новостей» дата последней записи: они меняются вместе с лентой.
+    ...PAGES.map((page) => ({
+      loc: `${url}${page.path}`,
+      lastmod: (page.key === 'home' || page.key === 'news') && newest ? iso(newest) : null,
+      changefreq: page.changefreq,
+      priority: page.priority
+    })),
     ...articles.map((a) => ({ loc: `${url}${articlePath(a)}`, lastmod: iso(stamp(a)), changefreq: 'monthly', priority: '0.7' }))
   ];
 
@@ -548,7 +658,9 @@ function isPrivatePath(pathname) {
 module.exports = {
   siteUrl,
   loadSettings,
-  renderHome,
+  renderPage,
+  PAGES,
+  pageByPath,
   renderArticle,
   publishedArticle,
   articlePath,
