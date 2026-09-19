@@ -1329,11 +1329,6 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     }
 }
 
-a.feature-card {
-    text-decoration: none;
-    color: var(--text-primary);
-}
-
 .text-link {
     color: var(--accent-cyan);
     text-decoration: none;
