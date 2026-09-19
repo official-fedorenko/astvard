@@ -604,6 +604,7 @@ namespace AstvardServerMod
                             // Готовая основа из сундука идёт первой: варить новую, когда
                             // одна лежит рядом, значит тратить мёд на то, что уже есть.
                             if (feeding) TryBrewInto(fermenter, food);
+                            else BrewFeedingOff();
                             BrewSweepSaw(fermenter);
                         }
 

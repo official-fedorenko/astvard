@@ -173,6 +173,49 @@ namespace AstvardServerMod
         {
             BrewingNext.Clear();
             BrewingAdded.Clear();
+            _whyRank = 0;
+            _whyNext = null;
+            _sawBarrel = false;
+        }
+
+        // ---------------- почему не варится ----------------
+
+        /// <summary>
+        /// «Не работает» без причины — это вечер догадок: у огорода их сегодня было четыре
+        /// подряд, и ни одна не была видна, пока страница не начала объяснять.
+        ///
+        /// Причин много, и они разной глубины: «все бочки заняты» человек проверит глазами
+        /// за секунду, а «не хватает мёда» — нет. Поэтому за проход побеждает та, до которой
+        /// дошли дальше всех: она и есть настоящая помеха.
+        /// </summary>
+        private static int _whyRank;
+
+        private static string _whyNext;
+
+        private static string _why;
+
+        private static bool _sawBarrel;
+
+        private static void Why(int rank, string text)
+        {
+            if (rank < _whyRank) return;
+            _whyRank = rank;
+            _whyNext = text;
+        }
+
+        /// <summary>Что мешает варить прямо сейчас. Пусто — значит ничего не мешает.</summary>
+        internal static string BrewWhy
+        {
+            get { return _why; }
+        }
+
+        /// <summary>
+        /// Общее «Наполнение» выключено. Говорится отсюда, а не изнутри варки: та в этом
+        /// случае не зовётся вовсе, и страница молчала бы, хотя причина известна.
+        /// </summary>
+        internal static void BrewFeedingOff()
+        {
+            Why(1, "выключено наполнение станций");
         }
 
         /// <summary>Бочка с содержимым: 1.0 держит в ZDO не имя, а стабильный хэш префаба.</summary>
@@ -182,6 +225,8 @@ namespace AstvardServerMod
 
             var view = fermenter.GetComponent<ZNetView>();
             if (view == null || !view.IsValid()) return;
+
+            _sawBarrel = true;
 
             var content = view.GetZDO().GetInt(ZDOVars.s_content);
             if (content == 0) return;
@@ -194,6 +239,11 @@ namespace AstvardServerMod
         {
             BrewingNow.Clear();
             foreach (var pair in BrewingNext) BrewingNow[pair.Key] = pair.Value;
+
+            // Бочек нет вовсе — это не «все заняты», и спутать их значит отправить
+            // человека искать несуществующую занятую бочку.
+            if (!_sawBarrel && _whyRank < 3) _whyNext = "поблизости нет бочек";
+            _why = _whyNext;
         }
 
         private static int BrewingCount(string baseName)
@@ -218,17 +268,20 @@ namespace AstvardServerMod
         /// </summary>
         internal static bool TryBrewInto(Fermenter fermenter, List<Container> supply)
         {
-            if (!BrewEnabled || fermenter == null || !RuleAllows("brewing")) return false;
+            if (fermenter == null) return false;
+
+            if (!BrewEnabled) { Why(1, "варка выключена"); return false; }
+            if (!RuleAllows("brewing")) { Why(1, "админ закрыл варку игрокам"); return false; }
             if (!OwnedAndValid(fermenter)) return false;
 
             var view = fermenter.GetComponent<ZNetView>();
-            if (view.GetZDO().GetInt(ZDOVars.s_content) != 0) return false;
+            if (view.GetZDO().GetInt(ZDOVars.s_content) != 0) { Why(2, "все бочки заняты"); return false; }
 
             var wishes = BrewWishes();
-            if (wishes.Count == 0) return false;
+            if (wishes.Count == 0) { Why(3, "ничего не заказано"); return false; }
 
             var brews = KnownBrews();
-            if (brews.Count == 0) return false;
+            if (brews.Count == 0) { Why(3, "ни одного рецепта основы не открыто"); return false; }
 
             var origin = fermenter.transform.position;
 
@@ -242,7 +295,11 @@ namespace AstvardServerMod
                 BrewBases.Add(brew.Base);
             }
 
-            if (BrewBases.Count == 0) return false;
+            if (BrewBases.Count == 0)
+            {
+                Why(4, "рядом нет котла для медовух нужного уровня");
+                return false;
+            }
 
             var pick = Brewing.Next(BrewBases,
                 name =>
@@ -259,13 +316,30 @@ namespace AstvardServerMod
                     return wishes.TryGetValue(name, out keep) ? keep : 0;
                 });
 
-            if (pick == null) return false;
+            if (pick == null)
+            {
+                Why(5, "заказанного уже хватает");
+                return false;
+            }
 
             var chosen = BrewOf(pick);
-            if (chosen == null || !ReadRecipeCost(chosen.Recipe)) return false;
+            if (chosen == null || !ReadRecipeCost(chosen.Recipe))
+            {
+                Why(6, "рецепт не прочитался");
+                return false;
+            }
 
-            if (!Brewing.CanAfford(BrewNeed, name => CountInSupply(origin, supply, name))) return false;
-            if (!TakeForBrew(origin, supply)) return false;
+            if (!Brewing.CanAfford(BrewNeed, name => CountInSupply(origin, supply, name)))
+            {
+                Why(7, $"не хватает: {Missing(origin, supply)}");
+                return false;
+            }
+
+            if (!TakeForBrew(origin, supply))
+            {
+                Why(7, "составляющие разобрали, пока мы считали");
+                return false;
+            }
 
             // Та же дорога, что у готовой основы из сундука: имя хэшем, «не читерское».
             view.InvokeRPC("RPC_AddItem", pick.GetStableHashCode(), false);
@@ -275,7 +349,24 @@ namespace AstvardServerMod
             BrewingAdded[hash] = (BrewingAdded.TryGetValue(hash, out added) ? added : 0) + 1;
 
             SayBrewed(chosen);
+            Why(9, null);
             return true;
+        }
+
+        /// <summary>Чего именно не хватает — словами игры и с числами.</summary>
+        private static string Missing(Vector3 origin, List<Container> supply)
+        {
+            var line = new System.Text.StringBuilder();
+            foreach (var need in BrewNeed)
+            {
+                var have = CountInSupply(origin, supply, need.Key);
+                if (have >= need.Value) continue;
+
+                if (line.Length > 0) line.Append(", ");
+                line.Append(ItemTitleOf(need.Key)).Append(' ').Append(need.Value - have);
+            }
+
+            return line.Length > 0 ? line.ToString() : "чего-то из состава";
         }
 
         private static readonly List<CraftingStation> BrewStations = new List<CraftingStation>();

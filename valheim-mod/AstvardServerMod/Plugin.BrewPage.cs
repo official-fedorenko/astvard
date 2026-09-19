@@ -162,6 +162,9 @@ namespace AstvardServerMod
                     hint.text = $"Сколько бутылок держать на{NEWLINE}складе. Варим из сундуков{NEWLINE}"
                                 + $"подачи, пока рядом стоит{NEWLINE}котёл для медовух и есть{NEWLINE}"
                                 + $"пустая бочка."
+                                + (string.IsNullOrEmpty(BrewWhy)
+                                    ? ""
+                                    : $"{NEWLINE}{NEWLINE}Сейчас не варим:{NEWLINE}{BrewWhy}.")
                                 + WindowNote(_itemOffset, brews.Count);
             }
 
