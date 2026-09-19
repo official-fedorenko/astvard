@@ -26,7 +26,8 @@ namespace AstvardServerMod
         /// </summary>
         public static readonly string[] CategoryTitles =
         {
-            "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи", "Лут"
+            "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи", "Добыча",
+            "Руда", "Дерево", "Семена", "Зелья", "Шкуры", "Ценное"
         };
 
         /// <summary>
@@ -63,6 +64,22 @@ namespace AstvardServerMod
 
         public const int Loot = 7;
 
+        // Шесть полок, которые хозяин отбирал по своей базе, а не по типам предметов игры:
+        // руда отдельно от слитков (её возят в плавильню), дерево отдельно от прочего
+        // строительного, семена - рядом с огородом, медовухи - подальше от мяса, шкуры -
+        // тем, кто шьёт, и ценное - чтобы монеты и камни не растворялись в «Разном».
+        public const int Ore = 8;
+
+        public const int Wood = 9;
+
+        public const int Seeds = 10;
+
+        public const int Potions = 11;
+
+        public const int Hides = 12;
+
+        public const int Valuables = 13;
+
         /// <summary>
         /// Что падает с убитого. Отличить это по типу предмета нельзя: для игры шкура,
         /// потроха и глаз грейдворфа - такой же «материал», как дерево и камень, так что
@@ -72,18 +89,107 @@ namespace AstvardServerMod
         /// на любом языке игры. Список сверен по данным игры, а не по памяти; то, чего в
         /// нём не хватает, добавляется потом - для этого есть Chosen ниже.
         /// </summary>
-        private static readonly HashSet<string> LootKeys = new HashSet<string>
+        private static readonly string[] LootKeys =
         {
-            "$item_leatherscraps", "$item_deerhide", "$item_trollhide", "$item_wolfpelt",
-            "$item_loxpelt", "$item_scalehide", "$item_chitin", "$item_carapace",
-            "$item_entrails", "$item_guck", "$item_greydwarfeye", "$item_bonefragments",
-            "$item_witheredbone", "$item_charredbone", "$item_freezegland", "$item_softtissue",
-            "$item_serpentscale", "$item_wolffang", "$item_hardantler", "$item_queenbee",
-            "$item_goblintotem", "$item_ymirremains", "$item_surtlingcore", "$item_ancientseed",
+            "$item_chitin", "$item_carapace", "$item_entrails", "$item_guck",
+            "$item_greydwarfeye", "$item_bonefragments", "$item_witheredbone",
+            "$item_charredbone", "$item_freezegland", "$item_softtissue", "$item_serpentscale",
+            "$item_wolffang", "$item_hardantler", "$item_queenbee", "$item_goblintotem",
+            "$item_ymirremains", "$item_surtlingcore", "$item_ancientseed",
             "$item_wolfhairbundle", "$item_bloodbag", "$item_eyescream", "$item_dragontear",
             "$item_morgenheart", "$item_bonemawtooth", "$item_royaljelly", "$item_feathers",
-            "$item_blackmetalscrap", "$item_tar",
+            "$item_tar", "$item_bonemawscale", "$item_seekerqueen_drop",
         };
+
+        // Руда и лом - то, что возят в плавильню. Слитки к ним не относятся: их возят
+        // обратно, и лежать им незачем там же, откуда берут сырьё.
+        private static readonly string[] OreKeys =
+        {
+            "$item_copperore", "$item_tinore", "$item_ironore", "$item_silverore",
+            "$item_flametalore", "$item_flametalore_old", "$item_goldore",
+            "$item_ironscrap", "$item_copperscrap", "$item_bronzescrap", "$item_blackmetalscrap",
+        };
+
+        private static readonly string[] WoodKeys =
+        {
+            "$item_wood", "$item_finewood", "$item_roundlog", "$item_elderbark",
+            "$item_yggdrasilwood", "$item_blackwood", "$item_frostwood",
+        };
+
+        // Сюда же шишки: их сажают так же, как семена, и лежать им вместе.
+        private static readonly string[] SeedKeys =
+        {
+            "$item_carrotseeds", "$item_turnipseeds", "$item_onionseeds", "$item_kaleseeds",
+            "$item_oatseeds", "$item_vineberryseeds", "$item_vinegreenseeds",
+            "$item_beechseeds", "$item_birchseeds", "$item_fircone", "$item_fircone_big",
+            "$item_pinecone",
+        };
+
+        // Шкуры, кожа и нити - всё, из чего шьют. Чешуя и панцирь остаются добычей: их
+        // не шьют, а носят целиком.
+        private static readonly string[] HideKeys =
+        {
+            "$item_deerhide", "$item_trollhide", "$item_wolfpelt", "$item_loxpelt",
+            "$item_scalehide", "$item_leatherscraps", "$item_leatherstraps", "$item_askhide",
+            "$item_bjornhide", "$item_moosehide", "$item_sealhide", "$item_linenthread",
+            "$item_nornthread",
+        };
+
+        private static readonly string[] ValuableKeys =
+        {
+            "$item_coins", "$item_ancientcoin", "$item_amber", "$item_amberpearl",
+            "$item_ruby", "$item_silvernecklace", "$item_crownjewel",
+            "$item_gemstone_blue", "$item_gemstone_green", "$item_gemstone_red",
+            "$item_ancientgemstone_black", "$item_ancientgemstone_green",
+            "$item_ancientgemstone_orange", "$item_ancientgemstone_purple",
+        };
+
+        /// <summary>
+        /// Что мод знает про предмет сам: ключ - полка.
+        ///
+        /// Одной таблицей, а не шестью списками: спрашивается это на каждый предмет в
+        /// каждом проходе, а ключи проверены по каталогу, который прислала сама игра, - не
+        /// по памяти. Ключ перевода, а не русское слово: `$item_deerhide` одинаков на любом
+        /// языке, а «Шкура оленя» - только на одном.
+        /// </summary>
+        private static readonly Dictionary<string, int> KnownKinds = BuildKnownKinds();
+
+        private static Dictionary<string, int> BuildKnownKinds()
+        {
+            var known = new Dictionary<string, int>();
+
+            Fill(known, Loot, LootKeys);
+            Fill(known, Ore, OreKeys);
+            Fill(known, Wood, WoodKeys);
+            Fill(known, Seeds, SeedKeys);
+            Fill(known, Hides, HideKeys);
+            Fill(known, Valuables, ValuableKeys);
+
+            return known;
+        }
+
+        private static void Fill(Dictionary<string, int> known, int category, string[] keys)
+        {
+            foreach (var key in keys) known[key] = category;
+        }
+
+        /// <summary>
+        /// Полка, которую мод знает для этого предмета сам, или -1.
+        ///
+        /// Медовухи и их основы отбираются по началу ключа, а не списком: их в игре под
+        /// сорок, с каждым обновлением прибавляется, и список устарел бы раньше, чем
+        /// кто-нибудь это заметил.
+        /// </summary>
+        public static int KnownFor(string kind)
+        {
+            if (string.IsNullOrEmpty(kind)) return -1;
+
+            if (kind.StartsWith("$item_mead", StringComparison.Ordinal)
+                || kind.IndexOf("winebase", StringComparison.Ordinal) >= 0) return Potions;
+
+            int category;
+            return KnownKinds.TryGetValue(kind, out category) ? category : -1;
+        }
 
         /// <summary>
         /// Что об этом предмете сказали снаружи - с сайта. Перевешивает и список выше, и
@@ -103,7 +209,7 @@ namespace AstvardServerMod
 
         public static bool IsLoot(string kind)
         {
-            return kind != null && LootKeys.Contains(kind);
+            return KnownFor(kind) == Loot;
         }
 
         /// <summary>Имена, которые мод знает сам - сайту, чтобы было что показывать.</summary>
@@ -112,6 +218,12 @@ namespace AstvardServerMod
             var kinds = new List<string>(LootKeys);
             kinds.Sort(System.StringComparer.Ordinal);
             return kinds;
+        }
+
+        /// <summary>Сколько предметов мод знает по имени — для строки в логе.</summary>
+        public static int KnownCount
+        {
+            get { return KnownKinds.Count; }
         }
 
         /// <summary>

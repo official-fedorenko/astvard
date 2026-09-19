@@ -1072,8 +1072,8 @@ test('сортировка: полки заводит админ, и номер 
 
   // На новую полку можно положить предмет.
   assert.strictEqual((await api('/api/admin/sorting/item',
-    { method: 'PATCH', cookie, body: { kind: '$test_cat_ore', category: 3 } })).status, 200);
-  assert.ok((await sortingPull(0)).lines.includes('$test_cat_ore=3'));
+    { method: 'PATCH', cookie, body: { kind: '$test_cat_ore', category: 4 } })).status, 200);
+  assert.ok((await sortingPull(0)).lines.includes('$test_cat_ore=4'));
 
   // Убранная полка уходит из ответа, и выбор, который на неё ссылался, снимается:
   // иначе он остался бы указывать в пустоту.

@@ -14,10 +14,37 @@ public class LootTests
     [Fact]
     public void WhatFallsOffSomethingIsLoot()
     {
-        Assert.True(Sorting.IsLoot("$item_deerhide"));
         Assert.True(Sorting.IsLoot("$item_greydwarfeye"));
+        Assert.True(Sorting.IsLoot("$item_tar"));
         Assert.False(Sorting.IsLoot("$item_wood"));
         Assert.False(Sorting.IsLoot(null));
+
+        // Шкуры уехали на свою полку, к тем, кто шьёт: «Добыча» осталась тем, что
+        // действительно некуда деть.
+        Assert.False(Sorting.IsLoot("$item_deerhide"));
+    }
+
+    [Fact]
+    public void TheModKnowsItsOwnShelvesByName()
+    {
+        // Ключи сверены по каталогу, который прислала сама игра, а не по памяти.
+        Assert.Equal(Sorting.Ore, Sorting.KnownFor("$item_copperore"));
+        Assert.Equal(Sorting.Ore, Sorting.KnownFor("$item_blackmetalscrap"));
+        Assert.Equal(Sorting.Wood, Sorting.KnownFor("$item_finewood"));
+        Assert.Equal(Sorting.Seeds, Sorting.KnownFor("$item_carrotseeds"));
+        Assert.Equal(Sorting.Seeds, Sorting.KnownFor("$item_pinecone"));
+        Assert.Equal(Sorting.Hides, Sorting.KnownFor("$item_deerhide"));
+        Assert.Equal(Sorting.Valuables, Sorting.KnownFor("$item_coins"));
+        Assert.Equal(Sorting.Valuables, Sorting.KnownFor("$item_ancientgemstone_black"));
+
+        // Медовухи и их основы - по началу ключа, а не списком: их сорок и прибавляется.
+        Assert.Equal(Sorting.Potions, Sorting.KnownFor("$item_mead_hp_minor"));
+        Assert.Equal(Sorting.Potions, Sorting.KnownFor("$item_meadbasehealth"));
+        Assert.Equal(Sorting.Potions, Sorting.KnownFor("$item_barleywinebase"));
+
+        // Слиток - не руда: его возят из плавильни, а не в неё.
+        Assert.Equal(-1, Sorting.KnownFor("$item_bronze"));
+        Assert.Equal(-1, Sorting.KnownFor("$item_stone"));
     }
 
     [Fact]
@@ -79,8 +106,11 @@ public class LootTests
     {
         // The mark page draws one button per category from this array: a category with no
         // title would be a button with no name, and «Лут» was added to both or neither.
-        Assert.Equal(8, Sorting.Count);
-        Assert.Equal("Лут", Sorting.Title(Sorting.Loot));
-        Assert.True(Sorting.IsCategory(Sorting.Loot));
+        Assert.Equal(Sorting.CategoryTitles.Length, Sorting.Count);
+        Assert.Equal("Добыча", Sorting.Title(Sorting.Loot));
+        Assert.Equal("Руда", Sorting.Title(Sorting.Ore));
+        Assert.Equal("Ценное", Sorting.Title(Sorting.Valuables));
+
+        for (var i = 0; i < Sorting.Count; i++) Assert.True(Sorting.IsCategory(i));
     }
 }

@@ -23,7 +23,7 @@ public class CategoryTests
 
         Assert.Equal("Разное", Sorting.Title(Sorting.Misc));
         Assert.Equal("Материалы", Sorting.Title(Sorting.Materials));
-        Assert.Equal("Лут", Sorting.Title(Sorting.Loot));
+        Assert.Equal("Добыча", Sorting.Title(Sorting.Loot));
         Assert.True(Sorting.IsCategory(Sorting.Loot));
     }
 
@@ -47,11 +47,11 @@ public class CategoryTests
     [Fact]
     public void ACategoryOfOnesOwnIsRenamedFreely()
     {
-        Sorting.ReadCategories("8=Слитки");
-        Assert.Equal("Слитки", Sorting.Title(8));
+        Sorting.ReadCategories("14=Слитки");
+        Assert.Equal("Слитки", Sorting.Title(14));
 
-        Sorting.ReadCategories("8=Металл");
-        Assert.Equal("Металл", Sorting.Title(8));
+        Sorting.ReadCategories("14=Металл");
+        Assert.Equal("Металл", Sorting.Title(14));
 
         Builtin();
     }
@@ -59,12 +59,11 @@ public class CategoryTests
     [Fact]
     public void ANewCategoryTakesTheNextNumber()
     {
-        Sorting.ReadCategories("0=Разное;1=Материалы;2=Еда;3=Оружие;4=Броня;5=Инструменты;"
-                               + "6=Трофеи;7=Лут;8=Слитки");
+        Sorting.ReadCategories("14=Слитки");
 
-        Assert.True(Sorting.IsCategory(8));
-        Assert.Equal("Слитки", Sorting.Title(8));
-        Assert.Equal(9, Sorting.Count);
+        Assert.True(Sorting.IsCategory(14));
+        Assert.Equal("Слитки", Sorting.Title(14));
+        Assert.Equal(15, Sorting.Count);
 
         Builtin();
     }
@@ -72,17 +71,15 @@ public class CategoryTests
     [Fact]
     public void ACategoryTakenAwayLeavesItsPlaceEmpty()
     {
-        Sorting.ReadCategories("0=Разное;1=Материалы;2=Еда;3=Оружие;4=Броня;5=Инструменты;"
-                               + "6=Трофеи;7=Лут;8=Слитки;9=Уголь");
-        Assert.True(Sorting.IsCategory(9));
+        Sorting.ReadCategories("14=Слитки;15=Уголь");
+        Assert.True(Sorting.IsCategory(15));
 
-        // Восьмую убрали: девятая обязана остаться девятой.
-        Sorting.ReadCategories("0=Разное;1=Материалы;2=Еда;3=Оружие;4=Броня;5=Инструменты;"
-                               + "6=Трофеи;7=Лут;9=Уголь");
+        // Четырнадцатую убрали: пятнадцатая обязана остаться пятнадцатой.
+        Sorting.ReadCategories("15=Уголь");
 
-        Assert.False(Sorting.IsCategory(8));
-        Assert.True(Sorting.IsCategory(9));
-        Assert.Equal("Уголь", Sorting.Title(9));
+        Assert.False(Sorting.IsCategory(14));
+        Assert.True(Sorting.IsCategory(15));
+        Assert.Equal("Уголь", Sorting.Title(15));
 
         Builtin();
     }
@@ -95,10 +92,10 @@ public class CategoryTests
         // вынести его по всей базе.
         Builtin();
 
-        Assert.Equal(12, Sorting.FromStored(13));
-        Assert.True(Sorting.IsBin(13));
-        Assert.False(Sorting.IsCategory(12));
-        Assert.Equal("Категория 12", Sorting.Title(12));
+        Assert.Equal(20, Sorting.FromStored(21));
+        Assert.True(Sorting.IsBin(21));
+        Assert.False(Sorting.IsCategory(20));
+        Assert.Equal("Категория 20", Sorting.Title(20));
     }
 
     [Fact]
@@ -119,7 +116,7 @@ public class CategoryTests
 
         Assert.Equal("Оружие", Sorting.Title(Sorting.Weapons));
         Assert.Equal("Разное", Sorting.Title(Sorting.Misc));
-        Assert.Equal("Лут", Sorting.Title(Sorting.Loot));
+        Assert.Equal("Добыча", Sorting.Title(Sorting.Loot));
 
         Builtin();
     }
@@ -127,15 +124,14 @@ public class CategoryTests
     [Fact]
     public void TheListSurvivesBeingPackedAndReadBack()
     {
-        Sorting.ReadCategories("0=Разное;1=Материалы;2=Еда;3=Оружие;4=Броня;5=Инструменты;"
-                               + "6=Трофеи;7=Лут;9=Уголь");
+        Sorting.ReadCategories("15=Уголь");
         var packed = Sorting.PackCategories();
 
         Sorting.ReadCategories(packed);
 
         Assert.Equal(packed, Sorting.PackCategories());
-        Assert.Equal("Уголь", Sorting.Title(9));
-        Assert.False(Sorting.IsCategory(8));
+        Assert.Equal("Уголь", Sorting.Title(15));
+        Assert.False(Sorting.IsCategory(14));
 
         Builtin();
     }

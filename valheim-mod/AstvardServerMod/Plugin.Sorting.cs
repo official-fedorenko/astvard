@@ -1326,6 +1326,43 @@ namespace AstvardServerMod
         /// through their names rather than their numbers, so a game that renumbers them
         /// stops compiling instead of quietly sorting the armoury into the larder.
         /// </summary>
+        // Что кухни принимают в работу - то и сырое. Спрошено один раз за сессию у всех
+        // префабов сразу: предметов в проходе тысячи, а ответ не меняется.
+        private static readonly HashSet<string> RawFoodKeys = new HashSet<string>();
+
+        private static bool _rawFoodRead;
+
+        private static bool IsRawFood(string kind)
+        {
+            if (!_rawFoodRead)
+            {
+                var scene = ZNetScene.instance;
+                if (scene == null || scene.m_prefabs == null) return false;
+
+                _rawFoodRead = true;
+                foreach (var prefab in scene.m_prefabs)
+                {
+                    if (prefab == null) continue;
+
+                    var cooking = prefab.GetComponent<CookingStation>();
+                    if (cooking == null || cooking.m_conversion == null) continue;
+
+                    foreach (var conversion in cooking.m_conversion)
+                    {
+                        if (conversion == null || conversion.m_from == null) continue;
+
+                        var data = conversion.m_from.m_itemData;
+                        if (data != null && data.m_shared != null) RawFoodKeys.Add(data.m_shared.m_name);
+                    }
+                }
+
+                Log.LogInfo($"[AstvardServerMod] Sorting: {RawFoodKeys.Count} raw foods learned "
+                            + $"from the kitchens, {Sorting.KnownCount} kinds known by name.");
+            }
+
+            return RawFoodKeys.Contains(kind);
+        }
+
         private static int CategoryOf(ItemDrop.ItemData item)
         {
             // What somebody said about this one outright beats the guess below, and the
@@ -1341,7 +1378,18 @@ namespace AstvardServerMod
         /// </summary>
         private static int DefaultCategoryOf(ItemDrop.ItemData item)
         {
-            if (Sorting.IsLoot(item.m_shared.m_name)) return Sorting.Loot;
+            var kind = item.m_shared.m_name;
+
+            // То, что мод знает по имени: руда, дерево, семена, зелья, шкуры, ценное и
+            // добыча. Тип предмета здесь бесполезен - для игры шкура оленя такой же
+            // «материал», как камень.
+            var known = Sorting.KnownFor(kind);
+            if (known >= 0) return known;
+
+            // Сырое мясо, рыба и полуфабрикаты - еда, хотя игра зовёт их материалом. Что
+            // именно считать сырым, спрашивается у самих кухонь, а не у списка: список
+            // устарел бы с первым же новым блюдом.
+            if (IsRawFood(kind)) return Sorting.Food;
 
             switch (item.m_shared.m_itemType)
             {
