@@ -80,7 +80,22 @@ namespace AstvardServerMod
 
         private static readonly List<ZDOID> SownScratch = new List<ZDOID>();
 
-        private static int _reapedSaid = -1;
+        // Почему проход ничего не сделал - счётчики одного прохода. Огород, который
+        // молча ничего не делает, неотличим от огорода, которому нечего делать: так и
+        // вышло у хозяина в первый же вечер, и сказать ему было нечем.
+        private static int _ripe;
+
+        private static int _noRoom;
+
+        private static int _notOurs;
+
+        private static int _extras;
+
+        private static int _noSeeds;
+
+        private static int _noSapling;
+
+        private static string _gardenSaid;
 
         /// <summary>
         /// Из посекундного прохода автоматики: раз в пять секунд смотрим грядки зоны.
@@ -92,6 +107,7 @@ namespace AstvardServerMod
 
             // Сначала подсадка на места прошлого прохода, потом сбор: иначе собранное в
             // этом проходе засеялось бы тут же, по живому.
+            var beds = Beds.Count;
             var sown = SowBeds(supply);
 
             Beds.Clear();
@@ -100,13 +116,32 @@ namespace AstvardServerMod
 
             var reaped = ReapBeds(player, zone);
 
-            if (reaped == 0 && sown == 0) return;
+            Say(zone, beds, sown, reaped);
+        }
 
-            if (reaped != _reapedSaid)
-            {
-                _reapedSaid = reaped;
-                Log.LogInfo($"[AstvardServerMod] Garden: reaped {reaped}, sown {sown}.");
-            }
+        /// <summary>
+        /// Одна строка на изменение: что огород видел и чего не сделал.
+        ///
+        /// Раньше строка выходила, только когда что-то собрано, - то есть ровно в том
+        /// случае, когда и так всё хорошо. «Не работает» выглядело как тишина, а причин
+        /// у тишины полдюжины: грядки вне зоны, ты вне зоны, класть некуда, грядку
+        /// считает не твой клиент, сеять нечем.
+        /// </summary>
+        private static void Say(Sorting.Zone zone, int beds, int sown, int reaped)
+        {
+            var said = zone == null
+                ? "ты вне зоны — грядки не трогаем"
+                : $"ripe {_ripe}, reaped {reaped}, sown {sown} of {beds} beds"
+                  + (_noRoom > 0 ? $", {_noRoom} with nowhere to put the crop" : "")
+                  + (_notOurs > 0 ? $", {_notOurs} counted by somebody else" : "")
+                  + (_extras > 0 ? $", {_extras} left alone (extra drops)" : "")
+                  + (_noSeeds > 0 ? $", {_noSeeds} unsown for want of seeds" : "")
+                  + (_noSapling > 0 ? $", {_noSapling} with no sapling to put back" : "");
+
+            if (said == _gardenSaid) return;
+
+            _gardenSaid = said;
+            Log.LogInfo($"[AstvardServerMod] Garden: {said}.");
         }
 
         /// <summary>Собирает созревшее внутри зоны. Возвращает, сколько грядок сорвано.</summary>
@@ -114,7 +149,11 @@ namespace AstvardServerMod
         {
             if (!ReapOn || zone == null) return 0;
 
-            var where = player.transform.position;
+            _ripe = 0;
+            _noRoom = 0;
+            _notOurs = 0;
+            _extras = 0;
+
             var reaped = 0;
 
             foreach (var pickable in Object.FindObjectsByType<Pickable>(FindObjectsSortMode.None))
@@ -122,20 +161,33 @@ namespace AstvardServerMod
                 if (pickable == null || pickable.GetPicked()) continue;
                 if (pickable.m_itemPrefab == null) continue;
 
+                // Внутри зоны расстояние не меряется вовсе - то же правило, что у
+                // станций: что в одной зоне, то и работает вместе. Круга вокруг игрока
+                // здесь и не было смысла держать: грядка дальше 64 м всё равно попадает
+                // в обход только тогда, когда её кто-то подгрузил.
+                var spot = pickable.transform.position;
+                if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
+
                 // С добавкой в придачу пусть разбирается игрок: дополнительный дроп мы
                 // сложить не умеем, а бросить его на землю - значит устроить свалку.
-                if (pickable.m_extraDrops != null && !pickable.m_extraDrops.IsEmpty()) continue;
+                if (pickable.m_extraDrops != null && !pickable.m_extraDrops.IsEmpty())
+                {
+                    _extras++;
+                    continue;
+                }
 
-                var spot = pickable.transform.position;
-                if ((spot - where).sqrMagnitude > HarvestScanRadius * HarvestScanRadius) continue;
-                if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
+                _ripe++;
 
                 // Владение берётся до всего: считает грядку её хозяин, и сорвать чужую
                 // мы не можем - RPC на той стороне просто ничего не сделает.
                 var view = pickable.GetComponent<ZNetView>();
                 if (view == null || !view.IsValid()) continue;
                 if (!view.IsOwner()) view.ClaimOwnership();
-                if (!view.IsOwner()) continue;
+                if (!view.IsOwner())
+                {
+                    _notOurs++;
+                    continue;
+                }
 
                 // Столько же, сколько дала бы грядка человеку: ставка ресурсов мира
                 // считается той же игровой функцией, а не нашей арифметикой.
@@ -148,7 +200,11 @@ namespace AstvardServerMod
 
                 // Складываем раньше, чем срываем. Некуда - пусть растёт дальше: грядка,
                 // сорванная в никуда, - это потерянный урожай, а не отложенный.
-                if (!TryStoreNearby(spot, pickable.m_itemPrefab, amount)) continue;
+                if (!TryStoreNearby(spot, pickable.m_itemPrefab, amount))
+                {
+                    _noRoom++;
+                    continue;
+                }
 
                 // Та же рассылка, которой заканчивает сама игра: у себя это отметит
                 // сорванным (или снесёт, если восходить нечему), у соседей - погасит куст.
@@ -169,6 +225,9 @@ namespace AstvardServerMod
             var player = Player.m_localPlayer;
             if (player == null) return 0;
 
+            _noSeeds = 0;
+            _noSapling = 0;
+
             var creator = player.GetPlayerID();
             var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
             var sown = 0;
@@ -176,11 +235,19 @@ namespace AstvardServerMod
             foreach (var bed in Beds)
             {
                 var sapling = SaplingFor(bed.Crop);
-                if (sapling == null) continue;
+                if (sapling == null)
+                {
+                    _noSapling++;
+                    continue;
+                }
 
                 // Префаб найден - только теперь берём семена: вынуть их и не найти, куда
                 // сажать, значило бы съесть семена ни за что.
-                if (!PaySeeds(sapling, bed.At, supply)) continue;
+                if (!PaySeeds(sapling, bed.At, supply))
+                {
+                    _noSeeds++;
+                    continue;
+                }
 
                 SownScratch.Clear();
                 PlacePiece(sapling, bed.At, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f),

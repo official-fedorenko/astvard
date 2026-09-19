@@ -210,7 +210,7 @@ namespace AstvardServerMod
             var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;
             if (prefab != null)
             {
-                var nest = prefab.GetComponent<CreatureSpawner>();
+                var nest = prefab.GetComponentInChildren<CreatureSpawner>(true);
                 var beast = nest != null && nest.m_creaturePrefab != null ? nest.m_creaturePrefab : prefab;
 
                 var character = beast.GetComponent<Character>();
@@ -229,22 +229,38 @@ namespace AstvardServerMod
             return said;
         }
 
-        private static readonly Dictionary<string, bool> Nests = new Dictionary<string, bool>();
+        private static readonly Dictionary<string, bool> Beasts = new Dictionary<string, bool>();
+
+        /// <summary>
+        /// Живой зверь это или что-то, что их подсылает.
+        ///
+        /// Спрашивается ровно один признак - есть ли у префаба `Character`, - и он верен
+        /// с обеих сторон: у оленя, кабана и вороны он есть, у `Spawner_…` его нет ни у
+        /// одного. Так было не сразу: сперва отбор шёл по `CreatureSpawner` на корне
+        /// префаба, и **пустая страница «Спавнеры»** показала, что его там нет - гнёзда
+        /// собраны иначе, чем мы думали. Ошибка была тихой, пока ответ шёл только в
+        /// подпись «гнездо»/«зверь» у проекции, и стала видна, когда по нему начали
+        /// отбирать. Признак живого зверя от устройства гнезда не зависит вовсе.
+        /// </summary>
+        private static bool IsLiveBeast(SpawnerKind kind)
+        {
+            bool beast;
+            if (Beasts.TryGetValue(kind.Prefab, out beast)) return beast;
+
+            var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;
+            // Пока сцена не собрана, ответить нечем - и запоминать ответ нельзя: он
+            // остался бы навсегда, а страница спрашивает снова через секунду.
+            if (prefab == null) return false;
+
+            beast = prefab.GetComponent<Character>() != null;
+            Beasts[kind.Prefab] = beast;
+            return beast;
+        }
 
         /// <summary>Ставим мы живого зверя или гнездо, которое их подсылает.</summary>
         private static bool IsNest(SpawnerKind kind)
         {
-            bool nest;
-            if (Nests.TryGetValue(kind.Prefab, out nest)) return nest;
-
-            var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;
-            // Пока сцена не собрана, ответить нечем - и запоминать «нет» нельзя: оно
-            // осталось бы навсегда, а страница спрашивает снова через секунду.
-            if (prefab == null) return false;
-
-            nest = prefab.GetComponent<CreatureSpawner>() != null;
-            Nests[kind.Prefab] = nest;
-            return nest;
+            return !IsLiveBeast(kind);
         }
 
         /// <summary>
@@ -256,7 +272,7 @@ namespace AstvardServerMod
         /// <summary>Годится ли эта тварь для той страницы, что открыта сейчас.</summary>
         private static bool Fits(SpawnerKind kind)
         {
-            return KnowsPrefab(kind.Prefab) && (!_nestsOnly || IsNest(kind));
+            return KnowsPrefab(kind.Prefab) && (!_nestsOnly || !IsLiveBeast(kind));
         }
 
         private static readonly List<int> ShownGroups = new List<int>();
@@ -269,9 +285,27 @@ namespace AstvardServerMod
         /// нажатие на такой биом открыло бы страницу без единой кнопки, и сказать об
         /// этом было бы некому.
         /// </summary>
+        private static bool _sieveSaid;
+
         private static void GroupsShown()
         {
             ShownGroups.Clear();
+
+            if (!_sieveSaid && ZNetScene.instance != null)
+            {
+                _sieveSaid = true;
+                int known = 0, beasts = 0;
+                foreach (var group in SpawnerGroups)
+                    foreach (var kind in group.Kinds)
+                        if (KnowsPrefab(kind.Prefab))
+                        {
+                            known++;
+                            if (IsLiveBeast(kind)) beasts++;
+                        }
+
+                Log.LogInfo($"[AstvardServerMod] Spawners: {known} of this game, "
+                            + $"{beasts} of them live beasts, {known - beasts} nests.");
+            }
 
             for (var i = 0; i < SpawnerGroups.Length; i++)
                 foreach (var kind in SpawnerGroups[i].Kinds)
