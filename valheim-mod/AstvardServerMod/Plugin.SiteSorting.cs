@@ -145,6 +145,7 @@ namespace AstvardServerMod
             var lines = answer.Split('\n');
             var revision = _siteSortingApplied;
             var chosen = new System.Text.StringBuilder();
+            var count = 0;
 
             foreach (var line in lines)
             {
@@ -160,6 +161,7 @@ namespace AstvardServerMod
 
                 if (chosen.Length > 0) chosen.Append(';');
                 chosen.Append(trimmed);
+                count++;
             }
 
             var packed = chosen.ToString();
@@ -169,7 +171,11 @@ namespace AstvardServerMod
             Sorting.ReadChosen(packed);
             _sortKindsPacked = packed;
 
-            Log.LogInfo($"[AstvardServerMod] Sorting: the site chose for {lines.Length - 1} kinds (rev {revision}).");
+            // Считаем выбранное, а не строки ответа: в них есть и «rev N», и пустая в
+            // конце, так что двенадцать выбранных предметов отчитывались тринадцатью.
+            // Строка, по которой сверяют, доехало ли, обязана называть то же число, что
+            // видно на сайте.
+            Log.LogInfo($"[AstvardServerMod] Sorting: the site chose for {count} kinds (rev {revision}).");
         }
 
         /// <summary>
