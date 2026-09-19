@@ -213,7 +213,11 @@ namespace AstvardServerMod
                 {
                     // Созревшее рядом, но за чертой: чаще всего это и есть ответ на
                     // «огород не собирается» - зону просто обвели не вокруг грядок.
-                    if ((spot - where).sqrMagnitude <= Sorting.NearReach * Sorting.NearReach) _outside++;
+                    // Считается только то, что вообще сажают: в первый же вечер сюда
+                    // насчиталось 167 - дикая малина, ветки и кремень вокруг базы, - и
+                    // за ними было не видно ответа на заданный вопрос.
+                    if ((spot - where).sqrMagnitude <= Sorting.NearReach * Sorting.NearReach
+                        && SaplingFor(Utils.GetPrefabName(pickable.gameObject)) != null) _outside++;
                     continue;
                 }
 
@@ -259,7 +263,11 @@ namespace AstvardServerMod
                 // сорванным (или снесёт, если восходить нечему), у соседей - погасит куст.
                 view.InvokeRPC(ZNetView.Everybody, "RPC_SetPicked", true);
 
-                BedsNext.Add(new Bed { At = spot, Crop = pickable.m_itemPrefab.name });
+                // Имя **выросшего объекта** (`Pickable_Carrot`), а не предмета (`Carrot`):
+                // словарь саженцев собран из `Plant.m_grownPrefabs`, то есть из того, во
+                // что саженец превращается. Пока сюда клали имя предмета, поиск саженца не
+                // совпадал ни разу - подсадка не могла сработать вовсе, и молчала об этом.
+                BedsNext.Add(new Bed { At = spot, Crop = Utils.GetPrefabName(pickable.gameObject) });
                 reaped++;
             }
 
