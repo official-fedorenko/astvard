@@ -243,6 +243,16 @@ namespace AstvardServerMod
                 + "Далеко ли станция дотянется, решает «Зона станций». "
                 + "Переключается в игре: «Функции» → «Сортировка» → «Автонаполнение».");
 
+            _feedKilns = config.Bind("Сортировка", "FeedKilns", true,
+                "Класть ли дрова в угольные печи. false — печи стоят, и общий запас дерева "
+                + "не уходит в уголь; плавильни, кухни и остального это не касается. "
+                + "«Функции» → «Сортировка» → «Наполнять печи».");
+
+            _coalKeep = config.Bind("Сортировка", "CoalKeep", 0,
+                "Сколько угля держать на складе. Набралось столько в сундуках — печи "
+                + "перестают жечь, разошёлся — начинают снова. 0 — без предела. "
+                + "«Функции» → «Сортировка» → «Уголь на складе».");
+
             _groupSpan = config.Bind("Сортировка", "GroupSpan", 8f,
                 "На каком расстоянии сундуки считаются стоящими вместе, от 0 до 64 м. Куча "
                 + "держится одной такой кучки и не расползается по базе. Мерится до "
@@ -272,6 +282,45 @@ namespace AstvardServerMod
         internal static void SetZoneStations(bool on)
         {
             if (_zoneStations != null) _zoneStations.Value = on;
+        }
+
+        private static BepInEx.Configuration.ConfigEntry<bool> _feedKilns;
+
+        /// <summary>
+        /// Класть ли дрова в угольные печи.
+        ///
+        /// Everything else the automation feeds takes something that was mined or grown for
+        /// it; a charcoal kiln takes the wood everybody builds out of, and standing in a zone
+        /// full of it, it will take all of it. This is the switch for that, apart from the
+        /// rest: a base can want its smelters fed and its kilns left alone.
+        /// </summary>
+        internal static bool FeedKilnsOn
+        {
+            get { return _feedKilns == null || _feedKilns.Value; }
+        }
+
+        internal static void SetFeedKilns(bool on)
+        {
+            if (_feedKilns != null) _feedKilns.Value = on;
+        }
+
+        private static BepInEx.Configuration.ConfigEntry<int> _coalKeep;
+
+        /// <summary>
+        /// Сколько угля держать на складе; 0 — без предела.
+        ///
+        /// Off and on rather than a rate: the kilns burn while the chests hold less than
+        /// this and stand while they hold more, so the pile settles around the number
+        /// without anybody watching it.
+        /// </summary>
+        internal static int CoalKeep
+        {
+            get { return Mathf.Clamp(_coalKeep != null ? _coalKeep.Value : 0, 0, 100000); }
+        }
+
+        internal static void SetCoalKeep(int amount)
+        {
+            if (_coalKeep != null) _coalKeep.Value = Mathf.Clamp(amount, 0, 100000);
         }
 
         /// <summary>How close two chests stand to count as one group.</summary>

@@ -24,6 +24,16 @@ namespace AstvardServerMod
 
         internal static GameObject SortAutoFillButton;
 
+        internal static GameObject SortKilnsButton;
+
+        internal static GameObject SortCoalButton;
+
+        internal static GameObject SortCoalHint;
+
+        internal static GameObject SortCoalInput;
+
+        internal static GameObject SortCoalApply;
+
         internal static GameObject SortPlaceHint;
 
         internal static GameObject SortShapeButton;
@@ -543,6 +553,41 @@ namespace AstvardServerMod
         /// </summary>
         private void CreateSortSettingWidgets(Jotunn.Managers.GUIManager gui)
         {
+            SortKilnsButton = MakeButton(gui, "", () =>
+            {
+                SetFeedKilns(!FeedKilnsOn);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    FeedKilnsOn
+                        ? "Дрова в угольные печи кладём"
+                        : "Угольные печи стоят — дрова целы");
+                RefreshMenu();
+            });
+
+            SortCoalButton = MakeButton(gui, "", () =>
+            {
+                SetFieldText(SortCoalInput, CoalKeep.ToString());
+                MenuState = StateSortCoal;
+                RefreshMenu();
+            });
+
+            SortCoalHint = MakeText(gui, "");
+
+            SortCoalInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                UnityEngine.UI.InputField.ContentType.IntegerNumber, "угля, напр. 500", 16, 160f, 32f);
+            AddFixedSize(SortCoalInput, 160f, 32f);
+
+            SortCoalApply = MakeButton(gui, "Применить", () =>
+            {
+                SetCoalKeep(Mathf.RoundToInt(ParseField(SortCoalInput, CoalKeep)));
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, CoalKeep > 0
+                    ? $"Печи жгут, пока угля меньше {CoalKeep}"
+                    : "Печи жгут без предела");
+                MenuState = StateSorting;
+                RefreshMenu();
+            });
+
             SortSlotsButton = MakeButton(gui, "", () =>
             {
                 SetFieldText(SortSlotsInput, OwnChestSlots.ToString());
@@ -595,6 +640,18 @@ namespace AstvardServerMod
 
         private static void RefreshSortSettingViews()
         {
+            SetLabel(SortKilnsButton, FeedKilnsOn ? "Наполнять печи: вкл" : "Наполнять печи: выкл");
+            SetLabel(SortCoalButton, CoalKeep > 0
+                ? $"Уголь на складе: {CoalKeep}"
+                : "Уголь на складе: без предела");
+
+            var coal = SortCoalHint != null ? SortCoalHint.GetComponentInChildren<Text>(true) : null;
+            if (coal != null)
+                coal.text = $"Сколько угля держать{NEWLINE}в сундуках. Набралось —{NEWLINE}"
+                            + $"печи стоят, разошёлся —{NEWLINE}жгут снова.{NEWLINE}{NEWLINE}"
+                            + $"Считается в сундуках сбора{NEWLINE}и в помеченных сундуках{NEWLINE}"
+                            + $"зоны.{NEWLINE}0 — без предела.";
+
             SetLabel(SortSlotsButton, OwnChestSlots > 0
                 ? $"Свой сундук: от {OwnChestSlots} ячеек"
                 : "Свой сундук: не делить");
@@ -616,6 +673,11 @@ namespace AstvardServerMod
         private static void RefreshSortSettingVisibility(bool allowed)
         {
             RefreshSortSettingViews();
+
+            var coalPage = allowed && MenuState == StateSortCoal;
+            SetActive(SortCoalHint, coalPage);
+            SetActive(SortCoalInput, coalPage);
+            SetActive(SortCoalApply, coalPage);
 
             var slots = allowed && MenuState == StateSortSlots;
             SetActive(SortSlotsHint, slots);
@@ -971,6 +1033,8 @@ namespace AstvardServerMod
             SetActive(SortHint, page);
             SetActive(SortOnButton, page);
             SetActive(SortAutoFillButton, page);
+            SetActive(SortKilnsButton, page);
+            SetActive(SortCoalButton, page);
             SetActive(SortLabelsButton, page);
             SetActive(SortSlotsButton, page);
             SetActive(SortLiftButton, page);

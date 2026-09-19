@@ -355,6 +355,14 @@ namespace AstvardServerMod
 
         private static readonly List<Container> ZoneSupply = new List<Container>();
 
+        /// <summary>Сундуки сбора этого прохода: в них же считается запас угля.</summary>
+        private static readonly List<Container> CollectChests = new List<Container>();
+
+        /// <summary>Имя угля в данных игры — по нему он и считается в сундуках.</summary>
+        private const string CoalPrefab = "Coal";
+
+        private static string _kilnSaid;
+
         private static IEnumerator AutomationLoop()
         {
             var pieces = new List<Piece>();
@@ -385,13 +393,18 @@ namespace AstvardServerMod
                     // re-walking every loaded piece once for each of them.
                     collectSpots.Clear();
                     supplyChests.Clear();
+                    CollectChests.Clear();
                     foreach (var piece in pieces)
                     {
                         if (piece == null) continue;
                         var container = ContainerOf(piece);
                         if (container == null) continue;
 
-                        if (IsCollectChest(container)) collectSpots.Add(container.transform.position);
+                        if (IsCollectChest(container))
+                        {
+                            collectSpots.Add(container.transform.position);
+                            CollectChests.Add(container);
+                        }
                         if (IsSupplyChest(container)) supplyChests.Add(container);
                     }
 
@@ -453,6 +466,13 @@ namespace AstvardServerMod
                     var harvesting = IsAutoCollectEnabled && (collectSpots.Count > 0 || ZoneBins.Count > 0);
                     if (!feeding && !harvesting) continue;
 
+                    // Уголь считается раз за проход, а не у каждой печи: печей на базе
+                    // десяток, а сундуки одни и те же. Считаем там, куда уголь и уезжает -
+                    // в сундуках сбора и в помеченных сундуках зоны.
+                    var kilnsMayBurn = FeedKilnsOn
+                                       && (CoalKeep <= 0
+                                           || CountInChests(CollectChests, ZoneBins, CoalPrefab) < CoalKeep);
+
                     foreach (var piece in pieces)
                     {
                         if (piece == null) continue;
@@ -487,7 +507,9 @@ namespace AstvardServerMod
                         var smelter = piece.GetComponentInChildren<Smelter>();
                         if (smelter != null)
                         {
-                            if (feeding) FillSmelter(smelter, food);
+                            // Печь — это плавильня, у которой из превращения выходит уголь.
+                            // Забирать у неё дрова можно отдельно от всего остального.
+                            if (feeding && (kilnsMayBurn || !MakesCoal(smelter))) FillSmelter(smelter, food);
                             // Gated like its three siblings. Tipping the kiln out with
                             // nowhere to put the coal turns one fifty-stack at the end of
                             // the burn into fifty singles on the floor, one a second.
@@ -517,6 +539,67 @@ namespace AstvardServerMod
         /// <summary>
         /// То же, но станции в зоне сортировки засчитываются и её помеченные сундуки.
         /// </summary>
+        /// <summary>
+        /// Делает ли эта станция уголь.
+        ///
+        /// Asked of the conversions rather than of the prefab's name: «угольная печь» is
+        /// whatever turns something into coal, and a name checked against a list is a name
+        /// that stops being right the day the game adds another one.
+        /// </summary>
+        private static bool MakesCoal(Smelter smelter)
+        {
+            if (smelter == null || smelter.m_conversion == null) return false;
+
+            foreach (var conversion in smelter.m_conversion)
+            {
+                if (conversion == null || conversion.m_to == null) continue;
+                if (conversion.m_to.gameObject.name != CoalPrefab) continue;
+
+                // Названа один раз за сессию: если переключатель «Наполнять печи» вдруг
+                // ничего не делает, первый вопрос - узнал ли мод печь вообще.
+                if (_kilnSaid != smelter.name)
+                {
+                    _kilnSaid = smelter.name;
+                    Log.LogInfo($"[AstvardServerMod] Coal kiln: {smelter.name}.");
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Сколько этого добра лежит в двух наборах сундуков. Стопками, а не ячейками:
+        /// «пятьсот угля» — это пятьсот углей, сколько бы стопок они ни занимали.
+        /// </summary>
+        private static int CountInChests(List<Container> first, List<Container> second, string prefab)
+        {
+            return CountInChests(first, prefab) + CountInChests(second, prefab);
+        }
+
+        private static int CountInChests(List<Container> chests, string prefab)
+        {
+            var total = 0;
+
+            foreach (var container in chests)
+            {
+                if (container == null) continue;
+
+                var inventory = container.GetInventory();
+                if (inventory == null) continue;
+
+                foreach (var item in inventory.GetAllItems())
+                {
+                    if (item == null || item.m_dropPrefab == null) continue;
+                    if (item.m_dropPrefab.name != prefab) continue;
+                    total += item.m_stack;
+                }
+            }
+
+            return total;
+        }
+
         private static bool MayHarvest(Component producer, List<Vector3> assignedChests, bool inZone)
         {
             if (MayHarvest(producer, assignedChests)) return true;
