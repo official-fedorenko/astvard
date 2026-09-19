@@ -22,6 +22,8 @@ namespace AstvardServerMod
 
         internal static GameObject SortRecheckButton;
 
+        internal static GameObject SortAutoFillButton;
+
         internal static GameObject SortPlaceHint;
 
         internal static GameObject SortShapeButton;
@@ -73,6 +75,16 @@ namespace AstvardServerMod
                 SetSortingOn(!SortingOn);
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     SortingOn ? "Сортировка включена" : "Сортировка выключена");
+                RefreshMenu();
+            });
+
+            SortAutoFillButton = MakeButton(gui, "", () =>
+            {
+                SetZoneStations(!ZoneStationsOn);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    ZoneStationsOn
+                        ? "Станции в зоне берут из помеченных сундуков и сдают в них"
+                        : "Станции работают только с назначенными сундуками");
                 RefreshMenu();
             });
 
@@ -869,6 +881,7 @@ namespace AstvardServerMod
                 : "Подписи: выкл");
             SetLabel(SortShapeButton, _sortSquare ? "Форма: квадрат" : "Форма: круг");
             SetLabel(SortRecheckButton, Rechecking ? "Перепроверяю…" : "Перепроверить");
+            SetLabel(SortAutoFillButton, ZoneStationsOn ? "Автонаполнение: вкл" : "Автонаполнение: выкл");
 
             var player = Player.m_localPlayer;
             var at = player != null
@@ -957,6 +970,7 @@ namespace AstvardServerMod
             var page = allowed && MenuState == StateSorting;
             SetActive(SortHint, page);
             SetActive(SortOnButton, page);
+            SetActive(SortAutoFillButton, page);
             SetActive(SortLabelsButton, page);
             SetActive(SortSlotsButton, page);
             SetActive(SortLiftButton, page);

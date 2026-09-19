@@ -152,6 +152,10 @@ namespace AstvardServerMod
             // reached into whatever happened to stand by it - a sorting bin, a chest its
             // owner had called personal - and there was nothing to tell it otherwise.
             var target = FindChest(origin, AssignedChestRadius, prefab, amount, true, ChestZoneSquare);
+
+            // Сундука сбора никто не назначил - но станция может стоять в зоне сортировки,
+            // и тогда готовое едет прямо в сундук своей категории.
+            if (target == null) target = FindZoneChest(origin, prefab, amount);
             if (target == null) return false;
 
             // A container saves itself to its ZDO only from the owner's side, so adding
@@ -209,6 +213,78 @@ namespace AstvardServerMod
             // still gets the usual feedback that something came out.
             smelter.m_produceEffects.Create(smelter.transform.position, smelter.transform.rotation);
             return true;
+        }
+
+        /// <summary>
+        /// Помеченный сундук зоны сортировки, готовый принять это добро: сначала сундук его
+        /// категории, потом «Разное».
+        ///
+        /// The same order the sorter itself carries things in, and for the same reason:
+        /// picking the nearest chest that has room would send bars to «Разное» while the
+        /// «Материалы» chest stood open two steps further away, and the next sweep would
+        /// carry them back - the two halves pulling against each other once a second.
+        ///
+        /// How far a station reaches is «Зона станций», the same distance it uses for a
+        /// chest somebody assigned to it: a zone can be sixty metres across, and a kiln
+        /// should not be fed from the far end of it.
+        /// </summary>
+        private static Container FindZoneChest(Vector3 origin, GameObject prefab, int amount)
+        {
+            if (!ZoneStationsOn || !SortingOn || !RuleAllows("sort")) return null;
+
+            var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
+            if (drop == null) return null;
+
+            var zones = SortingZones();
+            var at = Sorting.ZoneAt(zones, origin.x, origin.z);
+            if (at < 0) return null;
+
+            // В общей зоне разбирает один клиент - и сдаёт в неё тоже он.
+            var zone = zones[at];
+            if (ZonesOnServer && !zone.Drive) return null;
+
+            var want = CategoryOf(drop.m_itemData);
+
+            var pieces = new List<Piece>();
+            Piece.GetAllPiecesInRadius(origin, AssignedChestRadius * 1.415f, pieces);
+
+            Container best = null;
+            var bestRank = int.MaxValue;
+            var bestSqr = float.MaxValue;
+
+            foreach (var piece in pieces)
+            {
+                if (piece == null) continue;
+
+                var container = ContainerOf(piece);
+                if (container == null) continue;
+
+                var category = ChestCategory(container);
+                if (category < 0) continue;
+                if (category != want && category != Sorting.Misc) continue;
+                if (IsPrivateChest(container) || IsSupplyChest(container)) continue;
+
+                var spot = container.transform.position;
+                if (!InChestZone(origin, spot)) continue;
+                if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
+
+                // Писать в сундук, который кто-то держит открытым, - верный рассинхрон.
+                if (container.IsInUse()) continue;
+
+                var view = ViewOf(container);
+                if (view == null || !view.IsValid()) continue;
+                if (!container.GetInventory().CanAddItem(prefab, amount)) continue;
+
+                var rank = category == want ? 0 : 1;
+                var sqr = (spot - origin).sqrMagnitude;
+                if (best != null && (rank > bestRank || (rank == bestRank && sqr >= bestSqr))) continue;
+
+                best = container;
+                bestRank = rank;
+                bestSqr = sqr;
+            }
+
+            return best;
         }
 
         private static Container FindChest(Vector3 origin, float radius, GameObject product,
@@ -271,6 +347,14 @@ namespace AstvardServerMod
         /// over when asked, and stations waiting to be fed. Each vanilla "take" routine
         /// already refuses to act when nothing is ready, so they can be asked blindly.
         /// </summary>
+        // Помеченные сундуки зоны, их места и общий список подачи для станции, которая в
+        // этой зоне стоит. Заводятся один раз: проход идёт каждую секунду.
+        private static readonly List<Container> ZoneBins = new List<Container>();
+
+        private static readonly List<Vector3> ZoneSpots = new List<Vector3>();
+
+        private static readonly List<Container> ZoneSupply = new List<Container>();
+
         private static IEnumerator AutomationLoop()
         {
             var pieces = new List<Piece>();
@@ -311,9 +395,53 @@ namespace AstvardServerMod
                         if (IsSupplyChest(container)) supplyChests.Add(container);
                     }
 
+                    // «Автонаполнение»: помеченные сундуки той зоны, в которой стоит игрок,
+                    // годятся станциям в ней и как кладовая, и как приёмник. Собираются из
+                    // того же обхода деталей - второй за ними не ходим.
+                    Sorting.Zone zone = null;
+                    ZoneBins.Clear();
+                    ZoneSpots.Clear();
+                    ZoneSupply.Clear();
+
+                    if (ZoneStationsOn && SortingOn && RuleAllows("sort"))
+                    {
+                        var zones = SortingZones();
+                        var stand = player.transform.position;
+                        var at = Sorting.ZoneAt(zones, stand.x, stand.z);
+
+                        // В общей зоне работает один клиент: двое вычерпали бы один сундук
+                        // в одну печь дважды.
+                        if (at >= 0 && !(ZonesOnServer && !zones[at].Drive))
+                        {
+                            zone = zones[at];
+                            foreach (var piece in pieces)
+                            {
+                                if (piece == null) continue;
+
+                                var container = ContainerOf(piece);
+                                if (container == null) continue;
+                                if (ChestCategory(container) < 0) continue;
+                                if (IsPrivateChest(container) || IsSupplyChest(container)) continue;
+
+                                var spot = container.transform.position;
+                                if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
+
+                                ZoneBins.Add(container);
+                                ZoneSpots.Add(spot);
+                            }
+                        }
+                    }
+
+                    if (ZoneBins.Count > 0)
+                    {
+                        // Назначенные впереди: указать пальцем - точнее, чем «оно тут рядом».
+                        ZoneSupply.AddRange(supplyChests);
+                        ZoneSupply.AddRange(ZoneBins);
+                    }
+
                     // Nothing assigned, or the half switched off: nothing to feed from, so
                     // skip the reads and reflection the feeding half would do.
-                    var feeding = IsAutoFillEnabled && supplyChests.Count > 0;
+                    var feeding = IsAutoFillEnabled && (supplyChests.Count > 0 || ZoneBins.Count > 0);
 
                     // And with nowhere to put anything either, the whole second pass is
                     // waste: five GetComponentInChildren per piece, each a recursive walk of
@@ -322,46 +450,52 @@ namespace AstvardServerMod
                     // tree walks a second to reach a row of MayHarvest calls that can only
                     // answer false. The chest sweep above still has to run, since it is what
                     // decides this.
-                    var harvesting = IsAutoCollectEnabled && collectSpots.Count > 0;
+                    var harvesting = IsAutoCollectEnabled && (collectSpots.Count > 0 || ZoneBins.Count > 0);
                     if (!feeding && !harvesting) continue;
 
                     foreach (var piece in pieces)
                     {
                         if (piece == null) continue;
 
+                        // Станция в зоне ест из её сундуков и сдаёт в них; станция вне
+                        // зоны живёт как жила, назначенными сундуками.
+                        var place = piece.transform.position;
+                        var inZone = zone != null && Sorting.Inside(zone, place.x, place.z);
+                        var food = inZone ? ZoneSupply : supplyChests;
+
                         var cooking = piece.GetComponentInChildren<CookingStation>();
                         if (cooking != null)
                         {
-                            if (harvesting && MayHarvest(cooking, collectSpots))
+                            if (harvesting && MayHarvest(cooking, collectSpots, inZone))
                                 cooking.GetComponent<ZNetView>()
                                     .InvokeRPC("RPC_RemoveDoneItem", player.transform.position, 1);
-                            if (feeding) FillCooking(cooking, supplyChests);
+                            if (feeding) FillCooking(cooking, food);
                         }
 
                         var beehive = piece.GetComponentInChildren<Beehive>();
-                        if (beehive != null && harvesting && MayHarvest(beehive, collectSpots))
+                        if (beehive != null && harvesting && MayHarvest(beehive, collectSpots, inZone))
                             beehive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
 
                         var fermenter = piece.GetComponentInChildren<Fermenter>();
                         if (fermenter != null)
                         {
-                            if (harvesting && MayHarvest(fermenter, collectSpots))
+                            if (harvesting && MayHarvest(fermenter, collectSpots, inZone))
                                 fermenter.GetComponent<ZNetView>().InvokeRPC("RPC_Tap");
-                            if (feeding) FillFermenter(fermenter, supplyChests);
+                            if (feeding) FillFermenter(fermenter, food);
                         }
 
                         var smelter = piece.GetComponentInChildren<Smelter>();
                         if (smelter != null)
                         {
-                            if (feeding) FillSmelter(smelter, supplyChests);
+                            if (feeding) FillSmelter(smelter, food);
                             // Gated like its three siblings. Tipping the kiln out with
                             // nowhere to put the coal turns one fifty-stack at the end of
                             // the burn into fifty singles on the floor, one a second.
-                            if (harvesting && MayHarvest(smelter, collectSpots)) FlushSmelter(smelter);
+                            if (harvesting && MayHarvest(smelter, collectSpots, inZone)) FlushSmelter(smelter);
                         }
 
                         var fireplace = piece.GetComponentInChildren<Fireplace>();
-                        if (fireplace != null && feeding) FillFireplace(fireplace, supplyChests);
+                        if (fireplace != null && feeding) FillFireplace(fireplace, food);
                     }
                 }
                 catch (System.Exception bad)
@@ -380,6 +514,15 @@ namespace AstvardServerMod
         /// ground drop, because at this point nobody knows which item is about to
         /// appear; closing that would mean threading the product through every branch.
         /// </summary>
+        /// <summary>
+        /// То же, но станции в зоне сортировки засчитываются и её помеченные сундуки.
+        /// </summary>
+        private static bool MayHarvest(Component producer, List<Vector3> assignedChests, bool inZone)
+        {
+            if (MayHarvest(producer, assignedChests)) return true;
+            return inZone && MayHarvest(producer, ZoneSpots);
+        }
+
         private static bool MayHarvest(Component producer, List<Vector3> assignedChests)
         {
             if (!OwnedAndValid(producer)) return false;

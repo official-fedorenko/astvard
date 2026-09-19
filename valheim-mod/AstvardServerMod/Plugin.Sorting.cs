@@ -236,6 +236,13 @@ namespace AstvardServerMod
                 "Сколько ячеек должна занимать куча одного предмета, чтобы получить свой "
                 + "сундук внутри категории. 0 — не делить: все сундуки категории берут всё.");
 
+            _zoneStations = config.Bind("Сортировка", "ZoneStations", true,
+                "Работают ли станции внутри зоны сортировки с её помеченными сундуками: "
+                + "берут оттуда сырьё и складывают туда готовое, по категориям. Назначенные "
+                + "руками сундуки подачи и сбора работают как прежде и идут первыми. "
+                + "Далеко ли станция дотянется, решает «Зона станций». "
+                + "Переключается в игре: «Функции» → «Сортировка» → «Автонаполнение».");
+
             _groupSpan = config.Bind("Сортировка", "GroupSpan", 8f,
                 "На каком расстоянии сундуки считаются стоящими вместе, от 0 до 64 м. Куча "
                 + "держится одной такой кучки и не расползается по базе. Мерится до "
@@ -246,6 +253,26 @@ namespace AstvardServerMod
         private static BepInEx.Configuration.ConfigEntry<bool> _zonesSeeded;
 
         private static BepInEx.Configuration.ConfigEntry<float> _groupSpan;
+
+        private static BepInEx.Configuration.ConfigEntry<bool> _zoneStations;
+
+        /// <summary>
+        /// «Автонаполнение»: станции в зоне сортировки кормятся её помеченными сундуками.
+        ///
+        /// Назначать сундук каждой печи - работа, которой на разобранной базе быть не
+        /// должно: всё сырьё и так разложено по категориям, и печи достаточно знать, что
+        /// она стоит в этой зоне. Назначенные сундуки при этом не отменяются и идут
+        /// первыми: указать пальцем - по-прежнему самый точный ответ на «который из них».
+        /// </summary>
+        internal static bool ZoneStationsOn
+        {
+            get { return _zoneStations == null || _zoneStations.Value; }
+        }
+
+        internal static void SetZoneStations(bool on)
+        {
+            if (_zoneStations != null) _zoneStations.Value = on;
+        }
 
         /// <summary>How close two chests stand to count as one group.</summary>
         internal static float GroupSpan
