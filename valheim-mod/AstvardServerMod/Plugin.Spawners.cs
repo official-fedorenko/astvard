@@ -48,10 +48,36 @@ namespace AstvardServerMod
         // Grouped by where the creature belongs rather than alphabetically: an admin
         // dropping spawners is furnishing a place, and what fits a swamp is the question
         // being asked. Every name is checked against the running game before its button
-        // appears, the same as the weather list — the names were read out of the game's
+        // appears, the same as the weather list - the names were read out of the game's
         // own data files, and a guess that is wrong disappears instead of doing nothing.
+        //
+        // Подпись кнопки мод спрашивает у самой игры (TitleOf), а написанное здесь - только
+        // запас на случай, если она промолчит. Поэтому в списке спокойно лежат твари, чьего
+        // русского имени мы не знаем: назовёт их игра, и назовёт правильно.
         private static readonly SpawnerGroup[] SpawnerGroups =
         {
+            // Мирные ставятся **живьём**, а не гнездом: у оленя, зайца и утконоса своего
+            // спавнера в игре нет вовсе. У кабана и курицы есть - они ниже, в «Лугах».
+            new SpawnerGroup("Мирные",
+                new SpawnerKind("Олень", "Deer"),
+                new SpawnerKind("Кабан", "Boar"),
+                new SpawnerKind("Поросёнок", "Boar_piggy"),
+                new SpawnerKind("Утконос", "Neck"),
+                new SpawnerKind("Заяц", "Hare"),
+                new SpawnerKind("Быкоящер", "Lox"),
+                new SpawnerKind("Телёнок быкоящера", "Lox_Calf"),
+                new SpawnerKind("Курица", "Hen"),
+                new SpawnerKind("Цыплёнок", "Chicken"),
+                new SpawnerKind("Асксвин", "Asksvin"),
+                new SpawnerKind("Птенец асксвина", "Asksvin_hatchling"),
+                new SpawnerKind("Ворона", "Crow")),
+
+            new SpawnerGroup("Луга",
+                new SpawnerKind("Гнездо кабанов", "Spawner_Boar"),
+                new SpawnerKind("Гнездо кур", "Spawner_Hen"),
+                new SpawnerKind("Гнездо цыплят", "Spawner_Chicken"),
+                new SpawnerKind("Скелет лугов", "Spawner_Skeleton_Meadows")),
+
             new SpawnerGroup("Чёрный лес",
                 new SpawnerKind("Серый карлик", "Spawner_Greydwarf"),
                 new SpawnerKind("Карлик-элита", "Spawner_Greydwarf_Elite"),
@@ -66,6 +92,7 @@ namespace AstvardServerMod
                 new SpawnerKind("Драугр-элита", "Spawner_Draugr_Elite"),
                 new SpawnerKind("Драугр-лучник", "Spawner_Draugr_Ranged"),
                 new SpawnerKind("Куча драугров", "Spawner_DraugrPile"),
+                new SpawnerKind("Скелет болот", "Spawner_Skeleton_Swamp"),
                 new SpawnerKind("Слизь", "Spawner_Blob"),
                 new SpawnerKind("Слизь-элита", "Spawner_BlobElite"),
                 new SpawnerKind("Пиявка", "Spawner_Leech_cave"),
@@ -76,7 +103,8 @@ namespace AstvardServerMod
                 new SpawnerKind("Фенринг", "Spawner_Fenring"),
                 new SpawnerKind("Каменный голем", "Spawner_StoneGolem"),
                 new SpawnerKind("Детёныш дракона", "Spawner_Hatchling"),
-                new SpawnerKind("Летучая мышь", "Spawner_Bat")),
+                new SpawnerKind("Летучая мышь", "Spawner_Bat"),
+                new SpawnerKind("Скелет гор", "Spawner_Skeleton_Mountains")),
 
             new SpawnerGroup("Равнины",
                 new SpawnerKind("Фулинг", "Spawner_Goblin"),
@@ -91,22 +119,48 @@ namespace AstvardServerMod
                 new SpawnerKind("Искатель-солдат", "Spawner_SeekerBrute"),
                 new SpawnerKind("Двергр-маг", "Spawner_DvergerMage"),
                 new SpawnerKind("Двергр-арбалетчик", "Spawner_DvergerArbalest"),
+                new SpawnerKind("Двергр (любой)", "Spawner_DvergerRandom"),
                 new SpawnerKind("Звёздный клещ", "Spawner_Tick_stared")),
 
             new SpawnerGroup("Пепельные земли",
+                new SpawnerKind("Обугленный", "Spawner_Charred"),
                 new SpawnerKind("Обугленный лучник", "Spawner_Charred_Archer"),
                 new SpawnerKind("Обугленный маг", "Spawner_Charred_Mage"),
+                new SpawnerKind("Обугленный с клинком", "Spawner_Charred_Dyrnwyn"),
                 new SpawnerKind("Обугленный камень", "Spawner_CharredStone"),
+                new SpawnerKind("Обугленный камень (элита)", "Spawner_CharredStone_Elite"),
+                new SpawnerKind("Крест обугленных", "Spawner_CharredCross"),
+                new SpawnerKind("Баллиста обугленных", "Spawner_Charred_balista"),
+                new SpawnerKind("Двергр пепла", "Spawner_DvergerAshlands"),
                 new SpawnerKind("Морген", "Spawner_Morgen"),
                 new SpawnerKind("Стервятник", "Spawner_Volture"),
-                new SpawnerKind("Бес", "Spawner_imp")),
+                new SpawnerKind("Бес", "Spawner_imp"),
+                new SpawnerKind("Spawner_Twitcher", "Spawner_Twitcher")),
+
+            // Дальний север 1.0: где русского имени не знаем - оставлено имя префаба, и
+            // игра подставит своё. Выдумывать за неё имя твари незачем.
+            new SpawnerGroup("Дальний север",
+                new SpawnerKind("Ётун-воин", "Spawner_JotunWarrior"),
+                new SpawnerKind("Ётун с двумя клинками", "Spawner_JotunDualWield"),
+                new SpawnerKind("Ётун-ведьма", "Spawner_JotunWitch"),
+                new SpawnerKind("Фулинг севера", "Spawner_GoblinDeepNorth"),
+                new SpawnerKind("Двергр севера", "Spawner_DvergerDeepNorth"),
+                new SpawnerKind("Морозный тролль", "Spawner_TrollFrost"),
+                new SpawnerKind("Spawner_Frysling", "Spawner_Frysling"),
+                new SpawnerKind("Spawner_Writhan", "Spawner_Writhan"),
+                new SpawnerKind("Spawner_ShadowPerson", "Spawner_ShadowPerson"),
+                new SpawnerKind("Спящий медведь", "Spawner_Bjorn_sleeping")),
 
             new SpawnerGroup("Прочее",
-                new SpawnerKind("Кабан", "Spawner_Boar"),
-                new SpawnerKind("Курица", "Spawner_Chicken"),
                 new SpawnerKind("Культист", "Spawner_Cultist"),
+                new SpawnerKind("Культист Хильдир", "Spawner_Cultist_Hildir"),
+                new SpawnerKind("Громила Хильдир", "Spawner_GoblinBrute_Hildir"),
+                new SpawnerKind("Скелет Хильдир", "Spawner_Skeleton_hildir"),
                 new SpawnerKind("Павшая валькирия", "Spawner_FallenValkyrie"),
-                new SpawnerKind("Ядовитый скелет", "Spawner_Skeleton_poison"))
+                new SpawnerKind("Ядовитый скелет", "Spawner_Skeleton_poison"),
+                new SpawnerKind("Spawner_Kvastur", "Spawner_Kvastur"),
+                new SpawnerKind("Призрак пустоты", "Spawner_Ghost_Void"),
+                new SpawnerKind("Рыба (пещерная)", "Spawner_Fish4"))
         };
 
         private static int _spawnerGroup;
@@ -127,6 +181,66 @@ namespace AstvardServerMod
             return ZNetScene.instance != null && ZNetScene.instance.GetPrefab(name) != null;
         }
 
+        // Подпись, которую игра дала этой твари. Спрошено один раз на вид: ответ не
+        // меняется, а страница перерисовывается на каждое нажатие.
+        private static readonly Dictionary<string, string> SpawnerTitles = new Dictionary<string, string>();
+
+        /// <summary>
+        /// Как эту тварь зовёт сама игра.
+        ///
+        /// The label written in the list is only a fallback. Asking the game means the
+        /// button says what the player reads everywhere else - in the creature's hover
+        /// text, in the trophy, in his own language - and it means a creature whose
+        /// Russian name we do not know can still go in the list honestly: the game will
+        /// name it. For a nest the name comes from what it sends out, not from the nest.
+        /// </summary>
+        private static string TitleOf(SpawnerKind kind)
+        {
+            string said;
+            if (SpawnerTitles.TryGetValue(kind.Prefab, out said)) return said;
+
+            said = kind.Label;
+
+            var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;
+            if (prefab != null)
+            {
+                var nest = prefab.GetComponent<CreatureSpawner>();
+                var beast = nest != null && nest.m_creaturePrefab != null ? nest.m_creaturePrefab : prefab;
+
+                var character = beast.GetComponent<Character>();
+                var name = character != null ? character.m_name : null;
+
+                if (!string.IsNullOrEmpty(name) && Localization.instance != null)
+                {
+                    var localised = Localization.instance.Localize(name);
+                    // Ключ, для которого перевода нет, возвращается как есть - со знаком
+                    // доллара. Такую «подпись» показывать хуже, чем нашу.
+                    if (!string.IsNullOrEmpty(localised) && !localised.StartsWith("$")) said = localised;
+                }
+            }
+
+            SpawnerTitles[kind.Prefab] = said;
+            return said;
+        }
+
+        /// <summary>Ставим мы живого зверя или гнездо, которое их подсылает.</summary>
+        private static bool IsNest(SpawnerKind kind)
+        {
+            var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;
+            return prefab != null && prefab.GetComponent<CreatureSpawner>() != null;
+        }
+
+        /// <summary>Сколько всего биомов и сколько тварей в открытом — для листания.</summary>
+        internal static int SpawnerGroupCount
+        {
+            get { return SpawnerGroups.Length; }
+        }
+
+        internal static int SpawnerKindCount
+        {
+            get { return ShownKinds.Count; }
+        }
+
         private static void KindsIn(int group, List<SpawnerKind> into)
         {
             into.Clear();
@@ -142,32 +256,46 @@ namespace AstvardServerMod
         /// </summary>
         internal static void RebuildSpawnerViews()
         {
-            _shownSpawnerGroups = Mathf.Min(SpawnerGroups.Length, MaxSpawnerButtons);
+            // Оба списка листаются: биомов стало десять, а тварей в пепельных землях -
+            // тринадцать, и «показаны первые восемь» здесь значило бы, что половины списка
+            // нет вовсе и сказать об этом некому. Так уже было с шаблонами.
+            var fromGroup = MenuPaging.Clamp(_categoryOffset, SpawnerGroups.Length, MaxSpawnerButtons);
+            _shownSpawnerGroups = Mathf.Min(SpawnerGroups.Length - fromGroup, MaxSpawnerButtons);
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
                 var label = SpawnerGroupButtons[i] != null
                     ? SpawnerGroupButtons[i].GetComponentInChildren<Text>(true)
                     : null;
+
+                var at = fromGroup + i;
                 if (label != null)
-                    label.text = i < SpawnerGroups.Length ? SpawnerGroups[i].Label : "";
+                    label.text = at < SpawnerGroups.Length ? SpawnerGroups[at].Label : "";
             }
 
             KindsIn(_spawnerGroup, ShownKinds);
-            _shownSpawnerKinds = Mathf.Min(ShownKinds.Count, MaxSpawnerButtons);
+
+            var fromKind = MenuPaging.Clamp(_itemOffset, ShownKinds.Count, MaxSpawnerButtons);
+            _shownSpawnerKinds = Mathf.Min(ShownKinds.Count - fromKind, MaxSpawnerButtons);
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
                 var label = SpawnerKindButtons[i] != null
                     ? SpawnerKindButtons[i].GetComponentInChildren<Text>(true)
                     : null;
-                if (label != null) label.text = i < ShownKinds.Count ? ShownKinds[i].Label : "";
+
+                var at = fromKind + i;
+                if (label != null) label.text = at < ShownKinds.Count ? TitleOf(ShownKinds[at]) : "";
             }
         }
 
-        internal static void OpenSpawnerGroup(int group)
+        internal static void OpenSpawnerGroup(int slot)
         {
-            _spawnerGroup = group;
+            var at = MenuPaging.Clamp(_categoryOffset, SpawnerGroups.Length, MaxSpawnerButtons) + slot;
+            if (at >= SpawnerGroups.Length) return;
+
+            _spawnerGroup = at;
+            _itemOffset = 0;
             MenuState = StateSpawnerList;
             RefreshMenu();
         }
@@ -183,18 +311,19 @@ namespace AstvardServerMod
         /// </summary>
         internal static void PlaceSpawner(int slot)
         {
-            if (slot < 0 || slot >= ShownKinds.Count) return;
+            var at = MenuPaging.Clamp(_itemOffset, ShownKinds.Count, MaxSpawnerButtons) + slot;
+            if (slot < 0 || at >= ShownKinds.Count) return;
             // The builder walks the clipboard across a yield, re-reading its count each
             // time round, so emptying it here would stop a build already in progress
             // partway and leave the placement state pointing at nothing. RunCopy and
             // RunCopyToFile already refuse for the same reason.
             if (BuildInProgress) return;
 
-            var kind = ShownKinds[slot];
+            var kind = ShownKinds[at];
             var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;
             if (prefab == null)
             {
-                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Нет такого спавнера");
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Такого у этой игры нет");
                 return;
             }
 
@@ -206,11 +335,12 @@ namespace AstvardServerMod
                 LocalRot = Quaternion.identity
             });
 
-            StartPlacement($"спавнер «{kind.Label}»");
+            var title = TitleOf(kind);
+            StartPlacement(IsNest(kind) ? $"гнездо «{title}»" : $"зверь «{title}»");
             InventoryGui.instance?.Hide();
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                $"{kind.Label}: ЛКМ — поставить, P — закрепить");
+                $"{title}: ЛКМ — поставить, P — закрепить");
             Log.LogInfo($"[AstvardServerMod] Placing spawner {kind.Prefab}.");
         }
 

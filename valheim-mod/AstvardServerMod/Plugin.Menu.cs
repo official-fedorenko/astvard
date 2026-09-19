@@ -480,7 +480,7 @@ namespace AstvardServerMod
             TodApplyButton = MakeButton(gui, "Установить", ApplyTimeOfDay);
 
 
-            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена,\nP — закрепить, стрелки — сдвиг.\nСпавнер невидим — в проекции\nпоказан сам зверь.\nВ базе игрока (верстак, костёр)\nон молчит, и работает, только\nпока игрок ближе 60 м.\n«Убрать рядом» сносит все\nспавнеры в 8 м, и родные тоже.\nБуфер копирования будет занят.");
+            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена,\nP — закрепить, стрелки — сдвиг.\n\n«Мирные» — это живой зверь,\nодин и сразу. Остальное —\nгнездо: оно невидимо, в\nпроекции показан сам зверь,\nи оно подсылает их, пока\nигрок ближе 60 м.\nВ базе игрока (верстак, костёр)\nгнездо молчит.\n«Убрать рядом» сносит все\nгнёзда в 8 м, и родные тоже.\nБуфер копирования будет занят.");
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
@@ -853,7 +853,7 @@ namespace AstvardServerMod
 
             TemplatesButton = MakeButton(gui, "Шаблоны", OpenTemplateSources);
 
-            SpawnerButton = MakeButton(gui, "Спавнеры", () =>
+            SpawnerButton = MakeButton(gui, "Живность", () =>
             {
                 MenuState = StateSpawners;
                 RefreshMenu();
