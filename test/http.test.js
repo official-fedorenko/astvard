@@ -1001,3 +1001,104 @@ test('постройки: кому открыта постройка решае�
   assert.strictEqual((await api('/api/admin/builds', { cookie: player })).status, 403);
   assert.strictEqual((await api('/api/admin/builds')).status, 401);
 });
+
+// ---- Сортировка: куда сортировщик кладёт предмет ----
+//
+// Каталог присылает мод, и в тесте он приходит той же дорогой и под тем же токеном:
+// список предметов сайт не придумывает даже здесь.
+
+async function resetSorting() {
+  await pool.query('DELETE FROM game_sort_items');
+  await pool.query('INSERT INTO game_sort_sync (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
+  await pool.query("UPDATE game_sort_sync SET revision = 0, seeded = false, categories = ''," +
+                   ' mod_seen_at = NULL, mod_applied_revision = 0');
+}
+
+const sortRow = (...fields) => fields.join('|');
+
+async function sortingPush(lines) {
+  const res = await fetch(`${baseUrl}/api/game/sorting`, {
+    method: 'POST',
+    headers: { ...MOD_AUTH, 'Content-Type': 'text/plain; charset=utf-8' },
+    body: lines.join(LF) + LF
+  });
+  return { status: res.status, text: (await res.text()).trim() };
+}
+
+async function sortingPull(rev) {
+  const res = await fetch(`${baseUrl}/api/game/sorting?rev=${rev}`, { headers: MOD_AUTH });
+  return { status: res.status, lines: (await res.text()).split(LF).filter(Boolean) };
+}
+
+const sortingItem = (answer, kind) => answer.json.items.find((item) => item.kind === kind);
+
+test('сортировка: каталог от мода, пачка с сайта — одна ревизия, снятый выбор не «Разное»', async () => {
+  await resetSorting();
+  const cookie = await loginAs('superadmin', '1234qwer', '10.50.2.1');
+
+  assert.deepStrictEqual((await sortingPull(0)).lines, ['seed needed'], 'пустой сайт просит каталог');
+
+  const push = await sortingPush([
+    '#categories Разное|Материалы|Еда',
+    sortRow('$test_sort_hide', 'Оленья шкура', 'Material', 1),
+    sortRow('$test_sort_tar', 'Смола', 'Material', 1),
+    sortRow('$test_sort_honey', 'Мёд', 'Consumable', 2),
+    'строка без полей'
+  ]);
+  assert.strictEqual(push.status, 200);
+  assert.strictEqual(push.text, 'ok 3', 'нечитаемая строка не валит остальной каталог');
+
+  // Пачкой: одна ревизия на всех, а ключ, которого сервер не присылал, пропускается
+  // молча — каталог мог смениться, пока страница была открыта.
+  const many = await api('/api/admin/sorting/items', {
+    method: 'PATCH', cookie,
+    body: { kinds: ['$test_sort_hide', '$test_sort_tar', '$test_sort_gone'], category: 2 }
+  });
+  assert.strictEqual(many.status, 200);
+  assert.strictEqual(many.json.changed, 2);
+
+  const after = await api('/api/admin/sorting', { cookie });
+  assert.strictEqual(after.json.revision, many.json.revision, 'вся пачка — одна ревизия');
+  assert.strictEqual(sortingItem(after, '$test_sort_hide').category, 2);
+  assert.strictEqual(sortingItem(after, '$test_sort_tar').category, 2);
+  assert.strictEqual(sortingItem(after, '$test_sort_hide').updatedBy, 'superadmin', 'видно, кто выбрал');
+
+  // Каталог приходит при каждом старте сервера и не смеет стирать выбор админа.
+  assert.strictEqual((await sortingPush(['#categories Разное|Материалы|Еда',
+    sortRow('$test_sort_hide', 'Оленья шкура', 'Material', 1)])).status, 200);
+  assert.strictEqual(sortingItem(await api('/api/admin/sorting', { cookie }), '$test_sort_hide').category, 2);
+
+  // Моду уезжает только выбранное.
+  const pull = await sortingPull(0);
+  assert.ok(pull.lines.includes('$test_sort_hide=2'));
+  assert.ok(!pull.lines.some((line) => line.startsWith('$test_sort_honey')), 'невыбранное решает мод');
+
+  // Снятый выбор возвращает предмет моду, а не кладёт его в «Разное» — это полка 0.
+  const off = await api('/api/admin/sorting/items', {
+    method: 'PATCH', cookie, body: { kinds: ['$test_sort_hide'], category: null }
+  });
+  assert.strictEqual(off.status, 200);
+  assert.strictEqual(sortingItem(await api('/api/admin/sorting', { cookie }), '$test_sort_hide').category, null);
+  assert.ok(!(await sortingPull(0)).lines.some((line) => line.startsWith('$test_sort_hide=')));
+});
+
+test('сортировка: пачка проверяет полку, ревизию зря не тратит и чужих не пускает', async () => {
+  const cookie = await loginAs('superadmin', '1234qwer', '10.50.2.2');
+  const batch = (body, extra = {}) => api('/api/admin/sorting/items', { method: 'PATCH', body, ...extra });
+
+  assert.strictEqual((await batch({ kinds: [], category: 1 }, { cookie })).status, 400);
+  assert.strictEqual((await batch({ kinds: ['$test_sort_tar'], category: 99 }, { cookie })).status, 400);
+  assert.strictEqual((await batch({ kinds: ['$test_sort_tar'], category: 1 })).status, 401);
+
+  // Отказ ревизию не поднимает: иначе мод ходил бы за изменением, которого нет.
+  const before = (await api('/api/admin/sorting', { cookie })).json.revision;
+  await batch({ kinds: ['$test_sort_tar'], category: 99 }, { cookie });
+  assert.strictEqual((await api('/api/admin/sorting', { cookie })).json.revision, before);
+
+  await pool.query(
+    "INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'User')",
+    ['Сортировщик', 'sorter@example.com', hashPassword('sorter-pass-123')]
+  );
+  const player = await loginAs('Сортировщик', 'sorter-pass-123', '10.50.2.3');
+  assert.strictEqual((await batch({ kinds: ['$test_sort_tar'], category: 1 }, { cookie: player })).status, 403);
+});

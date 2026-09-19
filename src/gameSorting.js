@@ -154,6 +154,20 @@ async function overview() {
   };
 }
 
+/** Разбор номера полки. Пустое — «решает мод», и это не «Разное». */
+function pickCategory(category, titles) {
+  if (category === null || category === undefined || category === '') return { value: null };
+
+  const value = Number.parseInt(category, 10);
+  if (!Number.isFinite(value) || value < 0 || (titles.length && value >= titles.length)) {
+    return { error: 'Нет такой категории', status: 400 };
+  }
+
+  return { value };
+}
+
+const saidOf = (value, titles) => (value === null ? 'решает сервер' : `«${titles[value] || value}»`);
+
 /**
  * Выбор по одному предмету. null снимает выбор — предмет возвращается моду, а не
  * уезжает в «Разное»: это разные вещи, и путать их значит тихо ломать раскладку.
@@ -166,24 +180,55 @@ async function setCategory(kind, category, by) {
 
   const now = await state();
   const titles = categoryList(now.categories);
-
-  let value = null;
-  if (category !== null && category !== undefined && category !== '') {
-    value = Number.parseInt(category, 10);
-    if (!Number.isFinite(value) || value < 0 || (titles.length && value >= titles.length)) {
-      return { error: 'Нет такой категории', status: 400 };
-    }
-  }
+  const picked = pickCategory(category, titles);
+  if (picked.error) return picked;
 
   const revision = await nextRevision();
   await run('UPDATE game_sort_items SET category = ?, updated_at = now(), updated_by = ?, '
-            + 'revision = ? WHERE kind = ?', [value, by || null, revision, kind]);
+            + 'revision = ? WHERE kind = ?', [picked.value, by || null, revision, kind]);
 
-  const said = value === null
-    ? 'решает сервер'
-    : `«${titles[value] || value}»`;
-
-  return { revision, title: row.title || kind, said, value };
+  return {
+    revision,
+    title: row.title || kind,
+    said: saidOf(picked.value, titles),
+    value: picked.value,
+  };
 }
 
-module.exports = { pullText, pushCatalogue, overview, setCategory };
+/**
+ * То же самое пачкой: «все трофеи — на полку трофеев». Предметов в каталоге под
+ * тысячу, и по одному это тысяча запросов.
+ *
+ * Ревизия на всю пачку одна, и не ради экономии: мод забирает выбор целиком, так что
+ * тридцать ревизий подряд значат для него ровно то же, что одна, — зато «ждёт сервер»
+ * в админке гаснет разом, а не тридцатью морганиями.
+ *
+ * Незнакомый ключ молча пропускается, а не отменяет всю правку: каталог мог смениться,
+ * пока страница была открыта, и терять из-за одного исчезнувшего предмета решение по
+ * остальной сотне незачем. Сколько строк легло — в ответе.
+ */
+async function setCategories(kinds, category, by) {
+  const list = Array.from(new Set((Array.isArray(kinds) ? kinds : [])
+    .map((kind) => String(kind || '').trim())
+    .filter((kind) => KIND_RE.test(kind))));
+
+  if (!list.length) return { error: 'Не выбрано ни одного предмета', status: 400 };
+  if (list.length > MAX_ITEMS) return { error: 'Слишком много предметов за раз', status: 400 };
+
+  const now = await state();
+  const titles = categoryList(now.categories);
+  const picked = pickCategory(category, titles);
+  if (picked.error) return picked;
+
+  const revision = await nextRevision();
+  const marks = list.map(() => '?').join(', ');
+  const done = await run(
+    'UPDATE game_sort_items SET category = ?, updated_at = now(), updated_by = ?, '
+    + `revision = ? WHERE kind IN (${marks})`,
+    [picked.value, by || null, revision, ...list]
+  );
+
+  return { revision, changed: done.changes || 0, said: saidOf(picked.value, titles) };
+}
+
+module.exports = { pullText, pushCatalogue, overview, setCategory, setCategories };

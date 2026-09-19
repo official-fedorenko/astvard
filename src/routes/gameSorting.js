@@ -53,6 +53,23 @@ module.exports = async function handleGameSorting(req, res, sessionUser, parsedU
       return sendJson(res, 200, { success: true, revision: result.revision });
     }
 
+    // Пачкой: те же правила, один запрос и одна ревизия на всех. Своя ручка, а не
+    // флаг у прежней, потому что и ответ другой — сколько строк легло.
+    if (parsedUrl.pathname === '/api/admin/sorting/items' && method === 'PATCH') {
+      let body;
+      try {
+        body = await getJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { success: false, message: 'Некорректный запрос' });
+      }
+
+      const result = await sorting.setCategories(body.kinds, body.category, actor.username);
+      if (result.error) return sendJson(res, result.status, { success: false, message: result.error });
+
+      logAction(actor, `Сортировка: предметов ${result.changed} — ${result.said}`);
+      return sendJson(res, 200, { success: true, revision: result.revision, changed: result.changed });
+    }
+
     return sendJson(res, 404, { success: false, message: 'API endpoint не найден' });
   } catch (err) {
     logger.error('[sorting] админка:', err.message);

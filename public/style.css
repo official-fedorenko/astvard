@@ -1758,3 +1758,85 @@ table.data-table code { white-space: nowrap; }
   .rule-row { grid-template-columns: minmax(0, 1fr); }
   .rule-state { text-align: left; }
 }
+
+/* ==== Раздел «Сортировка» (public/astvard.js) ====
+   Полки над таблицей — сразу и перепись, и фильтр: число говорит, сколько предметов
+   ляжет на полку по нынешним правилам, нажатие оставляет в таблице только их. */
+.shelf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.shelf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid hsl(var(--border-color));
+  border-radius: 999px;
+  background: hsl(var(--bg-card));
+  color: hsl(var(--text-secondary));
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.shelf-chip:hover { border-color: hsl(var(--accent-purple) / 0.6); }
+
+.shelf-chip.active {
+  border-color: hsl(var(--accent-purple));
+  background: hsl(var(--accent-purple) / 0.12);
+  color: hsl(var(--text-primary));
+}
+
+/* Числа в столбик читаются, только если цифры одной ширины. */
+.shelf-chip__count {
+  color: hsl(var(--text-muted));
+  font-variant-numeric: tabular-nums;
+}
+
+.shelf-chip.active .shelf-chip__count { color: hsl(var(--text-primary)); }
+
+/* Пакетная правка. [hidden] сам по себе слабее display: flex, поэтому гасится явно —
+   иначе полоса висела бы над таблицей всегда и обещала действие, которого нет. */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  border-bottom: 1px solid hsl(var(--border-color));
+  background: hsl(var(--accent-purple) / 0.08);
+}
+
+.bulk-bar[hidden] { display: none; }
+.bulk-bar .form-control { flex: 0 1 220px; }
+.bulk-bar__count { font-size: 14px; font-weight: 600; }
+
+.sorting-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid hsl(var(--border-color));
+  font-size: 13px;
+}
+
+/* Колонка с галочкой остаётся видимой и в карточке: без неё пачку на телефоне не
+   собрать, а карточка открывается тапом мимо галочки. */
+th.sorting-check, td.sorting-check { width: 44px; }
+
+.sorting-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: hsl(var(--accent-purple));
+  cursor: pointer;
+}
+
+/* Список полок в модалке карточки — во всю её ширину, как остальные поля панели. */
+#rowDetailActions .sorting-pick { width: 100%; }

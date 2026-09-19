@@ -886,9 +886,50 @@ bindBuildsHandlers();
 // Пустой выбор — не «Разное». Это «решает мод», то есть по типу предмета, и разница
 // видна на первом же незнакомом предмете: «Разное» — это ответ, а пустой выбор — его
 // отсутствие.
+//
+// Предметов под тысячу (982 на боевом), и отсюда всё остальное здесь: полки сверху
+// говорят, сколько предметов ляжет на каждую, и они же фильтр; отмеченное правится
+// пачкой — одним запросом и одной ревизией; сохранённая строка перерисовывается одна,
+// а не вся таблица.
 
 let sortingState = null;
 let sortingHandlersBound = false;
+
+// Отметки живут отдельно от отрисовки: список сам перечитывается раз в десять секунд,
+// и собранная пачка не должна от этого рассыпаться.
+const sortingMarks = new Set();
+
+// Фильтр по полке: номер категории или null — «все».
+let sortingShelf = null;
+let sortingSearchTimer = null;
+
+// Тип — слово игры (ItemType), и приходит оно по-английски. Перевод нужен только для
+// фильтра, а незнакомый тип показывается как есть: новая версия игры добавит строку без
+// перевода, а не сломает страницу. Сверено по самим предметам с боевого сервера, а не по
+// памяти: TwoHandedWeaponLeft — это посохи, Customization — причёски и бороды.
+const SORTING_TYPES = {
+  Material: 'материалы',
+  Consumable: 'еда и зелья',
+  OneHandedWeapon: 'одноручное оружие',
+  TwoHandedWeapon: 'двуручное оружие',
+  TwoHandedWeaponLeft: 'посохи',
+  Bow: 'луки и арбалеты',
+  Shield: 'щиты',
+  Ammo: 'стрелы и болты',
+  AmmoNonEquipable: 'снаряды баллисты',
+  Chest: 'нагрудники',
+  Helmet: 'шлемы',
+  Legs: 'поножи',
+  Shoulder: 'плащи',
+  Utility: 'пояса и амулеты',
+  Trinket: 'подвески и обереги',
+  Trophy: 'трофеи',
+  Tool: 'инструменты',
+  Torch: 'факелы и фонари',
+  Fish: 'рыба',
+  Customization: 'причёски и бороды',
+  Misc: 'прочее'
+};
 
 async function loadSortingSection({ quiet = false } = {}) {
   try {
@@ -896,6 +937,12 @@ async function loadSortingSection({ quiet = false } = {}) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return quiet ? undefined : showToast(data.message || 'Не удалось загрузить сортировку', 'error');
     sortingState = data;
+
+    // Отметка на предмете, которого в каталоге больше нет, — это пачка, которая молча
+    // не доедет: сервер такой ключ пропустит, а в счётчике он будет.
+    const known = new Set((data.items || []).map((item) => item.kind));
+    Array.from(sortingMarks).forEach((kind) => { if (!known.has(kind)) sortingMarks.delete(kind); });
+
     renderSorting();
   } catch (err) {
     if (!quiet) showToast('Не удалось загрузить сортировку', 'error');
@@ -922,55 +969,219 @@ function sortingTitle(category) {
   return titles[category] || `№${category}`;
 }
 
+// Куда предмет ляжет на самом деле: выбор админа, а если его нет — решение мода по типу.
+// Перепись по полкам считается по этому: сундуки готовят под итог, а не под то, что мод
+// думал до правок.
+function sortingShelfOf(item) {
+  return item.category === null ? item.modCategory : item.category;
+}
+
+const sortingTypeShort = (type) => SORTING_TYPES[type] || type;
+const sortingTypeTitle = (type) => (SORTING_TYPES[type] ? `${SORTING_TYPES[type]} (${type})` : type);
+
+function sortingFilters() {
+  const value = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  };
+  return {
+    query: value('sortingSearch').trim().toLowerCase(),
+    decided: value('sortingDecided'),
+    type: value('sortingType')
+  };
+}
+
 function sortingRows() {
-  const query = (document.getElementById('sortingSearch')?.value || '').trim().toLowerCase();
-  const onlyChosen = Boolean(document.getElementById('sortingOnlyChosen')?.checked);
+  const { query, decided, type } = sortingFilters();
 
   return (sortingState.items || []).filter((item) => {
-    if (onlyChosen && item.category === null) return false;
+    if (sortingShelf !== null && sortingShelfOf(item) !== sortingShelf) return false;
+    if (decided === 'hand' && item.category === null) return false;
+    if (decided === 'mod' && item.category !== null) return false;
+    if (type && item.type !== type) return false;
     if (!query) return true;
-    return item.title.toLowerCase().includes(query) || item.kind.toLowerCase().includes(query);
+    return `${item.title} ${item.kind} ${item.type}`.toLowerCase().includes(query);
   });
 }
 
-function renderSorting() {
-  const line = document.getElementById('sortingSyncLine');
-  if (line) line.textContent = sortingSyncText();
-
-  const body = document.getElementById('sortingItemsBody');
-  if (!body || !sortingState) return;
-
-  const items = sortingRows();
-  if (!items.length) {
-    body.innerHTML = '<tr><td colspan="3" class="empty-state">'
-      + (sortingState.seeded ? 'Ничего не нашлось' : 'Сервер ещё не присылал список предметов')
-      + '</td></tr>';
-    return;
-  }
-
-  const options = (chosen) => (sortingState.categories || [])
+function sortingOptions(chosen) {
+  return (sortingState.categories || [])
     .map((title, at) => `<option value="${at}"${chosen === at ? ' selected' : ''}>${escapeHtml(title)}</option>`)
     .join('');
+}
 
-  body.innerHTML = items.map((item) => {
-    const now = item.category === null
-      ? `<span class="badge badge-muted">по типу: ${escapeHtml(sortingTitle(item.modCategory))}</span>`
-      : `<span class="badge badge-success">${escapeHtml(sortingTitle(item.category))}</span>`;
+function renderSortingSync() {
+  const line = document.getElementById('sortingSyncLine');
+  if (line) line.textContent = sortingSyncText();
+}
 
-    return `<tr>
-      <td>
-        <div>${escapeHtml(item.title || item.kind)}</div>
-        <div class="muted" style="font-size:12px;">${escapeHtml(item.kind)}${item.type ? ' · ' + escapeHtml(item.type) : ''}</div>
-      </td>
-      <td>${now}</td>
-      <td>
-        <select class="sorting-pick" data-kind="${escapeHtml(item.kind)}">
-          <option value=""${item.category === null ? ' selected' : ''}>решает сервер</option>
-          ${options(item.category)}
-        </select>
-      </td>
-    </tr>`;
-  }).join('');
+// Полки: число — сколько предметов на неё ляжет, подсказка — сколько из них решено
+// руками. Нажатие оставляет в таблице только эту полку, повторное снимает фильтр:
+// иначе с полки нет дороги назад, кроме «Всех».
+function renderSortingShelves() {
+  const box = document.getElementById('sortingShelves');
+  if (!box) return;
+
+  const items = sortingState.items || [];
+  const titles = sortingState.categories || [];
+  const total = titles.map(() => 0);
+  const byHand = titles.map(() => 0);
+
+  items.forEach((item) => {
+    const at = sortingShelfOf(item);
+    if (total[at] === undefined) return;
+    total[at] += 1;
+    if (item.category !== null) byHand[at] += 1;
+  });
+
+  const chip = (label, count, value, hint) => `<button type="button" class="shelf-chip`
+    + `${sortingShelf === value ? ' active' : ''}" data-shelf="${value === null ? '' : value}"`
+    + ` title="${escapeHtml(hint)}">${escapeHtml(label)}`
+    + ` <span class="shelf-chip__count">${count}</span></button>`;
+
+  box.innerHTML = [chip('Все полки', items.length, null, 'Показать все предметы')]
+    .concat(titles.map((title, at) => chip(
+      title, total[at], at, `Выбрано руками: ${byHand[at]}, остальное решает сервер`
+    )))
+    .join('');
+}
+
+// Типы — из того же каталога, что и предметы. Список пересобирается, только когда он и
+// правда изменился: иначе выбранный фильтр слетал бы при каждом обновлении раздела.
+function renderSortingTypes() {
+  const select = document.getElementById('sortingType');
+  if (!select) return;
+
+  const types = Array.from(new Set((sortingState.items || []).map((item) => item.type).filter(Boolean)));
+  types.sort((a, b) => sortingTypeTitle(a).localeCompare(sortingTypeTitle(b), 'ru'));
+
+  const signature = types.join('|');
+  if (select.dataset.signature === signature) return;
+
+  const chosen = select.value;
+  select.dataset.signature = signature;
+  select.innerHTML = '<option value="">Любой тип</option>'
+    + types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(sortingTypeTitle(type))}</option>`).join('');
+  select.value = types.includes(chosen) ? chosen : '';
+}
+
+function renderSortingCount(shown) {
+  const line = document.getElementById('sortingCount');
+  if (!line) return;
+
+  const items = sortingState.items || [];
+  const hand = items.filter((item) => item.category !== null).length;
+  line.textContent = `Показано ${shown} из ${items.length} · выбрано руками ${hand}`;
+}
+
+function renderSortingBulk() {
+  const bar = document.getElementById('sortingBulk');
+  if (!bar) return;
+
+  bar.hidden = sortingMarks.size === 0;
+
+  const count = document.getElementById('sortingBulkCount');
+  if (count) count.textContent = `Отмечено ${sortingMarks.size}`;
+
+  const pick = document.getElementById('sortingBulkPick');
+  const titles = String((sortingState.categories || []).length);
+  if (pick && pick.dataset.filled !== titles) {
+    pick.dataset.filled = titles;
+    pick.innerHTML = '<option value="">решает сервер</option>' + sortingOptions(null);
+  }
+}
+
+// Куда предмет ляжет, словами. Одно место на бейдж в строке и на подпись в карточке:
+// разъехаться им нельзя, это один и тот же ответ.
+function sortingWhere(item) {
+  return item.category === null
+    ? `по типу: ${sortingTitle(item.modCategory)}`
+    : sortingTitle(item.category);
+}
+
+// Ячейки строки отдельно от самой строки: после сохранения перерисовываются только они.
+//
+// В свёрнутой карточке имени достаётся то, что осталось от соседей, а колонка «Сейчас»
+// не сжимается — на 375 px имени доставалось 46. Поэтому на телефоне полка уходит
+// подписью под имя, как в остальных таблицах панели, а сама колонка прячется.
+function sortingRowCells(item) {
+  const marked = sortingMarks.has(item.kind) ? ' checked' : '';
+  const now = item.category === null
+    ? `<span class="badge badge-muted">${escapeHtml(sortingWhere(item))}</span>`
+    : `<span class="badge badge-success">${escapeHtml(sortingWhere(item))}</span>`;
+  // Кто и когда — только у выбранного руками: у решения сервера автора нет.
+  const who = item.category !== null && item.updatedBy
+    ? `<div class="cell-note">${escapeHtml(item.updatedBy)}, ${astvardDate(item.updatedAt)}</div>`
+    : '';
+
+  return `<td class="sorting-check">`
+      + `<input type="checkbox" class="sorting-mark" data-kind="${escapeHtml(item.kind)}"${marked}`
+      + ` aria-label="Отметить предмет"></td>`
+    + `<td class="mobile-primary"><div>${escapeHtml(item.title || item.kind)}</div>`
+      + `<div class="cell-note hide-mobile">${escapeHtml(item.kind)}`
+      + `${item.type ? ' · ' + escapeHtml(sortingTypeShort(item.type)) : ''}</div>`
+      + `<div class="row-note">${escapeHtml(sortingWhere(item))}</div></td>`
+    + `<td class="mobile-hidden">${now}${who}</td>`
+    + `<td class="mobile-hidden"><select class="sorting-pick" data-kind="${escapeHtml(item.kind)}">`
+      + `<option value=""${item.category === null ? ' selected' : ''}>решает сервер</option>`
+      + `${sortingOptions(item.category)}</select></td>`;
+}
+
+function renderSorting() {
+  if (!sortingState) return;
+
+  renderSortingSync();
+  renderSortingShelves();
+  renderSortingTypes();
+  renderSortingBulk();
+
+  const body = document.getElementById('sortingItemsBody');
+  if (!body) return;
+
+  const items = sortingRows();
+  renderSortingCount(items.length);
+
+  body.innerHTML = items.length
+    ? items.map((item) => `<tr data-kind="${escapeHtml(item.kind)}">${sortingRowCells(item)}</tr>`).join('')
+    : `<tr class="empty-row"><td colspan="4" class="empty-state">`
+      + (sortingState.seeded ? 'Ничего не нашлось' : 'Сервер ещё не присылал список предметов')
+      + `</td></tr>`;
+}
+
+// Одна строка вместо всей таблицы: строк под тысячу, и перерисовать их ради одной
+// ячейки — значит увести из-под руки и прокрутку, и место, где человек работал.
+// Предмет, переставший подходить под фильтр, останется на виду до следующего
+// обновления — а оно не приходит, пока курсор в этом же разделе.
+function refreshSortingRow(kind) {
+  const item = (sortingState.items || []).find((row) => row.kind === kind);
+  const tr = document.querySelector(`#sortingItemsBody tr[data-kind="${kind}"]`);
+  if (item && tr) tr.innerHTML = sortingRowCells(item);
+
+  renderSortingSync();
+  renderSortingShelves();
+  renderSortingCount(sortingRows().length);
+}
+
+// Полная строка в модалке. На телефоне в карточке видно имя и полку, а выбрать полку
+// надо уметь и там — поэтому тот же список идёт кнопкой диалога.
+function showSortingDetail(kind) {
+  const item = (sortingState.items || []).find((row) => row.kind === kind);
+  if (!item) return;
+
+  const rows = [
+    ['Ключ', `<code>${escapeHtml(item.kind)}</code>`, true],
+    ['Тип в игре', item.type ? sortingTypeTitle(item.type) : '—'],
+    ['Ляжет на полку', sortingTitle(sortingShelfOf(item))],
+    ['Сервер положил бы', sortingTitle(item.modCategory)]
+  ];
+  if (item.category !== null && item.updatedBy) {
+    rows.push(['Выбрал', `${item.updatedBy}, ${astvardDate(item.updatedAt)}`]);
+  }
+
+  showRowDetail(item.title || item.kind, rows,
+    `<select class="sorting-pick form-control" data-kind="${escapeHtml(item.kind)}">`
+    + `<option value=""${item.category === null ? ' selected' : ''}>решает сервер</option>`
+    + `${sortingOptions(item.category)}</select>`);
 }
 
 // Раз в десять секунд, пока раздел открыт: «ещё в пути» само становится «у него», а
@@ -995,12 +1206,42 @@ async function saveSortingPick(kind, value) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
       showToast(data.message || 'Не удалось сохранить', 'error');
-      return false;
+      return null;
     }
-    return true;
+    return data;
   } catch (err) {
     showToast('Ошибка сети', 'error');
-    return false;
+    return null;
+  }
+}
+
+async function sortingBulkApply() {
+  const kinds = Array.from(sortingMarks);
+  if (!kinds.length) return undefined;
+
+  const pick = document.getElementById('sortingBulkPick');
+  const value = pick ? pick.value : '';
+  const said = value === '' ? 'Вернуть решение серверу' : `Переложить в «${sortingTitle(Number(value))}»`;
+
+  // Промах в списке на тысячу строк уводит не туда сразу сотню предметов, и кнопки
+  // «как было» у этого нет.
+  const yes = await confirmDialog(`Отмечено предметов: ${kinds.length}. ${said}?`, { okText: 'Применить' });
+  if (!yes) return undefined;
+
+  try {
+    const res = await fetch('/api/admin/sorting/items', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kinds, category: value === '' ? null : Number(value) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) return showToast(data.message || 'Не удалось переложить', 'error');
+
+    sortingMarks.clear();
+    showToast(`Предметов переложено: ${data.changed}`);
+    return loadSortingSection();
+  } catch (err) {
+    return showToast('Ошибка сети', 'error');
   }
 }
 
@@ -1009,26 +1250,74 @@ function bindSortingHandlers() {
   sortingHandlersBound = true;
 
   document.addEventListener('click', (e) => {
-    if (e.target.closest('#sortingRefreshBtn')) loadSortingSection();
+    if (e.target.closest('#sortingRefreshBtn')) return loadSortingSection();
+    if (!sortingState) return undefined;
+
+    const chip = e.target.closest('.shelf-chip');
+    if (chip) {
+      const value = chip.dataset.shelf === '' ? null : Number(chip.dataset.shelf);
+      sortingShelf = sortingShelf === value ? null : value;
+      return renderSorting();
+    }
+
+    if (e.target.closest('#sortingMarkFound')) {
+      sortingRows().forEach((item) => sortingMarks.add(item.kind));
+      return renderSorting();
+    }
+
+    if (e.target.closest('#sortingBulkClear')) {
+      sortingMarks.clear();
+      return renderSorting();
+    }
+
+    if (e.target.closest('#sortingBulkApply')) return sortingBulkApply();
+
+    // Тап по свёрнутой карточке — как в таблицах выше. Галочка и список из этого
+    // исключены: по ним тап значит своё.
+    if (!astvardCardsMode() || e.target.closest('button, a, label, input, select')) return undefined;
+    const row = e.target.closest('#sortingItemsBody tr[data-kind]');
+    if (row) showSortingDetail(row.dataset.kind);
+    return undefined;
   });
 
   document.addEventListener('input', (e) => {
-    if (e.target.id === 'sortingSearch' && sortingState) renderSorting();
+    if (e.target.id !== 'sortingSearch' || !sortingState) return;
+    // Перерисовка почти тысячи строк на каждую букву чувствуется пальцами.
+    clearTimeout(sortingSearchTimer);
+    sortingSearchTimer = setTimeout(renderSorting, 150);
   });
 
   document.addEventListener('change', async (e) => {
-    if (e.target.id === 'sortingOnlyChosen' && sortingState) return renderSorting();
+    if (!sortingState) return undefined;
+
+    if (e.target.id === 'sortingDecided' || e.target.id === 'sortingType') return renderSorting();
+
+    const mark = e.target.closest('.sorting-mark');
+    if (mark) {
+      if (mark.checked) sortingMarks.add(mark.dataset.kind);
+      else sortingMarks.delete(mark.dataset.kind);
+      return renderSortingBulk();
+    }
 
     const pick = e.target.closest('.sorting-pick');
-    if (!pick || !sortingState) return undefined;
+    if (!pick) return undefined;
 
     const kind = pick.dataset.kind;
-    const item = sortingState.items.find((row) => row.kind === kind);
-    if (!(await saveSortingPick(kind, pick.value))) return loadSortingSection();
+    const item = (sortingState.items || []).find((row) => row.kind === kind);
+    const saved = await saveSortingPick(kind, pick.value);
+    if (!saved) return loadSortingSection();
 
-    const said = pick.value === '' ? 'решает сервер' : `«${sortingTitle(Number(pick.value))}»`;
-    showToast(`${item ? item.title || kind : kind}: ${said}`);
-    return loadSortingSection();
+    sortingState.revision = saved.revision;
+    if (item) {
+      item.category = pick.value === '' ? null : Number(pick.value);
+      item.updatedBy = item.category === null ? null : (currentUser ? currentUser.username : null);
+      item.updatedAt = new Date().toISOString();
+    }
+
+    closeRowDetail();
+    refreshSortingRow(kind);
+    showToast(`${item ? item.title || kind : kind}: ${pick.value === '' ? 'решает сервер' : `«${sortingTitle(Number(pick.value))}»`}`);
+    return undefined;
   });
 }
 

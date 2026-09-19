@@ -997,24 +997,44 @@
 
         <p class="muted builds-sync" id="sortingSyncLine">Загрузка…</p>
 
-        <div class="table-container">
-          <div class="table-toolbar">
-            <div class="table-search">
-              <input type="text" id="sortingSearch" class="form-control"
-                     placeholder="Поиск по названию или ключу..." autocomplete="off">
-            </div>
-            <label class="check-chip">
-              <input type="checkbox" id="sortingOnlyChosen">
-              <span>Только выбранные</span>
-            </label>
-          </div>
-        </div>
+        <!-- Полки: сколько предметов ляжет на каждую по нынешним правилам. Это и
+             перепись — подо что готовить стену сундуков, — и фильтр. -->
+        <div class="shelf-chips" id="sortingShelves"></div>
 
         <div class="table-container">
+          <div class="table-toolbar">
+            <div class="toolbar-form">
+              <input type="text" id="sortingSearch" class="form-control form-control-wide"
+                     placeholder="Поиск по названию, ключу или типу..." autocomplete="off">
+              <select id="sortingDecided" class="form-control">
+                <option value="">Решает кто угодно</option>
+                <option value="mod">Решает сервер</option>
+                <option value="hand">Выбрано руками</option>
+              </select>
+              <select id="sortingType" class="form-control">
+                <option value="">Любой тип</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Пакетная правка. Её не видно, пока ничего не отмечено: пустая полоса
+               над таблицей обещала бы действие, которого не будет. -->
+          <div class="bulk-bar" id="sortingBulk" hidden>
+            <span class="bulk-bar__count" id="sortingBulkCount">Отмечено 0</span>
+            <select id="sortingBulkPick" class="form-control"></select>
+            <button class="btn btn-sm" id="sortingBulkApply">Переложить</button>
+            <button class="btn btn-sm btn-secondary" id="sortingBulkClear">Снять отметки</button>
+          </div>
+
+          <p class="sorting-count muted">
+            <span id="sortingCount"></span>
+            <button class="btn btn-sm btn-secondary" id="sortingMarkFound">Отметить найденные</button>
+          </p>
+
           <div class="table-scroll">
-            <table class="data-table">
+            <table class="data-table cards-mobile">
               <thead>
-                <tr><th>Предмет</th><th>Сейчас</th><th>Куда класть</th></tr>
+                <tr><th class="sorting-check"></th><th>Предмет</th><th>Сейчас</th><th>Куда класть</th></tr>
               </thead>
               <tbody id="sortingItemsBody"></tbody>
             </table>
