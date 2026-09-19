@@ -224,7 +224,9 @@ namespace AstvardServerMod
 
                 if (label.text != note) label.text = note;
 
-                var colour = IsPrivateChest(container) ? PrivateLabelColour : MarkLabelColour;
+                var colour = IsPrivateChest(container) ? PrivateLabelColour
+                    : IsHoldChest(container) ? HoldLabelColour
+                    : MarkLabelColour;
                 if (label.color != colour) label.color = colour;
                 label.transform.position = container.transform.position + Vector3.up * ChestLabelLift;
                 label.gameObject.SetActive(true);
@@ -298,6 +300,11 @@ namespace AstvardServerMod
         private static readonly Color MarkLabelColour = new Color(1f, 0.85f, 0.45f);
 
         private static readonly Color PrivateLabelColour = new Color(0.65f, 0.8f, 1f);
+
+        // «Не для станций» - тот же сундук своей категории, поэтому не слово над ним, а
+        // цвет: слово здесь стоило бы третьей строки над каждым таким сундуком, а что
+        // именно значит цвет, подсказка при наведении говорит словами.
+        private static readonly Color HoldLabelColour = new Color(0.6f, 0.95f, 0.65f);
 
         /// <summary>One label, made the first time it is needed and kept from then on.</summary>
         private static TextMesh ChestLabel(int index)

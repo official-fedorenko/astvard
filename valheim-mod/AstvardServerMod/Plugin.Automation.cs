@@ -731,6 +731,11 @@ namespace AstvardServerMod
             {
                 if (container == null || container.IsInUse()) continue;
 
+                // Одно место на все дороги: сюда сходится всякое изъятие из сундука в
+                // станцию, и назначенная подача тоже. Флажок сильнее назначения - его
+                // ставят позже и ради этого самого.
+                if (IsHoldChest(container)) continue;
+
                 var spot = container.transform.position;
                 var sqr = (spot - origin).sqrMagnitude;
                 if (sqr >= bestSqr) continue;
@@ -910,8 +915,20 @@ namespace AstvardServerMod
 
             AcceptScratch.Clear();
             foreach (var conversion in fermenter.m_conversion)
-                if (conversion != null && conversion.m_from != null)
-                    AcceptScratch.Add(conversion.m_from.gameObject.name);
+            {
+                if (conversion == null || conversion.m_from == null) continue;
+
+                // Тот же склад, что у кухонь, и по тому же счёту - по сорту. Основу
+                // для браги делают руками, так что «не бери вовсе» ей не нужно:
+                // положили основу в помеченный сундук - значит хотели брагу. Нужен
+                // только предел, иначе сотня медовухи станет двумя сотнями.
+                if (FoodKeep > 0 && conversion.m_to != null
+                    && InStock(conversion.m_to.name) >= FoodKeep) continue;
+
+                AcceptScratch.Add(conversion.m_from.gameObject.name);
+            }
+
+            if (AcceptScratch.Count == 0) return;
 
             var brew = TakeSupply(fermenter.transform.position, supply, AcceptScratch);
             // Register<int, bool> in 1.0, not <string>. Sending the name made the

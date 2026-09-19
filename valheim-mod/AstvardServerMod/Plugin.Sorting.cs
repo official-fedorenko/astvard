@@ -12,8 +12,22 @@ namespace AstvardServerMod
 
         private const string PrivateChestKey = "astvard_private";
 
+        /// <summary>«Не для станций»: флажок поверх пометки, а не пометка.</summary>
+        private const string HoldChestKey = "astvard_hold";
+
         /// <summary>«Личный»: never a source and never a bin. Whatever is in it stays.</summary>
         internal const int MarkPrivate = -2;
+
+        /// <summary>
+        /// Не пометка, а переключатель флажка на следующем открытом сундуке.
+        ///
+        /// «Личный» keeps the sorter out altogether; this one keeps only the stations out.
+        /// A chest of «Материалы» that the smelters must not eat is still a chest of
+        /// «Материалы» - the sorter carries ore into it exactly as before - so this cannot
+        /// be another value of the mark. It rides the same armed-and-spent machinery
+        /// because pointing at the chest is still the only way to say which one.
+        /// </summary>
+        internal const int MarkHold = -3;
 
         internal const int MarkNone = -1;
 
@@ -193,6 +207,9 @@ namespace AstvardServerMod
 
         /// <summary>Сколько сундуков подачи в зоне сортировщик обошёл стороной.</summary>
         private static int _lastSupply;
+
+        /// <summary>Сколько помеченных сундуков зоны закрыты от станций.</summary>
+        private static int _lastHold;
 
         private static string _lastSaid = "";
 
@@ -603,6 +620,20 @@ namespace AstvardServerMod
             return view != null && view.IsValid() && view.GetZDO().GetBool(PrivateChestKey);
         }
 
+        /// <summary>
+        /// Сундук, из которого станциям брать нельзя.
+        ///
+        /// Everything else about it stays as it was: the sorter fills it, tidies it and
+        /// counts what is in it towards the coal and food limits. Only the feeding half
+        /// is turned away, which is the whole point - a larder of one's own inside a zone
+        /// the machines otherwise live off.
+        /// </summary>
+        internal static bool IsHoldChest(Container container)
+        {
+            var view = ViewOf(container);
+            return view != null && view.IsValid() && view.GetZDO().GetBool(HoldChestKey);
+        }
+
         // Поиск Container внутри детали - рекурсивный обход всего префаба, а сундук в
         // детали не заводится и не пропадает. Обходов этих на большой базе выходят
         // тысячи в секунду: автоматика, сортировщик и подписи ходят по деталям каждый
@@ -670,8 +701,30 @@ namespace AstvardServerMod
             if (!view.IsOwner()) view.ClaimOwnership();
 
             var zdo = view.GetZDO();
+
+            // Флажок переключается, а не выставляется: две кнопки «включить» и «выключить»
+            // там, где хватает одной, - это две кнопки, из которых одна всегда не нужна.
+            // Раскладку он не меняет, поэтому и перепроверку не будит.
+            if (mark == MarkHold)
+            {
+                var hold = !zdo.GetBool(HoldChestKey);
+                zdo.Set(HoldChestKey, hold);
+
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    (hold
+                        ? "Сундук не для станций — сортировка есть, подачи нет"
+                        : "Станции снова берут из этого сундука")
+                    + (again ? " · Shift — помечай дальше" : ""));
+                return false;
+            }
+
             zdo.Set(PrivateChestKey, mark == MarkPrivate);
             zdo.Set(SortMarkKey, mark >= 0 ? Sorting.ToStored(mark) : 0);
+
+            // «Снять пометку» снимает всё, флажок вместе с пометкой: сундук без пометки, из
+            // которого станциям всё равно нельзя, объяснить потом будет нечем. Смена
+            // категории флажок не трогает - он про другое.
+            if (mark == MarkNone) zdo.Set(HoldChestKey, false);
 
             var said = mark == MarkPrivate ? "личный — сортировщик его не трогает"
                 : mark >= 0 ? $"под «{Sorting.Title(mark)}»"
@@ -794,6 +847,7 @@ namespace AstvardServerMod
                     sources.Clear();
                     var carts = 0;
                     var supply = 0;
+                    var hold = 0;
                     foreach (var piece in pieces)
                     {
                         if (piece == null) continue;
@@ -829,6 +883,9 @@ namespace AstvardServerMod
                         if (ChestCategory(container) >= 0)
                         {
                             bins.Add(container);
+                            // Считаем по той же причине, что и подачу: «флажок не лёг»
+                            // и «станция всё равно взяла» снаружи неотличимы.
+                            if (IsHoldChest(container)) hold++;
                         }
                         else
                         {
@@ -841,11 +898,12 @@ namespace AstvardServerMod
                     _lastSources = sources.Count;
                     _lastCarts = carts;
                     _lastSupply = supply;
+                    _lastHold = hold;
 
                     // Said once per change, not once a second: enough to answer «видит ли он
                     // тележку», quiet enough to leave on.
                     var said = $"bins {bins.Count}, sources {sources.Count}, carts {carts}, "
-                               + $"supply left alone {supply}"
+                               + $"supply left alone {supply}, closed to stations {hold}"
                                + (_stuck.Length > 0 ? $", stuck {_stuck}" : "");
                     if (said != _lastSaid)
                     {
@@ -958,6 +1016,9 @@ namespace AstvardServerMod
                    + (_lastCarts > 0 ? $", из них тележек {_lastCarts}." : ".")
                    + (_lastSupply > 0
                        ? $"{NEWLINE}Сундуков подачи: {_lastSupply} —{NEWLINE}из них не беру."
+                       : "")
+                   + (_lastHold > 0
+                       ? $"{NEWLINE}Не для станций: {_lastHold} —{NEWLINE}сортирую, но не подаю."
                        : "");
         }
 

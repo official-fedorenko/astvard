@@ -64,6 +64,8 @@ namespace AstvardServerMod
 
         internal static GameObject SortPrivateButton;
 
+        internal static GameObject SortHoldButton;
+
         internal static GameObject SortClearButton;
 
         private static int _shownSortZones;
@@ -196,6 +198,7 @@ namespace AstvardServerMod
             }
 
             SortPrivateButton = MakeButton(gui, "Личный", () => ArmSortMark(MarkPrivate));
+            SortHoldButton = MakeButton(gui, "Не для станций", () => ArmSortMark(MarkHold));
             SortClearButton = MakeButton(gui, "Снять пометку", () => ArmSortMark(MarkNone));
         }
 
@@ -208,6 +211,15 @@ namespace AstvardServerMod
         {
             PendingSortMark = mark;
             PendingChestAssign = null;
+
+            // Флажок не пометка, поэтому и сказать о нём надо иначе: он переключается.
+            if (mark == MarkHold)
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "Открой сундук — переключу: брать станциям из него или нет");
+                InventoryGui.instance?.Hide();
+                return;
+            }
 
             var what = mark == MarkPrivate ? "личным"
                 : mark == MarkNone ? "без пометки"
@@ -1143,6 +1155,7 @@ namespace AstvardServerMod
             SetActive(SortMarkHint, marking);
             foreach (var button in SortMarkButtons) SetActive(button, marking);
             SetActive(SortPrivateButton, marking);
+            SetActive(SortHoldButton, marking);
             SetActive(SortClearButton, marking);
         }
     }

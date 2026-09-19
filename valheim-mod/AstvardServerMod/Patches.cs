@@ -90,12 +90,16 @@ namespace AstvardServerMod
 
             var collect = Plugin.IsCollectChest(__instance);
             var supply = Plugin.IsSupplyChest(__instance);
+            var hold = Plugin.IsHoldChest(__instance);
             var sorted = Plugin.SortMarkNote(__instance);
-            if (!collect && !supply && sorted.Length == 0) return;
+            if (!collect && !supply && !hold && sorted.Length == 0) return;
 
             var roles = collect && supply ? "сбор · подача" : (collect ? "сбор" : "подача");
             if (!collect && !supply) roles = sorted;
             else if (sorted.Length > 0) roles += " · " + sorted;
+
+            // Последним: это оговорка ко всему, что написано слева от него.
+            if (hold) roles = roles.Length > 0 ? roles + " · не для станций" : "не для станций";
 
             var marker = " <color=#FFCC44>· " + roles + "</color>";
             var lineEnd = __result.IndexOf('\n');
