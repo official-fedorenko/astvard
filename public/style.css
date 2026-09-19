@@ -1795,6 +1795,12 @@ table.data-table code { white-space: nowrap; }
 
 .shelf-row .shelf-title { max-width: 260px; }
 
+/* Встроенная полка: имя видно, поля нет — менять её нечем и незачем. */
+.shelf-row .shelf-title--fixed {
+  min-width: 160px;
+  color: hsl(var(--text-secondary));
+}
+
 .shelf-row.removed .shelf-title { opacity: 0.55; }
 
 @media (max-width: 640px) {

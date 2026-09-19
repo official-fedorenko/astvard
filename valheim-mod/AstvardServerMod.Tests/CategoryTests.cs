@@ -3,13 +3,14 @@ using AstvardServerMod;
 namespace AstvardServerMod.Tests;
 
 /// <summary>
-/// Категории, которыми теперь распоряжается сайт.
+/// Категории: восемь встроенных и те, что заводит админ на сайте.
 ///
 /// The number of a category is what lies inside the chest, so these tests are mostly
-/// about one thing: that a number never comes to mean something else. Renaming is free,
-/// a new category takes the next number, and one taken away leaves a hole rather than
-/// pulling its neighbours down a place - because a wall of thirty marked chests has no
-/// way of telling anybody that it started keeping the wrong things.
+/// about one thing: that a number never comes to mean something else. A new category
+/// takes the next number, one taken away leaves a hole rather than pulling its
+/// neighbours down a place, and the built-in eight are the mod's own - what the site
+/// says about them is not listened to at all, because the mod sorts by them when
+/// nobody has said anything about an item.
 /// </summary>
 public class CategoryTests
 {
@@ -27,15 +28,30 @@ public class CategoryTests
     }
 
     [Fact]
-    public void RenamingKeepsTheNumber()
+    public void TheBuiltInEightAreNotTheSitesToRename()
     {
+        // Решение хозяина: встроенные зашиты в мод. По ним мод раскладывает сам, когда о
+        // предмете ничего не сказано, так что «Разное», переименованное снаружи в «Хлам»,
+        // осталось бы ответом для всего бездомного, но перестало бы им читаться.
         Sorting.ReadCategories("1=Сырьё;2=Харчи");
 
-        Assert.Equal("Сырьё", Sorting.Title(Sorting.Materials));
-        Assert.Equal("Харчи", Sorting.Title(Sorting.Food));
+        Assert.Equal("Материалы", Sorting.Title(Sorting.Materials));
+        Assert.Equal("Еда", Sorting.Title(Sorting.Food));
 
         // И то, что лежит в сундуке, продолжает значить ровно то же.
         Assert.Equal(Sorting.Materials, Sorting.FromStored(Sorting.ToStored(Sorting.Materials)));
+
+        Builtin();
+    }
+
+    [Fact]
+    public void ACategoryOfOnesOwnIsRenamedFreely()
+    {
+        Sorting.ReadCategories("8=Слитки");
+        Assert.Equal("Слитки", Sorting.Title(8));
+
+        Sorting.ReadCategories("8=Металл");
+        Assert.Equal("Металл", Sorting.Title(8));
 
         Builtin();
     }
@@ -97,11 +113,11 @@ public class CategoryTests
     [Fact]
     public void TheBuiltInOnesCannotBeLost()
     {
-        // Сайт назвал только одну: остальные встроенные обязаны остаться при своих именах,
-        // иначе одна опечатка в ответе оставила бы базу без «Разного».
+        // Что бы сайт ни сказал про встроенные, они остаются при своих именах: и когда он
+        // молчит о них, и когда пытается переименовать.
         Sorting.ReadCategories("3=Железо");
 
-        Assert.Equal("Железо", Sorting.Title(Sorting.Weapons));
+        Assert.Equal("Оружие", Sorting.Title(Sorting.Weapons));
         Assert.Equal("Разное", Sorting.Title(Sorting.Misc));
         Assert.Equal("Лут", Sorting.Title(Sorting.Loot));
 
@@ -129,7 +145,7 @@ public class CategoryTests
     {
         Sorting.ReadCategories("=безномера;abc=Что-то;-1=Минус;999=Далеко;2=Харчи");
 
-        Assert.Equal("Харчи", Sorting.Title(Sorting.Food));
+        Assert.Equal("Еда", Sorting.Title(Sorting.Food));
         Assert.False(Sorting.IsCategory(999));
         Assert.Equal(Sorting.CategoryTitles.Length, Sorting.Count);
 

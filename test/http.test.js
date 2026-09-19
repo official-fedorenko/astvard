@@ -1179,11 +1179,10 @@ test('сортировка: полки заводит админ, и номер 
   assert.deepStrictEqual(seeded.json.categories, ['Разное', 'Материалы', 'Еда']);
   assert.strictEqual(seeded.json.categoryRows[0].builtIn, true, 'пришедшие от мода — встроенные');
 
-  // Второй каталог засев не повторяет: имя, изменённое здесь, остаётся здешним.
-  assert.strictEqual((await edit({ id: 2, title: 'Харчи' })).status, 200);
-  await sortingPush(['#categories Разное|Материалы|Еда',
-    sortRow('$test_cat_ore', 'Руда', 'Material', 1)]);
-  assert.strictEqual((await api('/api/admin/sorting', { cookie })).json.categories[2], 'Харчи');
+  // Встроенные восемь зашиты в мод, и сайт их не переименовывает: показывать здесь
+  // одно, а в игре другое — хуже, чем не давать трогать вовсе.
+  assert.strictEqual((await edit({ id: 2, title: 'Харчи' })).status, 409);
+  assert.strictEqual((await api('/api/admin/sorting', { cookie })).json.categories[2], 'Еда');
 
   // Новая полка берёт следующий номер и уезжает моду отдельной строкой.
   const added = await cats({ title: 'Слитки' }, { cookie });
@@ -1192,7 +1191,7 @@ test('сортировка: полки заводит админ, и номер 
 
   let pull = await sortingPull(0);
   assert.ok(pull.lines.includes('cat 3=Слитки'));
-  assert.ok(pull.lines.includes('cat 2=Харчи'), 'переименование доезжает до мода');
+  assert.ok(pull.lines.includes('cat 2=Еда'), 'встроенные уезжают моду как были');
 
   // На новую полку можно положить предмет.
   assert.strictEqual((await api('/api/admin/sorting/item',

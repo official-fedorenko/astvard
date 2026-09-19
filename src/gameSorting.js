@@ -338,6 +338,10 @@ async function renameCategory(id, title, by) {
   const row = rows.find((one) => one.id === at);
   if (!row) return { error: 'Нет такой категории', status: 404 };
 
+  // Встроенные восемь зашиты в мод: он и подставит их имена, что бы здесь ни лежало.
+  // Разрешить правку значило бы показывать на странице одно, а в игре другое.
+  if (row.built_in) return { error: 'Встроенную полку менять нельзя', status: 409 };
+
   if (rows.some((one) => one.id !== at && !one.removed && one.title.toLowerCase() === name.toLowerCase())) {
     return { error: 'Такая категория уже есть', status: 409 };
   }

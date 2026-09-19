@@ -1084,18 +1084,21 @@ function renderSortingCategories() {
     if (row.builtIn) marks.push('<span class="badge badge-muted">встроенная</span>');
     if (row.removed) marks.push('<span class="badge badge-warning">убрана</span>');
 
-    // Встроенную убрать нельзя: по ней сервер раскладывает сам, когда о предмете
-    // ничего не сказано, и полка без имени осталась бы над половиной базы.
+    // Встроенную не трогают вовсе: её имя зашито в мод, и правка здесь показывала бы
+    // на странице одно, а в игре другое. Поэтому у неё ни поля, ни кнопки — только имя.
     const toggle = row.builtIn
       ? ''
       : `<button class="btn btn-sm btn-secondary shelf-toggle" data-id="${row.id}"`
         + ` data-removed="${row.removed}">${row.removed ? 'Вернуть' : 'Убрать'}</button>`;
 
+    const name = row.builtIn
+      ? `<span class="shelf-title shelf-title--fixed">${escapeHtml(row.title)}</span>`
+      : `<input type="text" class="form-control shelf-title" maxlength="24"`
+        + ` data-id="${row.id}" value="${escapeHtml(row.title)}">`;
+
     return `<div class="shelf-row${row.removed ? ' removed' : ''}" data-id="${row.id}">`
       + `<span class="shelf-row__id">№${row.id}</span>`
-      + `<input type="text" class="form-control shelf-title" maxlength="24"`
-      + ` data-id="${row.id}" value="${escapeHtml(row.title)}">`
-      + marks.join(' ') + toggle
+      + name + marks.join(' ') + toggle
       + '</div>';
   }).join('');
 }
