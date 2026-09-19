@@ -1099,6 +1099,7 @@ namespace AstvardServerMod
                 else if (MenuState == StateZoneOwner) MenuState = StateZoneOthers;
                 else if (MenuState == StateZoneOthers) MenuState = StateZone;
                 else if (MenuState == StatePlayerBuild) MenuState = StateRoot;
+                else if (MenuState == StateBuild) MenuState = StateRoot;
                 else if (MenuState == StateFeatures) MenuState = StateRoot;
                 else if (MenuState == StateTerrain) MenuState = StateRoot;
                 else if (MenuState == StateAdmin) MenuState = StateRoot;
@@ -1361,7 +1362,11 @@ namespace AstvardServerMod
             // A player sees what the admins left open, and nothing of it until the server
             // has said what that is.
             SetActive(TerrainButton, MenuState == StateRoot && AnyTerrainAllowed);
-            SetActive(BuildButton, admin && MenuState == StateAdmin);
+            // В корне, на том же месте, где «Постройки» у игрока: обе кнопки заведены до
+            // и после «Рельефа», и показывается всегда ровно одна. Админка открывает
+            // возможности, а не переставляет меню - искать привычный пункт в другом месте
+            // только потому, что ты админ, незачем.
+            SetActive(BuildButton, admin && MenuState == StateRoot);
             SetActive(TestChestButton, admin && MenuState == StateBuild);
 
             RefreshCheatLabels();
