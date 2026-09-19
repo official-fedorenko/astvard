@@ -1110,7 +1110,8 @@ namespace AstvardServerMod
             if (hint != null)
                 hint.text = $"Разбирает непомеченные сундуки{NEWLINE}и тележки в помеченные,{NEWLINE}"
                             + $"пока ты в своей зоне{NEWLINE}или рядом с ней.{NEWLINE}{NEWLINE}"
-                            + SortingWhy();
+                            + SortingWhy()
+                            + $"{NEWLINE}{NEWLINE}" + GardenWhy();
 
             var placeHint = SortPlaceHint != null ? SortPlaceHint.GetComponentInChildren<Text>(true) : null;
             if (placeHint != null)

@@ -95,7 +95,23 @@ namespace AstvardServerMod
 
         private static int _noSapling;
 
+        private static int _growing;
+
+        private static int _outside;
+
         private static string _gardenSaid;
+
+        // То же самое, но по-русски и для панели: лог читать некому, пока человек играет.
+        // Хозяин это и спросил первым делом - «а где посмотреть надпись?».
+        private static string _gardenPanel = "Огород: ещё не смотрел.";
+
+        /// <summary>Строка для страницы «Сортировка».</summary>
+        internal static string GardenWhy()
+        {
+            if (!ReapOn && !SowOn) return "Огород: выключен.";
+
+            return _gardenPanel;
+        }
 
         /// <summary>
         /// Из посекундного прохода автоматики: раз в пять секунд смотрим грядки зоны.
@@ -129,9 +145,22 @@ namespace AstvardServerMod
         /// </summary>
         private static void Say(Sorting.Zone zone, int beds, int sown, int reaped)
         {
+            _gardenPanel = zone == null
+                ? "Огород: ты вне зоны."
+                : $"Огород: созрело {_ripe}"
+                  + (reaped > 0 ? $", собрано {reaped}" : "")
+                  + (sown > 0 ? $", посажено {sown}" : "")
+                  + (_growing > 0 ? $",{NEWLINE}ещё растёт {_growing}" : "")
+                  + (_outside > 0 ? $",{NEWLINE}рядом вне зоны {_outside}" : "")
+                  + (_noRoom > 0 ? $",{NEWLINE}некуда сложить {_noRoom}" : "")
+                  + (_noSeeds > 0 ? $",{NEWLINE}нет семян на {_noSeeds}" : "")
+                  + ".";
+
             var said = zone == null
                 ? "ты вне зоны — грядки не трогаем"
                 : $"ripe {_ripe}, reaped {reaped}, sown {sown} of {beds} beds"
+                  + (_growing > 0 ? $", {_growing} still growing" : "")
+                  + (_outside > 0 ? $", {_outside} ripe outside the zone" : "")
                   + (_noRoom > 0 ? $", {_noRoom} with nowhere to put the crop" : "")
                   + (_notOurs > 0 ? $", {_notOurs} counted by somebody else" : "")
                   + (_extras > 0 ? $", {_extras} left alone (extra drops)" : "")
@@ -153,7 +182,21 @@ namespace AstvardServerMod
             _noRoom = 0;
             _notOurs = 0;
             _extras = 0;
+            _outside = 0;
 
+            // Грядки, которым ещё расти, считаются отдельно и не ради красоты: «созрело 0»
+            // само по себе не отличает пустой огород от посаженного час назад, а это
+            // первое, что спрашивает человек, у которого «ничего не происходит».
+            _growing = 0;
+            foreach (var plant in Object.FindObjectsByType<Plant>(FindObjectsSortMode.None))
+            {
+                if (plant == null) continue;
+
+                var bed = plant.transform.position;
+                if (Sorting.Inside(zone, bed.x, bed.z)) _growing++;
+            }
+
+            var where = player.transform.position;
             var reaped = 0;
 
             foreach (var pickable in Object.FindObjectsByType<Pickable>(FindObjectsSortMode.None))
@@ -166,7 +209,13 @@ namespace AstvardServerMod
                 // здесь и не было смысла держать: грядка дальше 64 м всё равно попадает
                 // в обход только тогда, когда её кто-то подгрузил.
                 var spot = pickable.transform.position;
-                if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
+                if (!Sorting.Inside(zone, spot.x, spot.z))
+                {
+                    // Созревшее рядом, но за чертой: чаще всего это и есть ответ на
+                    // «огород не собирается» - зону просто обвели не вокруг грядок.
+                    if ((spot - where).sqrMagnitude <= Sorting.NearReach * Sorting.NearReach) _outside++;
+                    continue;
+                }
 
                 // С добавкой в придачу пусть разбирается игрок: дополнительный дроп мы
                 // сложить не умеем, а бросить его на землю - значит устроить свалку.
