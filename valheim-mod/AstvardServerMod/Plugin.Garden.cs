@@ -40,7 +40,7 @@ namespace AstvardServerMod
             _sowGarden = config.Bind("Сортировка", "Sow", true,
                 "Подсаживать ли на освободившееся место. Саженец берётся тот, что вырастает "
                 + "в эту культуру, и платится семенами из помеченных сундуков — как у игрока. "
-                + "«Настройки» → «Огород» → «Подсаживать».");
+                + "«Настройки» → «Огород» → «Пересаживать».");
 
             _sowEmpty = config.Bind("Сортировка", "SowEmpty", true,
                 "Засевать ли пустую вскопанную землю внутри зоны — не только те места, где "
@@ -233,7 +233,8 @@ namespace AstvardServerMod
                   + (_noSeeds > 0 ? $",{NEWLINE}нет семян на {_noSeeds}" : "")
                   + (_empty > 0 ? $",{NEWLINE}пустых грядок {_empty}" : "")
                   + (_emptySown > 0 ? $",{NEWLINE}засеяно {_emptySown}" : "")
-                  + (_sowingWhat != null ? $" ({_sowingWhat})" : "")
+                  + (_sowingWhat != null ? $" ({_sowingWhat}," : "")
+                  + (_sowingGrow != null ? $"{NEWLINE}растёт {_sowingGrow})" : _sowingWhat != null ? ")" : "")
                   + (_emptyNoSeeds > 0 ? $",{NEWLINE}семена кончились" : "")
                   + ".";
 
@@ -422,6 +423,46 @@ namespace AstvardServerMod
 
         private static float _sowingStep;
 
+        private static string _sowingGrow;
+
+        /// <summary>
+        /// Сколько растёт каждая культура, словами, - для строки в логе.
+        ///
+        /// Числа спрошены у самих префабов (`Plant.m_growTime` и `m_growTimeMax`): у каждой
+        /// грядки время своё, случайное между ними по её семени, так что честный ответ -
+        /// это вилка, а не одно число. Писать его сюда из памяти нельзя: в данных префабов
+        /// оно меняется от обновления к обновлению, а проверить это можно только так.
+        /// </summary>
+        private static string GrowTimes()
+        {
+            var said = new List<string>();
+
+            foreach (var pair in SaplingByCrop)
+            {
+                var sapling = pair.Value;
+                if (sapling == null || IsTree(sapling)) continue;
+
+                var plant = sapling.GetComponent<Plant>();
+                if (plant == null) continue;
+
+                said.Add($"{pair.Key} {GrowSpan(plant)}");
+            }
+
+            said.Sort(System.StringComparer.Ordinal);
+            return said.Count > 0 ? string.Join(", ", said.ToArray()) : "none";
+        }
+
+        /// <summary>Вилка времени роста в минутах, как её видит человек.</summary>
+        private static string GrowSpan(Plant plant)
+        {
+            var from = plant.m_growTime / 60f;
+            var to = plant.m_growTimeMax / 60f;
+
+            return Mathf.Abs(to - from) < 0.5f
+                ? $"{from:0} мин"
+                : $"{from:0}-{to:0} мин";
+        }
+
         /// <summary>
         /// Шаг сетки: сколько держать между серединами двух растений.
         ///
@@ -457,6 +498,7 @@ namespace AstvardServerMod
             _emptySown = 0;
             _emptyNoSeeds = 0;
             _sowingWhat = null;
+            _sowingGrow = null;
 
             if (!SowEmptyOn || zone == null) return 0;
 
@@ -478,6 +520,7 @@ namespace AstvardServerMod
             _sowingWhat = title != null && !string.IsNullOrEmpty(title.m_name) && Localization.instance != null
                 ? Localization.instance.Localize(title.m_name)
                 : sapling.name;
+            _sowingGrow = GrowSpan(plant);
 
             var creator = player.GetPlayerID();
             var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
@@ -708,7 +751,8 @@ namespace AstvardServerMod
                     }
                 }
 
-                Log.LogInfo($"[AstvardServerMod] Garden: {SaplingByCrop.Count} crops can be sown back.");
+                Log.LogInfo($"[AstvardServerMod] Garden: {SaplingByCrop.Count} crops can be sown back."
+                            + $" Growing times: {GrowTimes()}");
             }
 
             return true;

@@ -760,7 +760,7 @@ namespace AstvardServerMod
             {
                 SetSow(!SowOn);
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                    SowOn ? "На сорванное место вернётся саженец" : "Подсаживать не будем");
+                    SowOn ? "На сорванное место вернётся саженец" : "Пересаживать не будем");
                 RefreshMenu();
             });
 
@@ -876,7 +876,7 @@ namespace AstvardServerMod
             SetLabel(SortCookButton, FeedCookingOn ? "Наполнять кухни: вкл" : "Наполнять кухни: выкл");
             SetLabel(SortTamesButton, FeedTamesOn ? "Кормить зверей: вкл" : "Кормить зверей: выкл");
             SetLabel(SortReapButton, ReapOn ? "Собирать урожай: вкл" : "Собирать урожай: выкл");
-            SetLabel(SortSowButton, SowOn ? "Подсаживать: вкл" : "Подсаживать: выкл");
+            SetLabel(SortSowButton, SowOn ? "Пересаживать: вкл" : "Пересаживать: выкл");
             SetLabel(SortSowEmptyButton, SowEmptyOn ? "Засаживать: вкл" : "Засаживать: выкл");
             SetLabel(SortTreesButton, SowTreesOn ? "Деревья: сажаем" : "Деревья: не сажаем");
             SetLabel(SortFoodButton, FoodKeep > 0

@@ -62,6 +62,8 @@ namespace AstvardServerMod
         /// </summary>
         private static int FeedTames(Player player, Sorting.Zone zone, List<Container> supplyChests)
         {
+            SayTameFacts();
+
             var where = player.transform.position;
             var hungry = 0;
 
@@ -120,6 +122,65 @@ namespace AstvardServerMod
         /// Лежит ли рядом со зверем то, что он ест. Тем же способом, что спрашивает игра:
         /// слой предметов, тот же радиус поиска и сравнение по имени вещи, а не по префабу.
         /// </summary>
+        private static bool _tameFactsSaid;
+
+        /// <summary>
+        /// Что игра сама знает о приручении и приплоде — один раз в лог.
+        ///
+        /// Числа лежат в данных префабов, из кода их не прочитать: `m_tamingTime` у класса
+        /// стоит 1800 секунд, а у кабана в префабе своё. Отсюда и эта строка - спросить
+        /// живую игру оказалось единственным честным способом ответить на «сколько
+        /// приручается кабан и на каком расстоянии они плодятся».
+        ///
+        /// Время идёт, **только пока зверь сыт** (`Tameable.DecreaseRemainingTime` зовётся
+        /// с кормёжки), а игрок с эффектом ускорения в `m_tamingSpeedMultiplierRange`
+        /// метрах множит скорость на `m_tamingBoostMultiplier`.
+        /// </summary>
+        private static void SayTameFacts()
+        {
+            if (_tameFactsSaid) return;
+
+            var scene = ZNetScene.instance;
+            if (scene == null || scene.m_prefabs == null) return;
+
+            _tameFactsSaid = true;
+
+            foreach (var prefab in scene.m_prefabs)
+            {
+                if (prefab == null) continue;
+
+                var tame = prefab.GetComponent<Tameable>();
+                if (tame == null) continue;
+
+                var beast = prefab.GetComponent<Character>();
+                var name = beast != null ? beast.m_name : prefab.name;
+                if (!string.IsNullOrEmpty(name) && Localization.instance != null)
+                {
+                    var said = Localization.instance.Localize(name);
+                    if (!string.IsNullOrEmpty(said) && !said.StartsWith("$")) name = said;
+                }
+
+                var ai = prefab.GetComponent<MonsterAI>();
+                var love = prefab.GetComponent<Procreation>();
+
+                var line = $"{name} ({prefab.name}): taming {tame.m_tamingTime / 60f:0.#} min of "
+                           + $"being fed, a bite lasts {tame.m_fedDuration / 60f:0.#} min, "
+                           + $"x{tame.m_tamingBoostMultiplier:0.#} with a boosted player within "
+                           + $"{tame.m_tamingSpeedMultiplierRange:0} m";
+
+                if (ai != null)
+                    line += $"; finds food within {ai.m_consumeSearchRange:0.#} m";
+
+                if (love != null)
+                    line += $"; breeds with a partner within {love.m_partnerCheckRange:0.#} m, "
+                            + $"at most {love.m_maxCreatures} within {love.m_totalCheckRange:0.#} m, "
+                            + $"pregnancy {love.m_pregnancyDuration / 60f:0.#} min, "
+                            + $"needs {love.m_requiredLovePoints} feedings";
+
+                Log.LogInfo($"[AstvardServerMod] Tames: {line}.");
+            }
+        }
+
         private static bool FoodLiesNear(MonsterAI ai, Vector3 spot)
         {
             var found = Physics.OverlapSphereNonAlloc(spot, ai.m_consumeSearchRange, FoodNearby, ItemLayer);
