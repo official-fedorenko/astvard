@@ -196,6 +196,9 @@ namespace AstvardServerMod
         // sweep walks - and this is the line that will say so either way.
         private static int _lastCarts;
 
+        /// <summary>Сколько сундуков подачи в зоне сортировщик обошёл стороной.</summary>
+        private static int _lastSupply;
+
         private static string _lastSaid = "";
 
         // Why the last sweep left something where it was: no chest will take this kind
@@ -745,6 +748,7 @@ namespace AstvardServerMod
                     bins.Clear();
                     sources.Clear();
                     var carts = 0;
+                    var supply = 0;
                     foreach (var piece in pieces)
                     {
                         if (piece == null) continue;
@@ -767,7 +771,14 @@ namespace AstvardServerMod
                         // и он вычерпал бы его в первую же минуту, а печи встали бы без
                         // единой ошибки в логе. Сундук сбора трогать можно и нужно: туда
                         // падает готовое, и разложить его - ровно наша работа.
-                        if (IsSupplyChest(container)) continue;
+                        if (IsSupplyChest(container))
+                        {
+                            // Считаем, чтобы это было видно, а не только обещано: «он берёт
+                            // из подачи» и «эта пометка не легла» выглядят одинаково, пока
+                            // никто не назвал число.
+                            supply++;
+                            continue;
+                        }
 
                         // Приёмником может стать и повозка, если её пометили, - она стоит в зоне.
                         if (ChestCategory(container) >= 0)
@@ -784,10 +795,12 @@ namespace AstvardServerMod
                     _lastBins = bins.Count;
                     _lastSources = sources.Count;
                     _lastCarts = carts;
+                    _lastSupply = supply;
 
                     // Said once per change, not once a second: enough to answer «видит ли он
                     // тележку», quiet enough to leave on.
-                    var said = $"bins {bins.Count}, sources {sources.Count}, carts {carts}"
+                    var said = $"bins {bins.Count}, sources {sources.Count}, carts {carts}, "
+                               + $"supply left alone {supply}"
                                + (_stuck.Length > 0 ? $", stuck {_stuck}" : "");
                     if (said != _lastSaid)
                     {
@@ -897,7 +910,10 @@ namespace AstvardServerMod
                            : $"Сундуки полны — пометь ещё{NEWLINE}один.");
 
             return $"Работает: {_lastBins} помечено, {_lastSources} разбирается"
-                   + (_lastCarts > 0 ? $", из них тележек {_lastCarts}." : ".");
+                   + (_lastCarts > 0 ? $", из них тележек {_lastCarts}." : ".")
+                   + (_lastSupply > 0
+                       ? $"{NEWLINE}Сундуков подачи: {_lastSupply} —{NEWLINE}из них не беру."
+                       : "");
         }
 
         /// <summary>
