@@ -8,11 +8,17 @@ namespace AstvardServerMod
     {
         internal static GameObject SpawnerButton;
 
+        internal static GameObject NestButton;
+
         internal static GameObject SpawnerHint;
 
         internal static GameObject SpawnerRemoveButton;
 
         internal const int MaxSpawnerButtons = 8;
+
+        private const string LivestockHint = "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена,\nP — закрепить, стрелки — сдвиг.\n\n«Мирные» — это живой зверь,\nодин и сразу. Остальное —\nгнездо: оно невидимо, в\nпроекции показан сам зверь,\nи оно подсылает их, пока\nигрок ближе 60 м.\nВ базе игрока (верстак, костёр)\nгнездо молчит.\n«Убрать рядом» сносит все\nгнёзда в 8 м, и родные тоже.\nБуфер копирования будет занят.";
+
+        private const string NestHint = "Выбери биом, потом гнездо.\nЛКМ — поставить, Esc — отмена,\nP — закрепить, стрелки — сдвиг.\n\nЗдесь только гнёзда, и только\nте, что есть в этой игре.\nГнездо невидимо: в проекции\nпоказан сам зверь, а подсылает\nих оно, пока игрок ближе 60 м.\nВ базе игрока (верстак, костёр)\nгнездо молчит.\n«Убрать рядом» сносит все\nгнёзда в 8 м, и родные тоже.\nБуфер копирования будет занят.";
 
         internal static readonly GameObject[] SpawnerGroupButtons = new GameObject[MaxSpawnerButtons];
 
@@ -223,17 +229,77 @@ namespace AstvardServerMod
             return said;
         }
 
+        private static readonly Dictionary<string, bool> Nests = new Dictionary<string, bool>();
+
         /// <summary>Ставим мы живого зверя или гнездо, которое их подсылает.</summary>
         private static bool IsNest(SpawnerKind kind)
         {
+            bool nest;
+            if (Nests.TryGetValue(kind.Prefab, out nest)) return nest;
+
             var prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(kind.Prefab) : null;
-            return prefab != null && prefab.GetComponent<CreatureSpawner>() != null;
+            // Пока сцена не собрана, ответить нечем - и запоминать «нет» нельзя: оно
+            // осталось бы навсегда, а страница спрашивает снова через секунду.
+            if (prefab == null) return false;
+
+            nest = prefab.GetComponent<CreatureSpawner>() != null;
+            Nests[kind.Prefab] = nest;
+            return nest;
+        }
+
+        /// <summary>
+        /// Страниц у этого списка две, и различает их одно: «Спавнеры» показывают только
+        /// гнёзда, «Живность» - всё, что можно поставить, живого зверя в том числе.
+        /// </summary>
+        private static bool _nestsOnly;
+
+        /// <summary>Годится ли эта тварь для той страницы, что открыта сейчас.</summary>
+        private static bool Fits(SpawnerKind kind)
+        {
+            return KnowsPrefab(kind.Prefab) && (!_nestsOnly || IsNest(kind));
+        }
+
+        private static readonly List<int> ShownGroups = new List<int>();
+
+        /// <summary>
+        /// Биомы, в которых для этой страницы хоть что-то есть.
+        ///
+        /// Пустая строка в списке хуже отсутствующей: на «Спавнерах» у «Мирных» нет ни
+        /// одного гнезда, а в чужой сборке игры может не оказаться и целого биома -
+        /// нажатие на такой биом открыло бы страницу без единой кнопки, и сказать об
+        /// этом было бы некому.
+        /// </summary>
+        private static void GroupsShown()
+        {
+            ShownGroups.Clear();
+
+            for (var i = 0; i < SpawnerGroups.Length; i++)
+                foreach (var kind in SpawnerGroups[i].Kinds)
+                    if (Fits(kind))
+                    {
+                        ShownGroups.Add(i);
+                        break;
+                    }
+        }
+
+        /// <summary>«Читы» → «Спавнеры» или «Живность»: одна страница, разный отбор.</summary>
+        internal static void OpenSpawners(bool nestsOnly)
+        {
+            _nestsOnly = nestsOnly;
+            _categoryOffset = 0;
+            _itemOffset = 0;
+            MenuState = StateSpawners;
+            RefreshMenu();
         }
 
         /// <summary>Сколько всего биомов и сколько тварей в открытом — для листания.</summary>
         internal static int SpawnerGroupCount
         {
-            get { return SpawnerGroups.Length; }
+            get
+            {
+                GroupsShown();
+                return ShownGroups.Count;
+            }
         }
 
         internal static int SpawnerKindCount
@@ -247,7 +313,7 @@ namespace AstvardServerMod
             if (group < 0 || group >= SpawnerGroups.Length) return;
 
             foreach (var kind in SpawnerGroups[group].Kinds)
-                if (KnowsPrefab(kind.Prefab)) into.Add(kind);
+                if (Fits(kind)) into.Add(kind);
         }
 
         /// <summary>
@@ -259,8 +325,11 @@ namespace AstvardServerMod
             // Оба списка листаются: биомов стало десять, а тварей в пепельных землях -
             // тринадцать, и «показаны первые восемь» здесь значило бы, что половины списка
             // нет вовсе и сказать об этом некому. Так уже было с шаблонами.
-            var fromGroup = MenuPaging.Clamp(_categoryOffset, SpawnerGroups.Length, MaxSpawnerButtons);
-            _shownSpawnerGroups = Mathf.Min(SpawnerGroups.Length - fromGroup, MaxSpawnerButtons);
+            GroupsShown();
+            SetLabel(SpawnerHint, _nestsOnly ? NestHint : LivestockHint);
+
+            var fromGroup = MenuPaging.Clamp(_categoryOffset, ShownGroups.Count, MaxSpawnerButtons);
+            _shownSpawnerGroups = Mathf.Min(ShownGroups.Count - fromGroup, MaxSpawnerButtons);
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
@@ -270,7 +339,7 @@ namespace AstvardServerMod
 
                 var at = fromGroup + i;
                 if (label != null)
-                    label.text = at < SpawnerGroups.Length ? SpawnerGroups[at].Label : "";
+                    label.text = at < ShownGroups.Count ? SpawnerGroups[ShownGroups[at]].Label : "";
             }
 
             KindsIn(_spawnerGroup, ShownKinds);
@@ -291,10 +360,12 @@ namespace AstvardServerMod
 
         internal static void OpenSpawnerGroup(int slot)
         {
-            var at = MenuPaging.Clamp(_categoryOffset, SpawnerGroups.Length, MaxSpawnerButtons) + slot;
-            if (at >= SpawnerGroups.Length) return;
+            GroupsShown();
 
-            _spawnerGroup = at;
+            var at = MenuPaging.Clamp(_categoryOffset, ShownGroups.Count, MaxSpawnerButtons) + slot;
+            if (at >= ShownGroups.Count) return;
+
+            _spawnerGroup = ShownGroups[at];
             _itemOffset = 0;
             MenuState = StateSpawnerList;
             RefreshMenu();

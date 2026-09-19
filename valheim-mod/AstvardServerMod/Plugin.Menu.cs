@@ -480,7 +480,7 @@ namespace AstvardServerMod
             TodApplyButton = MakeButton(gui, "Установить", ApplyTimeOfDay);
 
 
-            SpawnerHint = MakeText(gui, "Выбери биом, потом тварь.\nЛКМ — поставить, Esc — отмена,\nP — закрепить, стрелки — сдвиг.\n\n«Мирные» — это живой зверь,\nодин и сразу. Остальное —\nгнездо: оно невидимо, в\nпроекции показан сам зверь,\nи оно подсылает их, пока\nигрок ближе 60 м.\nВ базе игрока (верстак, костёр)\nгнездо молчит.\n«Убрать рядом» сносит все\nгнёзда в 8 м, и родные тоже.\nБуфер копирования будет занят.");
+            SpawnerHint = MakeText(gui, "");
 
             for (var i = 0; i < MaxSpawnerButtons; i++)
             {
@@ -853,11 +853,9 @@ namespace AstvardServerMod
 
             TemplatesButton = MakeButton(gui, "Шаблоны", OpenTemplateSources);
 
-            SpawnerButton = MakeButton(gui, "Живность", () =>
-            {
-                MenuState = StateSpawners;
-                RefreshMenu();
-            });
+            SpawnerButton = MakeButton(gui, "Живность", () => OpenSpawners(false));
+
+            NestButton = MakeButton(gui, "Спавнеры", () => OpenSpawners(true));
 
             CreateFenceWidgets(gui);
 
@@ -1126,6 +1124,15 @@ namespace AstvardServerMod
             PutSecond(SettingsButton);
             PutSecond(PlayerSettingsButton);
             PutSecond(BuildSettingsButton);
+
+            // Пометки сундука - туда же, под «Назад». Раньше они стояли под списком
+            // категорий, а его длину задаёт сайт: заведи админ десяток своих полок, и
+            // «Снять пометку» уедет за край экрана - до кнопки, которой пользуются на
+            // каждом сундуке, пришлось бы листать. Порядок обратный: каждая следующая
+            // встаёт второй и двигает прежнюю вниз.
+            PutSecond(SortClearButton);
+            PutSecond(SortHoldButton);
+            PutSecond(SortPrivateButton);
 
             RefreshMenu();
             Log.LogInfo("Astvard panel created.");
@@ -1441,6 +1448,7 @@ namespace AstvardServerMod
             SetActive(PasteButton, admin && MenuState == StateBuild);
             SetActive(TemplatesButton, admin && MenuState == StateBuild);
             SetActive(SpawnerButton, admin && MenuState == StateCheats);
+            SetActive(NestButton, admin && MenuState == StateCheats);
             SetActive(FenceButton, admin && MenuState == StateBuild);
             // The fence page is a player's too, while the admins keep fences open to them.
             var fencePage = MenuState == StateFence && RuleAllows("fence");
