@@ -88,6 +88,11 @@ namespace AstvardServerMod
         private const int StateSortCoal = 70;   // сколько угля держать на складе
         private const int StateSortSetup = 71;  // переключатели сортировки, все вместе
         private const int StateSortFood = 72;   // сколько готовой еды держать на складе
+        private const int StateSetupSort = 73;  // настройки: сам разбор
+        private const int StateSetupWork = 74;  // настройки: станции и звери
+        private const int StateSetupGarden = 75; // настройки: огород
+        private const int StateSetupLabels = 76; // настройки: подписи над сундуками
+        private const int StateSortCrop = 77;   // сколько урожая держать на складе
 
         internal static GameObject Panel;
 
@@ -1084,9 +1089,16 @@ namespace AstvardServerMod
                          || MenuState == StateSortSetup) MenuState = StateSorting;
                 // Страницы одной настройки возвращают туда, откуда их открыли, а не на
                 // страницу сортировки: иначе «Назад» уводит дальше, чем «сюда я пришёл».
-                else if (MenuState == StateSortSlots || MenuState == StateSortCoal
-                         || MenuState == StateSortFood
-                         || MenuState == StateSortLift) MenuState = StateSortSetup;
+                // Страница одного числа возвращает в свой раздел, а не в корень
+                // настроек: человек пришёл туда оттуда и туда же смотрит.
+                else if (MenuState == StateSortSlots) MenuState = StateSetupSort;
+                else if (MenuState == StateSortCoal
+                         || MenuState == StateSortFood) MenuState = StateSetupWork;
+                else if (MenuState == StateSortCrop) MenuState = StateSetupGarden;
+                else if (MenuState == StateSortLift) MenuState = StateSetupLabels;
+                else if (MenuState == StateSetupSort || MenuState == StateSetupWork
+                         || MenuState == StateSetupGarden
+                         || MenuState == StateSetupLabels) MenuState = StateSortSetup;
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;
                 else if (MenuState == StateSortCrew) MenuState = StateSortZone;
                 else if (MenuState == StateSortInvite) MenuState = StateSortCrew;

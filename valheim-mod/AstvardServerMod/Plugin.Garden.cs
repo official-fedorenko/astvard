@@ -25,6 +25,8 @@ namespace AstvardServerMod
 
         private static BepInEx.Configuration.ConfigEntry<bool> _sowGarden;
 
+        private static BepInEx.Configuration.ConfigEntry<int> _cropKeep;
+
         internal static void BindGarden(BepInEx.Configuration.ConfigFile config)
         {
             _reapGarden = config.Bind("Сортировка", "Reap", true,
@@ -34,7 +36,29 @@ namespace AstvardServerMod
             _sowGarden = config.Bind("Сортировка", "Sow", true,
                 "Подсаживать ли на освободившееся место. Саженец берётся тот, что вырастает "
                 + "в эту культуру, и платится семенами из помеченных сундуков — как у игрока. "
-                + "«Настройки» → «Подсаживать».");
+                + "«Настройки» → «Огород» → «Подсаживать».");
+
+            _cropKeep = config.Bind("Сортировка", "CropKeep", 100,
+                "Сколько держать урожая на складе, по каждой культуре свой счёт. Набралось "
+                + "столько моркови — морковь оставляем расти, репу и лук собираем дальше. "
+                + "0 — без предела. «Настройки» → «Огород» → «Урожая на складе».");
+        }
+
+        /// <summary>
+        /// Сколько урожая держать на складе, по каждой культуре отдельно.
+        ///
+        /// Одно число на весь огород означало бы кладовую из одной культуры: сотня моркови
+        /// остановила бы и лук, и ячмень. Считается так же, как у еды и угля, - по той же
+        /// таблице запаса, собранной за проход.
+        /// </summary>
+        internal static int CropKeep
+        {
+            get { return Mathf.Clamp(_cropKeep != null ? _cropKeep.Value : 0, 0, 100000); }
+        }
+
+        internal static void SetCropKeep(int amount)
+        {
+            if (_cropKeep != null) _cropKeep.Value = Mathf.Clamp(amount, 0, 100000);
         }
 
         internal static bool ReapOn
@@ -90,6 +114,8 @@ namespace AstvardServerMod
         private static int _notOurs;
 
         private static int _extras;
+
+        private static int _enough;
 
         private static int _noSeeds;
 
@@ -150,6 +176,7 @@ namespace AstvardServerMod
                 : $"Огород: созрело {_ripe}"
                   + (reaped > 0 ? $", собрано {reaped}" : "")
                   + (sown > 0 ? $", посажено {sown}" : "")
+                  + (_enough > 0 ? $",{NEWLINE}на складе хватает {_enough}" : "")
                   + (_growing > 0 ? $",{NEWLINE}ещё растёт {_growing}" : "")
                   + (_outside > 0 ? $",{NEWLINE}рядом вне зоны {_outside}" : "")
                   + (_noRoom > 0 ? $",{NEWLINE}некуда сложить {_noRoom}" : "")
@@ -159,6 +186,7 @@ namespace AstvardServerMod
             var said = zone == null
                 ? "ты вне зоны — грядки не трогаем"
                 : $"ripe {_ripe}, reaped {reaped}, sown {sown} of {beds} beds"
+                  + (_enough > 0 ? $", {_enough} left to grow (enough in stock)" : "")
                   + (_growing > 0 ? $", {_growing} still growing" : "")
                   + (_outside > 0 ? $", {_outside} ripe outside the zone" : "")
                   + (_noRoom > 0 ? $", {_noRoom} with nowhere to put the crop" : "")
@@ -182,6 +210,7 @@ namespace AstvardServerMod
             _noRoom = 0;
             _notOurs = 0;
             _extras = 0;
+            _enough = 0;
             _outside = 0;
 
             // Грядки, которым ещё расти, считаются отдельно и не ради красоты: «созрело 0»
@@ -230,6 +259,15 @@ namespace AstvardServerMod
                 }
 
                 _ripe++;
+
+                // Грядка - лучший склад из всех: пока моркови на складе хватает, пусть
+                // растёт. Иначе сундуки под еду забиваются тем, что и так никуда не
+                // денется, а место в них нужно тому, что деться может.
+                if (CropKeep > 0 && InStock(pickable.m_itemPrefab.name) >= CropKeep)
+                {
+                    _enough++;
+                    continue;
+                }
 
                 // Владение берётся до всего: считает грядку её хозяин, и сорвать чужую
                 // мы не можем - RPC на той стороне просто ничего не сделает.

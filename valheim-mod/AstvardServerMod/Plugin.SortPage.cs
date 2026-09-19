@@ -609,6 +609,24 @@ namespace AstvardServerMod
 
         internal static GameObject SortLiftButton;
 
+        // Разделы «Настроек». Плоским списком их было двенадцать в столбик, и найти в
+        // нём нужное можно было только перечитав все.
+        internal static GameObject SetupSortButton;
+
+        internal static GameObject SetupWorkButton;
+
+        internal static GameObject SetupGardenButton;
+
+        internal static GameObject SetupLabelsButton;
+
+        internal static GameObject SortCropButton;
+
+        internal static GameObject SortCropHint;
+
+        internal static GameObject SortCropInput;
+
+        internal static GameObject SortCropApply;
+
         internal static GameObject SortLiftHint;
 
         internal static GameObject SortLiftInput;
@@ -622,6 +640,55 @@ namespace AstvardServerMod
         /// </summary>
         private void CreateSortSettingWidgets(Jotunn.Managers.GUIManager gui)
         {
+            SetupSortButton = MakeButton(gui, "Разбор", () =>
+            {
+                MenuState = StateSetupSort;
+                RefreshMenu();
+            });
+
+            SetupWorkButton = MakeButton(gui, "Станции и звери", () =>
+            {
+                MenuState = StateSetupWork;
+                RefreshMenu();
+            });
+
+            SetupGardenButton = MakeButton(gui, "Огород", () =>
+            {
+                MenuState = StateSetupGarden;
+                RefreshMenu();
+            });
+
+            SetupLabelsButton = MakeButton(gui, "Подписи", () =>
+            {
+                MenuState = StateSetupLabels;
+                RefreshMenu();
+            });
+
+            SortCropButton = MakeButton(gui, "", () =>
+            {
+                SetFieldText(SortCropInput, CropKeep.ToString());
+                MenuState = StateSortCrop;
+                RefreshMenu();
+            });
+
+            SortCropHint = MakeText(gui, "");
+
+            SortCropInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                UnityEngine.UI.InputField.ContentType.IntegerNumber, "штук, напр. 100", 16, 160f, 32f);
+            AddFixedSize(SortCropInput, 160f, 32f);
+
+            SortCropApply = MakeButton(gui, "Применить", () =>
+            {
+                SetCropKeep(Mathf.RoundToInt(ParseField(SortCropInput, CropKeep)));
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, CropKeep > 0
+                    ? $"Собираем, пока культуры на складе меньше {CropKeep}"
+                    : "Собираем весь урожай");
+                MenuState = StateSetupGarden;
+                RefreshMenu();
+            });
+
             SortKilnsButton = MakeButton(gui, "", () =>
             {
                 SetFeedKilns(!FeedKilnsOn);
@@ -653,7 +720,7 @@ namespace AstvardServerMod
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center, CoalKeep > 0
                     ? $"Печи жгут, пока угля меньше {CoalKeep}"
                     : "Печи жгут без предела");
-                MenuState = StateSortSetup;
+                MenuState = StateSetupWork;
                 RefreshMenu();
             });
 
@@ -798,6 +865,18 @@ namespace AstvardServerMod
                             + $"Считается в сундуках сбора{NEWLINE}и в помеченных сундуках{NEWLINE}"
                             + $"зоны.{NEWLINE}0 — без предела.";
 
+            SetLabel(SortCropButton, CropKeep > 0
+                ? $"Урожая на складе: {CropKeep}"
+                : "Урожая на складе: без предела");
+
+            var crop = SortCropHint != null ? SortCropHint.GetComponentInChildren<Text>(true) : null;
+            if (crop != null)
+                crop.text = $"Сколько держать урожая,{NEWLINE}по каждой культуре свой{NEWLINE}"
+                            + $"счёт. Набралось столько{NEWLINE}моркови — морковь оставляем{NEWLINE}"
+                            + $"расти, репу и лук собираем{NEWLINE}дальше.{NEWLINE}{NEWLINE}"
+                            + $"Грядка — лучший склад:{NEWLINE}там урожай никому не{NEWLINE}"
+                            + $"мешает и не пропадёт.{NEWLINE}0 — без предела.";
+
             SetLabel(SortSlotsButton, OwnChestSlots > 0
                 ? $"Свой сундук: от {OwnChestSlots} ячеек"
                 : "Свой сундук: не делить");
@@ -834,6 +913,11 @@ namespace AstvardServerMod
             SetActive(SortSlotsHint, slots);
             SetActive(SortSlotsInput, slots);
             SetActive(SortSlotsApply, slots);
+
+            var cropPage = allowed && MenuState == StateSortCrop;
+            SetActive(SortCropHint, cropPage);
+            SetActive(SortCropInput, cropPage);
+            SetActive(SortCropApply, cropPage);
 
             var lift = allowed && MenuState == StateSortLift;
             SetActive(SortLiftHint, lift);
@@ -1188,20 +1272,35 @@ namespace AstvardServerMod
             SetActive(SortSetupButton, page);
 
             // Сама работа осталась на странице сортировки, а всё, что настраивают один
-            // раз и забывают, - за кнопкой «Настройки».
+            // раз и забывают, - за кнопкой «Настройки». Там их было двенадцать в столбик
+            // вперемешку: уголь между кухнями и зверями, высота подписей под огородом.
+            // Теперь четыре раздела, и в каждом только его ручки.
             var setup = allowed && MenuState == StateSortSetup;
-            SetActive(SortOnButton, setup);
-            SetActive(SortAutoFillButton, setup);
-            SetActive(SortKilnsButton, setup);
-            SetActive(SortCoalButton, setup);
-            SetActive(SortCookButton, setup);
-            SetActive(SortTamesButton, setup);
-            SetActive(SortReapButton, setup);
-            SetActive(SortSowButton, setup);
-            SetActive(SortFoodButton, setup);
-            SetActive(SortLabelsButton, setup);
-            SetActive(SortSlotsButton, setup);
-            SetActive(SortLiftButton, setup);
+            SetActive(SetupSortButton, setup);
+            SetActive(SetupWorkButton, setup);
+            SetActive(SetupGardenButton, setup);
+            SetActive(SetupLabelsButton, setup);
+
+            var setupSort = allowed && MenuState == StateSetupSort;
+            SetActive(SortOnButton, setupSort);
+            SetActive(SortSlotsButton, setupSort);
+
+            var setupWork = allowed && MenuState == StateSetupWork;
+            SetActive(SortAutoFillButton, setupWork);
+            SetActive(SortKilnsButton, setupWork);
+            SetActive(SortCoalButton, setupWork);
+            SetActive(SortCookButton, setupWork);
+            SetActive(SortFoodButton, setupWork);
+            SetActive(SortTamesButton, setupWork);
+
+            var setupGarden = allowed && MenuState == StateSetupGarden;
+            SetActive(SortReapButton, setupGarden);
+            SetActive(SortSowButton, setupGarden);
+            SetActive(SortCropButton, setupGarden);
+
+            var setupLabels = allowed && MenuState == StateSetupLabels;
+            SetActive(SortLabelsButton, setupLabels);
+            SetActive(SortLiftButton, setupLabels);
             SetActive(SortPlaceButton, page);
             SetActive(SortZonesButton, page);
             SetActive(SortRecheckButton, page);
