@@ -10,6 +10,8 @@ namespace AstvardServerMod
 
         internal static GameObject SortHint;
 
+        internal static GameObject SortSetupButton;
+
         internal static GameObject SortOnButton;
 
         internal static GameObject SortLabelsButton;
@@ -75,6 +77,15 @@ namespace AstvardServerMod
             SortingButton = MakeButton(gui, "Сортировка", () =>
             {
                 MenuState = StateSorting;
+                RefreshMenu();
+            });
+
+            // Первой на странице - виджеты ложатся в порядке создания, а «Назад»
+            // поднимается над ними сама. Настройки нужны раз в неделю, зоны и пометка
+            // сундука - каждый вечер, поэтому настройки уехали за одну кнопку.
+            SortSetupButton = MakeButton(gui, "Настройки", () =>
+            {
+                MenuState = StateSortSetup;
                 RefreshMenu();
             });
 
@@ -584,7 +595,7 @@ namespace AstvardServerMod
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center, CoalKeep > 0
                     ? $"Печи жгут, пока угля меньше {CoalKeep}"
                     : "Печи жгут без предела");
-                MenuState = StateSorting;
+                MenuState = StateSortSetup;
                 RefreshMenu();
             });
 
@@ -609,7 +620,7 @@ namespace AstvardServerMod
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center, OwnChestSlots > 0
                     ? $"Свой сундук — от {OwnChestSlots} ячеек"
                     : "Сундуки категории больше не делятся");
-                MenuState = StateSorting;
+                MenuState = StateSortSetup;
                 RefreshMenu();
             });
 
@@ -633,7 +644,7 @@ namespace AstvardServerMod
                 SetChestLabelLift(ParseField(SortLiftInput, ChestLabelLift));
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     $"Подписи на {ChestLabelLift:0.##} м над сундуком");
-                MenuState = StateSorting;
+                MenuState = StateSortSetup;
                 RefreshMenu();
             });
         }
@@ -1035,13 +1046,18 @@ namespace AstvardServerMod
 
             var page = allowed && MenuState == StateSorting;
             SetActive(SortHint, page);
-            SetActive(SortOnButton, page);
-            SetActive(SortAutoFillButton, page);
-            SetActive(SortKilnsButton, page);
-            SetActive(SortCoalButton, page);
-            SetActive(SortLabelsButton, page);
-            SetActive(SortSlotsButton, page);
-            SetActive(SortLiftButton, page);
+            SetActive(SortSetupButton, page);
+
+            // Сама работа осталась на странице сортировки, а всё, что настраивают один
+            // раз и забывают, - за кнопкой «Настройки».
+            var setup = allowed && MenuState == StateSortSetup;
+            SetActive(SortOnButton, setup);
+            SetActive(SortAutoFillButton, setup);
+            SetActive(SortKilnsButton, setup);
+            SetActive(SortCoalButton, setup);
+            SetActive(SortLabelsButton, setup);
+            SetActive(SortSlotsButton, setup);
+            SetActive(SortLiftButton, setup);
             SetActive(SortPlaceButton, page);
             SetActive(SortZonesButton, page);
             SetActive(SortRecheckButton, page);

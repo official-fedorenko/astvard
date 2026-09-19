@@ -156,7 +156,14 @@ namespace AstvardServerMod
             // Сундука сбора никто не назначил - но станция может стоять в зоне сортировки,
             // и тогда готовое едет прямо в сундук своей категории.
             if (target == null) target = FindZoneChest(origin, prefab, amount);
-            if (target == null) return false;
+            if (target == null)
+            {
+                // Дальше вещь отдаётся игре, а игра кладёт её на землю у станции. Это не
+                // потеря, но и не то, что замечают: пока об этом молчали, «уголь пропадает»
+                // было единственным, что хозяин мог сказать о такой станции.
+                SayNoRoom(origin, prefab);
+                return false;
+            }
 
             // A container saves itself to its ZDO only from the owner's side, so adding
             // to one we do not own would live in local memory and vanish on reload.
@@ -165,6 +172,32 @@ namespace AstvardServerMod
             if (!targetView.IsOwner()) targetView.ClaimOwnership();
 
             return target.GetInventory().AddItem(prefab, amount);
+        }
+
+        // Жалуемся раз в минуту и по предмету: станций много, а беда одна, и шестьдесят
+        // одинаковых строк в минуту - это не рассказ, а шум.
+        private static readonly Dictionary<string, float> NoRoomSaid = new Dictionary<string, float>();
+
+        private const float NoRoomEvery = 60f;
+
+        /// <summary>Станции в зоне некуда сдать готовое - сказать это один раз.</summary>
+        private static void SayNoRoom(Vector3 origin, GameObject prefab)
+        {
+            if (prefab == null || Player.m_localPlayer == null) return;
+            if (ZoneAround(origin) == null) return;
+
+            var drop = prefab.GetComponent<ItemDrop>();
+            var title = drop != null ? ItemTitle(drop.m_itemData) : prefab.name;
+
+            float said;
+            if (NoRoomSaid.TryGetValue(title, out said)
+                && Time.realtimeSinceStartup - said < NoRoomEvery) return;
+
+            NoRoomSaid[title] = Time.realtimeSinceStartup;
+            Player.m_localPlayer.Message(MessageHud.MessageType.Center,
+                $"{title}: в зоне некуда сложить — падает на землю");
+            Log.LogInfo($"[AstvardServerMod] Station output: no chest in the zone can take "
+                        + $"{title}, the game drops it at the station.");
         }
 
         private static readonly System.Reflection.MethodInfo MSpawnProcessed =
@@ -224,29 +257,32 @@ namespace AstvardServerMod
         /// «Материалы» chest stood open two steps further away, and the next sweep would
         /// carry them back - the two halves pulling against each other once a second.
         ///
-        /// How far a station reaches is «Зона станций», the same distance it uses for a
-        /// chest somebody assigned to it: a zone can be sixty metres across, and a kiln
-        /// should not be fed from the far end of it.
+        /// Внутри зоны сортировки расстояние не считается вовсе: раз станция и сундук в
+        /// одной зоне, они работают вместе, на каком бы её краю ни стояли. «Зона станций»
+        /// осталась про то, что снаружи зоны, - про сундук, назначенный станции руками.
+        ///
+        /// Two distances that add up are a rule nobody can hold in their head, and the one
+        /// they hid did real harm: a kiln with the nearest chest full, or with the right
+        /// chest a step too far, tipped its coal on the ground - the game's own way of
+        /// finishing, and from the outside simply «уголь куда-то девается». The zone is
+        /// drawn by hand around the base it belongs to, so it is the honest limit; making
+        /// it smaller is a thing to do on the ground, not in a second number.
         /// </summary>
         private static Container FindZoneChest(Vector3 origin, GameObject prefab, int amount)
         {
-            if (!ZoneStationsOn || !SortingOn || !RuleAllows("sort")) return null;
+            var zone = ZoneAround(origin);
+            if (zone == null) return null;
 
             var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
             if (drop == null) return null;
 
-            var zones = SortingZones();
-            var at = Sorting.ZoneAt(zones, origin.x, origin.z);
-            if (at < 0) return null;
-
-            // В общей зоне разбирает один клиент - и сдаёт в неё тоже он.
-            var zone = zones[at];
-            if (ZonesOnServer && !zone.Drive) return null;
-
             var want = CategoryOf(drop.m_itemData);
 
+            // Вокруг середины зоны, а не вокруг станции: сундук на дальнем её краю - такой
+            // же сундук этой зоны, и он теперь тоже считается.
             var pieces = new List<Piece>();
-            Piece.GetAllPiecesInRadius(origin, AssignedChestRadius * 1.415f, pieces);
+            Piece.GetAllPiecesInRadius(new Vector3(zone.X, origin.y, zone.Z),
+                Sorting.ScanRadius(zone), pieces);
 
             Container best = null;
             var bestRank = int.MaxValue;
@@ -265,7 +301,6 @@ namespace AstvardServerMod
                 if (IsPrivateChest(container) || IsSupplyChest(container)) continue;
 
                 var spot = container.transform.position;
-                if (!InChestZone(origin, spot)) continue;
                 if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
 
                 // Писать в сундук, который кто-то держит открытым, - верный рассинхрон.
@@ -285,6 +320,27 @@ namespace AstvardServerMod
             }
 
             return best;
+        }
+
+        /// <summary>
+        /// Зона сортировки, внутри которой стоит эта точка, или null.
+        ///
+        /// One answer for the feeding half, the storing half and the question of whether a
+        /// station may be emptied at all: three places that used to ask it each in their
+        /// own words, and a rule three halves understand differently is a rule that will
+        /// be wrong in one of them.
+        /// </summary>
+        internal static Sorting.Zone ZoneAround(Vector3 where)
+        {
+            if (!ZoneStationsOn || !SortingOn || !RuleAllows("sort")) return null;
+
+            var zones = SortingZones();
+            var at = Sorting.ZoneAt(zones, where.x, where.z);
+            if (at < 0) return null;
+
+            // В общей зоне работает один клиент: двое вычерпали бы один сундук дважды.
+            var zone = zones[at];
+            return ZonesOnServer && !zone.Drive ? null : zone;
         }
 
         private static Container FindChest(Vector3 origin, float radius, GameObject product,
@@ -351,7 +407,8 @@ namespace AstvardServerMod
         // этой зоне стоит. Заводятся один раз: проход идёт каждую секунду.
         private static readonly List<Container> ZoneBins = new List<Container>();
 
-        private static readonly List<Vector3> ZoneSpots = new List<Vector3>();
+        /// <summary>Детали зоны: свой обход, потому что зона бывает шире, чем видно.</summary>
+        private static readonly List<Piece> ZonePieces = new List<Piece>();
 
         private static readonly List<Container> ZoneSupply = new List<Container>();
 
@@ -411,37 +468,34 @@ namespace AstvardServerMod
                     // «Автонаполнение»: помеченные сундуки той зоны, в которой стоит игрок,
                     // годятся станциям в ней и как кладовая, и как приёмник. Собираются из
                     // того же обхода деталей - второй за ними не ходим.
-                    Sorting.Zone zone = null;
+                    var zone = ZoneAround(player.transform.position);
                     ZoneBins.Clear();
-                    ZoneSpots.Clear();
                     ZoneSupply.Clear();
 
-                    if (ZoneStationsOn && SortingOn && RuleAllows("sort"))
+                    if (zone != null)
                     {
-                        var zones = SortingZones();
-                        var stand = player.transform.position;
-                        var at = Sorting.ZoneAt(zones, stand.x, stand.z);
+                        // Свой обход, вокруг середины зоны: круг вокруг игрока в 64 м
+                        // короче самой зоны, а станция теперь работает с любым её сундуком.
+                        // Лишний проход по деталям стоит одного сравнения расстояний на
+                        // деталь - дешевле, чем объяснять, почему дальний сундук не берут.
+                        ZonePieces.Clear();
+                        Piece.GetAllPiecesInRadius(
+                            new Vector3(zone.X, player.transform.position.y, zone.Z),
+                            Sorting.ScanRadius(zone), ZonePieces);
 
-                        // В общей зоне работает один клиент: двое вычерпали бы один сундук
-                        // в одну печь дважды.
-                        if (at >= 0 && !(ZonesOnServer && !zones[at].Drive))
+                        foreach (var piece in ZonePieces)
                         {
-                            zone = zones[at];
-                            foreach (var piece in pieces)
-                            {
-                                if (piece == null) continue;
+                            if (piece == null) continue;
 
-                                var container = ContainerOf(piece);
-                                if (container == null) continue;
-                                if (ChestCategory(container) < 0) continue;
-                                if (IsPrivateChest(container) || IsSupplyChest(container)) continue;
+                            var container = ContainerOf(piece);
+                            if (container == null) continue;
+                            if (ChestCategory(container) < 0) continue;
+                            if (IsPrivateChest(container) || IsSupplyChest(container)) continue;
 
-                                var spot = container.transform.position;
-                                if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
+                            var spot = container.transform.position;
+                            if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
 
-                                ZoneBins.Add(container);
-                                ZoneSpots.Add(spot);
-                            }
+                            ZoneBins.Add(container);
                         }
                     }
 
@@ -603,7 +657,14 @@ namespace AstvardServerMod
         private static bool MayHarvest(Component producer, List<Vector3> assignedChests, bool inZone)
         {
             if (MayHarvest(producer, assignedChests)) return true;
-            return inZone && MayHarvest(producer, ZoneSpots);
+
+            // Помеченный сундук зоны годится с любого её края, поэтому спрашивается не
+            // расстояние, а сама зона: станция внутри - значит есть куда сдавать.
+            if (!inZone || ZoneBins.Count == 0 || !OwnedAndValid(producer)) return false;
+
+            var origin = producer.transform.position;
+            var zone = ZoneAround(origin);
+            return zone != null && Sorting.Inside(zone, origin.x, origin.z);
         }
 
         private static bool MayHarvest(Component producer, List<Vector3> assignedChests)
@@ -642,6 +703,10 @@ namespace AstvardServerMod
         private static string TakeFrom(Vector3 origin, List<Container> chests,
                                        float radius, List<string> accepted, bool square)
         {
+            // Станция в зоне сортировки берёт из её сундуков на любом расстоянии - то же
+            // правило, по которому она в них и сдаёт. Снаружи зоны всё как было: назначенный
+            // сундук ищется в «Зоне станций».
+            var zone = ZoneAround(origin);
             var range = radius * radius;
             Container bestChest = null;
             ItemDrop.ItemData bestItem = null;
@@ -651,9 +716,13 @@ namespace AstvardServerMod
             {
                 if (container == null || container.IsInUse()) continue;
 
-                var sqr = (container.transform.position - origin).sqrMagnitude;
+                var spot = container.transform.position;
+                var sqr = (spot - origin).sqrMagnitude;
                 if (sqr >= bestSqr) continue;
-                if (square ? !InChestZone(origin, container.transform.position) : sqr > range) continue;
+
+                var sameZone = zone != null && Sorting.Inside(zone, spot.x, spot.z);
+                if (!sameZone &&
+                    (square ? !InChestZone(origin, spot) : sqr > range)) continue;
 
                 var view = ViewOf(container);
                 if (view == null || !view.IsValid()) continue;
@@ -689,16 +758,11 @@ namespace AstvardServerMod
             var zdo = view.GetZDO();
             var origin = smelter.transform.position;
 
-            if (smelter.m_maxFuel > 0 && smelter.m_fuelItem != null &&
-                zdo.GetFloat(ZDOVars.s_fuel) <= smelter.m_maxFuel - 1)
-            {
-                AcceptScratch.Clear();
-                AcceptScratch.Add(smelter.m_fuelItem.gameObject.name);
-                if (TakeSupply(origin, supply, AcceptScratch) != null)
-                    view.InvokeRPC("RPC_AddFuel");
-            }
+            // Руда вперёд топлива, и это порядок, а не вкус: топливо кладётся только в
+            // работающую печь, а работает она ровно тогда, когда в ней есть что плавить.
+            var queued = zdo.GetInt(ZDOVars.s_queued);
 
-            if (zdo.GetInt(ZDOVars.s_queued) < smelter.m_maxOre)
+            if (queued < smelter.m_maxOre)
             {
                 AcceptScratch.Clear();
                 foreach (var conversion in smelter.m_conversion)
@@ -711,7 +775,25 @@ namespace AstvardServerMod
                 // package: an EndOfStreamException thrown straight into this coroutine,
                 // which killed every automation sweep for the rest of the session.
                 // The ore came out of a chest, so it is not cheated.
-                if (ore != null) view.InvokeRPC("RPC_AddOre", ore, false);
+                if (ore != null)
+                {
+                    view.InvokeRPC("RPC_AddOre", ore, false);
+                    queued++;
+                }
+            }
+
+            // Печь, которой нечего плавить, топлива не жжёт вовсе - UpdateSmelter тратит
+            // его только пока в очереди есть руда, - так что уголь, положенный в пустую,
+            // просто лежит в ней. Десяток плавилен так забирает со склада две сотни углей,
+            // и со стороны это ровно «уголь куда-то девается»: со склада ушёл, в сундуках
+            // его нет, и никто ничего не сжёг. Теперь топливо едет туда, где им займутся.
+            if (queued > 0 && smelter.m_maxFuel > 0 && smelter.m_fuelItem != null &&
+                zdo.GetFloat(ZDOVars.s_fuel) <= smelter.m_maxFuel - 1)
+            {
+                AcceptScratch.Clear();
+                AcceptScratch.Add(smelter.m_fuelItem.gameObject.name);
+                if (TakeSupply(origin, supply, AcceptScratch) != null)
+                    view.InvokeRPC("RPC_AddFuel");
             }
         }
 
