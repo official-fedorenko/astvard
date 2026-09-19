@@ -208,10 +208,23 @@ namespace AstvardServerMod
                 Log.LogWarning("[AstvardServerMod] Localization.Clear is gone: some item names may keep the old language.");
             }
 
-            if (words.SetupLanguage(language)) return true;
+            if (!string.IsNullOrEmpty(language) && words.SetupLanguage(language)) return true;
 
             Log.LogWarning($"[AstvardServerMod] Sorting: the game has no '{language}' words.");
             return false;
+        }
+
+        /// <summary>
+        /// Вернуть язык, на котором сервер говорил. Обязано получиться: словарь к этому
+        /// моменту вычищен, и сервер, которому не нашлось ни одного языка, до конца
+        /// сессии отвечает ключами вида `$item_wood`. Поэтому запасной — английский: с
+        /// него игра и начинает, и его колонка в CSV та, из которой берутся непереведённые
+        /// слова, то есть она есть всегда.
+        /// </summary>
+        private static void RestoreLanguage(Localization words, string previous)
+        {
+            if (SpeakLanguage(words, previous)) return;
+            if (previous != "English") SpeakLanguage(words, "English");
         }
 
         /// <summary>
@@ -234,14 +247,18 @@ namespace AstvardServerMod
             // возвратом нет ни одного yield: иначе чужой кадр застал бы сервер говорящим
             // не на том языке.
             var words = Localization.instance;
+
+            // Язык берётся из настроек игры, а там он бывает и пустым: сама игра проверяет
+            // это перед тем, как применить. Пустым его возвращать нельзя — колонки с таким
+            // именем в CSV нет, и возврат оставил бы сервер без слов.
             var previous = words != null ? words.GetSelectedLanguage() : null;
+            if (string.IsNullOrEmpty(previous)) previous = "English";
+
             var switched = words != null && previous != CatalogueLanguage
                            && SpeakLanguage(words, CatalogueLanguage);
 
-            // Не вышло — вернуть прежний сразу: язык грузится поверх вычищенного словаря,
-            // и без этого сервер остался бы вовсе без слов.
-            if (words != null && previous != null && !switched && previous != CatalogueLanguage)
-                SpeakLanguage(words, previous);
+            // Не вышло — вернуть прежний сразу: язык грузится поверх вычищенного словаря.
+            if (words != null && !switched && previous != CatalogueLanguage) RestoreLanguage(words, previous);
 
             var counted = 0;
             try
@@ -268,7 +285,7 @@ namespace AstvardServerMod
             }
             finally
             {
-                if (switched) SpeakLanguage(words, previous);
+                if (switched) RestoreLanguage(words, previous);
             }
 
             if (counted == 0)
