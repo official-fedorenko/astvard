@@ -25,6 +25,8 @@ namespace AstvardServerMod
 
         private static BepInEx.Configuration.ConfigEntry<bool> _sowGarden;
 
+        private static BepInEx.Configuration.ConfigEntry<bool> _sowEmpty;
+
         private static BepInEx.Configuration.ConfigEntry<int> _cropKeep;
 
         internal static void BindGarden(BepInEx.Configuration.ConfigFile config)
@@ -37,6 +39,12 @@ namespace AstvardServerMod
                 "Подсаживать ли на освободившееся место. Саженец берётся тот, что вырастает "
                 + "в эту культуру, и платится семенами из помеченных сундуков — как у игрока. "
                 + "«Настройки» → «Огород» → «Подсаживать».");
+
+            _sowEmpty = config.Bind("Сортировка", "SowEmpty", true,
+                "Засевать ли пустую вскопанную землю внутри зоны — не только те места, где "
+                + "мод сам сорвал. Сажается то, чего в сундуках зоны больше всего, и только "
+                + "там, где растение само согласилось бы расти. "
+                + "«Настройки» → «Огород» → «Засаживать».");
 
             _cropKeep = config.Bind("Сортировка", "CropKeep", 100,
                 "Сколько держать урожая на складе, по каждой культуре свой счёт. Набралось "
@@ -51,6 +59,16 @@ namespace AstvardServerMod
         /// остановила бы и лук, и ячмень. Считается так же, как у еды и угля, - по той же
         /// таблице запаса, собранной за проход.
         /// </summary>
+        internal static bool SowEmptyOn
+        {
+            get { return _sowEmpty == null || _sowEmpty.Value; }
+        }
+
+        internal static void SetSowEmpty(bool on)
+        {
+            if (_sowEmpty != null) _sowEmpty.Value = on;
+        }
+
         internal static int CropKeep
         {
             get { return Mathf.Clamp(_cropKeep != null ? _cropKeep.Value : 0, 0, 100000); }
@@ -117,6 +135,15 @@ namespace AstvardServerMod
 
         private static int _enough;
 
+        /// <summary>Пустых вскопанных мест в зоне, засеяно, и почему не засеяно.</summary>
+        private static int _empty;
+
+        private static int _emptySown;
+
+        private static int _emptyNoSeeds;
+
+        private static string _sowingWhat;
+
         private static int _noSeeds;
 
         private static int _noSapling;
@@ -158,6 +185,12 @@ namespace AstvardServerMod
 
             var reaped = ReapBeds(player, zone);
 
+            // «Заполнение огорода» - то, ради чего всё и просили. Подсадка на свои же
+            // места закрывает только половину: грядку, сорванную руками, не вернуть
+            // ничем - морковь при сборе уничтожается, и места от неё не остаётся.
+            // Поэтому смотрим саму землю: вскопано, пусто, биом верный - сажаем.
+            sown += SowEmpty(zone, supply);
+
             Say(zone, beds, sown, reaped);
         }
 
@@ -181,6 +214,10 @@ namespace AstvardServerMod
                   + (_outside > 0 ? $",{NEWLINE}рядом вне зоны {_outside}" : "")
                   + (_noRoom > 0 ? $",{NEWLINE}некуда сложить {_noRoom}" : "")
                   + (_noSeeds > 0 ? $",{NEWLINE}нет семян на {_noSeeds}" : "")
+                  + (_empty > 0 ? $",{NEWLINE}пустых грядок {_empty}" : "")
+                  + (_emptySown > 0 ? $",{NEWLINE}засеяно {_emptySown}" : "")
+                  + (_sowingWhat != null ? $" ({_sowingWhat})" : "")
+                  + (_emptyNoSeeds > 0 ? $",{NEWLINE}семена кончились" : "")
                   + ".";
 
             var said = zone == null
@@ -193,7 +230,11 @@ namespace AstvardServerMod
                   + (_notOurs > 0 ? $", {_notOurs} counted by somebody else" : "")
                   + (_extras > 0 ? $", {_extras} left alone (extra drops)" : "")
                   + (_noSeeds > 0 ? $", {_noSeeds} unsown for want of seeds" : "")
-                  + (_noSapling > 0 ? $", {_noSapling} with no sapling to put back" : "");
+                  + (_noSapling > 0 ? $", {_noSapling} with no sapling to put back" : "")
+                  + (_sowingWhat != null ? $", sowing {_sowingWhat} every {_sowingStep:0.00} m"
+                                        : ", nothing to sow with")
+                  + (_empty > 0 ? $", {_empty} empty beds, {_emptySown} filled" : "")
+                  + (_emptyNoSeeds > 0 ? ", ran out of seeds" : "");
 
             if (said == _gardenSaid) return;
 
@@ -354,6 +395,203 @@ namespace AstvardServerMod
             return sown;
         }
 
+        // Сколько пустых грядок засаживать за проход. Не ради скорости: ошибка в выборе
+        // места стоит семян, и пусть она стоит десяти штук, а не всего запаса.
+        private const int SowPerPass = 10;
+
+        private static readonly Collider[] SpaceScratch = new Collider[8];
+
+        private static int _spaceMask;
+
+        private static float _sowingStep;
+
+        /// <summary>
+        /// Шаг сетки: сколько держать между серединами двух растений.
+        ///
+        /// Не «два радиуса роста», как кажется: игра считает место занятым, когда в шар
+        /// `m_growRadius` попадает **чужой коллайдер**, а не чужая середина. Значит
+        /// держать надо радиус плюс собственную толщину соседа - её и меряем у самого
+        /// префаба, тем же `LocalBox`, каким меряется сундук для ряда. Числа в коде тут
+        /// были бы выдумкой: у моркови, ячменя и сосны это разные величины.
+        /// </summary>
+        private static float Spacing(GameObject sapling, Plant plant)
+        {
+            var half = 0f;
+
+            Bounds box;
+            if (LocalBox(sapling, out box)) half = Mathf.Max(box.extents.x, box.extents.z);
+
+            // Пять сантиметров про запас: у края шара решает уже точность float, и
+            // растение, поставленное впритык, объявило бы себе «нет места».
+            return Mathf.Max(0.3f, plant.m_growRadius + half + 0.05f);
+        }
+
+        /// <summary>
+        /// Засевает вскопанную, но пустую землю внутри зоны.
+        ///
+        /// Условия спрашиваются те же, по которым растение само решает, живо ли оно
+        /// (`Plant.UpdateHealth` и `HaveGrowSpace` в игре): вскопано, биом подходит, рядом
+        /// ничего не стоит. Своей арифметики тут нет ни строчки - иначе саженец встал бы
+        /// и тут же умер, а семена бы кончились.
+        /// </summary>
+        private static int SowEmpty(Sorting.Zone zone, List<Container> supply)
+        {
+            _empty = 0;
+            _emptySown = 0;
+            _emptyNoSeeds = 0;
+            _sowingWhat = null;
+
+            if (!SowEmptyOn || zone == null) return 0;
+
+            var player = Player.m_localPlayer;
+            var zones = ZoneSystem.instance;
+            if (player == null || zones == null) return 0;
+
+            var sapling = SaplingToSow(supply);
+            if (sapling == null) return 0;
+
+            var plant = sapling.GetComponent<Plant>();
+            if (plant == null) return 0;
+
+            if (_spaceMask == 0)
+                _spaceMask = LayerMask.GetMask("Default", "static_solid", "Default_small",
+                                               "piece", "piece_nonsolid");
+
+            var title = sapling.GetComponent<Piece>();
+            _sowingWhat = title != null && !string.IsNullOrEmpty(title.m_name) && Localization.instance != null
+                ? Localization.instance.Localize(title.m_name)
+                : sapling.name;
+
+            var creator = player.GetPlayerID();
+            var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
+
+            var spacing = Spacing(sapling, plant);
+            _sowingStep = spacing;
+
+            // Шахматная укладка, а не клетка. У клетки соседи по диагонали стоят в 1.41
+            // шага, то есть между четырьмя растениями остаётся место, которого хватило бы
+            // ещё на одно; в шахматной у каждого шесть соседей и все ровно на шаге -
+            // плотнее уложить круги одного радиуса нельзя вовсе.
+            var rowStep = spacing * 0.866f;   // √3/2: высота равностороннего треугольника
+
+            // Решётка считается от начала мира, а не от середины зоны: зону двигают,
+            // вращают и меняют ей размер, и привязанная к ней сетка разъехалась бы с тем,
+            // что посажено вчера. От мира она всегда одна и та же.
+            var reach = zone.Square ? zone.Radius * 1.415f : zone.Radius;
+            var firstRow = Mathf.FloorToInt((zone.Z - reach) / rowStep);
+            var lastRow = Mathf.CeilToInt((zone.Z + reach) / rowStep);
+
+            for (var row = firstRow; row <= lastRow; row++)
+            {
+                var z = row * rowStep;
+
+                // Нечётный ряд сдвинут на полшага - от этого и получается шахматка.
+                var shift = (row & 1) == 0 ? 0f : spacing * 0.5f;
+                var firstCol = Mathf.FloorToInt((zone.X - reach - shift) / spacing);
+                var lastCol = Mathf.CeilToInt((zone.X + reach - shift) / spacing);
+
+                for (var col = firstCol; col <= lastCol; col++)
+                {
+                    if (_emptySown >= SowPerPass) return _emptySown;
+
+                    var x = col * spacing + shift;
+                    if (!Sorting.Inside(zone, x, z)) continue;
+
+                    float y;
+                    if (!zones.GetGroundHeight(new Vector3(x, 0f, z), out y)) continue;
+
+                    var at = new Vector3(x, y, z);
+                    var ground = Heightmap.FindHeightmap(at);
+                    if (ground == null) continue;
+
+                    if (plant.m_needCultivatedGround && !ground.IsCultivated(at)) continue;
+                    if ((ground.GetBiome(at) & plant.m_biome) == 0) continue;
+
+                    // Занято - значит занято: тут уже растёт, лежит или стоит. Игра
+                    // смотрит те же слои, только прощает соседнее больное растение;
+                    // мы не прощаем - лишняя грядка дешевле съеденного семени.
+                    if (Physics.OverlapSphereNonAlloc(at, plant.m_growRadius, SpaceScratch,
+                                                      _spaceMask) > 0) continue;
+
+                    _empty++;
+
+                    if (!PaySeeds(sapling, at, supply))
+                    {
+                        _emptyNoSeeds++;
+                        return _emptySown;
+                    }
+
+                    SownScratch.Clear();
+                    PlacePiece(sapling, at, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f),
+                               creator, platform, SownScratch);
+                    _emptySown++;
+                }
+            }
+
+            return _emptySown;
+        }
+
+        /// <summary>
+        /// Чем засевать: тем, чего в сундуках зоны больше всего.
+        ///
+        /// Выбор один на проход и предсказуемый - «сажаем то, чего у тебя много». Культура,
+        /// которой на складе уже хватает (см. «Урожая на складе»), пропускается: незачем
+        /// сажать то, что мы тут же перестанем собирать.
+        /// </summary>
+        private static GameObject SaplingToSow(List<Container> supply)
+        {
+            if (!ReadSaplings()) return null;
+
+            GameObject best = null;
+            var bestSeeds = 0;
+
+            foreach (var sapling in SaplingByCrop.Values)
+            {
+                if (sapling == null) continue;
+
+                var piece = sapling.GetComponent<Piece>();
+                if (piece == null || piece.m_resources == null || piece.m_resources.Length == 0) continue;
+
+                // Урожай этого саженца: если его на складе уже довольно, сажать незачем.
+                var crop = CropOf(sapling);
+                if (crop != null && CropKeep > 0 && InStock(crop) >= CropKeep) continue;
+
+                var seeds = int.MaxValue;
+                foreach (var need in piece.m_resources)
+                {
+                    if (need == null || need.m_resItem == null) continue;
+
+                    var had = InStock(need.m_resItem.gameObject.name);
+                    if (need.m_amount > 0) had /= need.m_amount;
+                    seeds = Mathf.Min(seeds, had);
+                }
+
+                if (seeds == int.MaxValue || seeds <= 0 || seeds <= bestSeeds) continue;
+
+                bestSeeds = seeds;
+                best = sapling;
+            }
+
+            return best;
+        }
+
+        /// <summary>Что вырастет из этого саженца — имя предмета, которым это ляжет в сундук.</summary>
+        private static string CropOf(GameObject sapling)
+        {
+            var plant = sapling.GetComponent<Plant>();
+            if (plant == null || plant.m_grownPrefabs == null) return null;
+
+            foreach (var grown in plant.m_grownPrefabs)
+            {
+                if (grown == null) continue;
+
+                var pickable = grown.GetComponent<Pickable>();
+                if (pickable != null && pickable.m_itemPrefab != null) return pickable.m_itemPrefab.name;
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Платит за саженец из помеченных сундуков. Всё или ничего: половина цены - это
         /// съеденные семена и ни одной грядки.
@@ -390,10 +628,18 @@ namespace AstvardServerMod
 
         private static GameObject SaplingFor(string crop)
         {
+            if (!ReadSaplings()) return null;
+
+            GameObject sown;
+            return SaplingByCrop.TryGetValue(crop, out sown) ? sown : null;
+        }
+
+        private static bool ReadSaplings()
+        {
             if (!_saplingsRead)
             {
                 var scene = ZNetScene.instance;
-                if (scene == null || scene.m_prefabs == null) return null;
+                if (scene == null || scene.m_prefabs == null) return false;
 
                 _saplingsRead = true;
                 foreach (var prefab in scene.m_prefabs)
@@ -417,8 +663,7 @@ namespace AstvardServerMod
                 Log.LogInfo($"[AstvardServerMod] Garden: {SaplingByCrop.Count} crops can be sown back.");
             }
 
-            GameObject sown;
-            return SaplingByCrop.TryGetValue(crop, out sown) ? sown : null;
+            return true;
         }
     }
 }
