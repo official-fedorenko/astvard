@@ -190,7 +190,7 @@ namespace AstvardServerMod
         // устареет с ближайшим обновлением.
         private static readonly Dictionary<string, string> ZoneFireKinds = new Dictionary<string, string>();
 
-        private static void SayZoneStations(int smelters, int mine, int fires)
+        private static void SayZoneStations(int smelters, int mine, int fires, int tames)
         {
             var kinds = new System.Text.StringBuilder();
             foreach (var pair in ZoneFireKinds)
@@ -199,7 +199,8 @@ namespace AstvardServerMod
                 kinds.Append(pair.Key).Append(": ").Append(pair.Value);
             }
 
-            var said = $"smelters {smelters} (mine {mine}), fires {fires}{kinds}";
+            var said = $"smelters {smelters} (mine {mine}), fires {fires}, "
+                       + $"hungry beasts {tames}{kinds}";
             if (said == _zoneStationsSaid) return;
 
             _zoneStationsSaid = said;
@@ -639,7 +640,11 @@ namespace AstvardServerMod
                         }
                     }
 
-                    if (zone != null) SayZoneStations(zoneSmelters, zoneMine, zoneFires);
+                    // Звери - такая же половина наполнения, как станции: еда им тоже
+                    // берётся из помеченных сундуков, и по тому же правилу зоны.
+                    var tames = feeding && FeedTamesOn ? FeedTames(player, zone, supplyChests) : 0;
+
+                    if (zone != null) SayZoneStations(zoneSmelters, zoneMine, zoneFires, tames);
                 }
                 catch (System.Exception bad)
                 {

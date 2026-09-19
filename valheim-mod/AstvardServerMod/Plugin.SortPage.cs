@@ -38,6 +38,8 @@ namespace AstvardServerMod
 
         internal static GameObject SortCookButton;
 
+        internal static GameObject SortTamesButton;
+
         internal static GameObject SortFoodButton;
 
         internal static GameObject SortFoodHint;
@@ -631,6 +633,16 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            SortTamesButton = MakeButton(gui, "", () =>
+            {
+                SetFeedTames(!FeedTamesOn);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    FeedTamesOn
+                        ? "Еду зверям кладём под ноги"
+                        : "Зверей кормишь сам");
+                RefreshMenu();
+            });
+
             SortFoodButton = MakeButton(gui, "", () =>
             {
                 SetFieldText(SortFoodInput, FoodKeep.ToString());
@@ -721,6 +733,7 @@ namespace AstvardServerMod
                             + $"зоны.{NEWLINE}0 — без предела.";
 
             SetLabel(SortCookButton, FeedCookingOn ? "Наполнять кухни: вкл" : "Наполнять кухни: выкл");
+            SetLabel(SortTamesButton, FeedTamesOn ? "Кормить зверей: вкл" : "Кормить зверей: выкл");
             SetLabel(SortFoodButton, FoodKeep > 0
                 ? $"Еды на складе: {FoodKeep}"
                 : "Еды на складе: без предела");
@@ -1132,6 +1145,7 @@ namespace AstvardServerMod
             SetActive(SortKilnsButton, setup);
             SetActive(SortCoalButton, setup);
             SetActive(SortCookButton, setup);
+            SetActive(SortTamesButton, setup);
             SetActive(SortFoodButton, setup);
             SetActive(SortLabelsButton, setup);
             SetActive(SortSlotsButton, setup);
