@@ -1,6 +1,6 @@
 {
   "name": "AstvardServerMod",
-  "version_number": "1.2.7",
+  "version_number": "1.2.8",
   "website_url": "https://github.com/official-fedorenko/astvard",
   "description": "Панель управления в игре для сервера Astvard: постройки по шаблонам, работа с рельефом, руны. Мод не обязателен — на сервер пускают и без него.",
   "dependencies": [

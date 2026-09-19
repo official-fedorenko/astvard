@@ -523,9 +523,9 @@ namespace AstvardServerMod
                     // Уголь считается раз за проход, а не у каждой печи: печей на базе
                     // десяток, а сундуки одни и те же. Считаем там, куда уголь и уезжает -
                     // в сундуках сбора и в помеченных сундуках зоны.
+                    CountStock();
                     var kilnsMayBurn = FeedKilnsOn
-                                       && (CoalKeep <= 0
-                                           || CountInChests(CollectChests, ZoneBins, CoalPrefab) < CoalKeep);
+                                       && (CoalKeep <= 0 || InStock(CoalPrefab) < CoalKeep);
 
                     foreach (var piece in pieces)
                     {
@@ -543,7 +543,9 @@ namespace AstvardServerMod
                             if (harvesting && MayHarvest(cooking, collectSpots, inZone))
                                 cooking.GetComponent<ZNetView>()
                                     .InvokeRPC("RPC_RemoveDoneItem", player.transform.position, 1);
-                            if (feeding) FillCooking(cooking, food);
+                            // «Наполнять кухни» гасит и топливо: кухня, которой не
+                            // дают еды, в огне не нуждается.
+                            if (feeding && FeedCookingOn) FillCooking(cooking, food);
                         }
 
                         var beehive = piece.GetComponentInChildren<Beehive>();
@@ -624,18 +626,25 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Сколько этого добра лежит в двух наборах сундуков. Стопками, а не ячейками:
-        /// «пятьсот угля» — это пятьсот углей, сколько бы стопок они ни занимали.
+        /// Что и сколько лежит в сундуках сбора и в помеченных сундуках зоны. Штуками, а
+        /// не ячейками: «сто угля» — это сто углей, сколько бы стопок они ни занимали.
+        ///
+        /// Counted once a sweep into one table rather than asked per station: a base has a
+        /// dozen kilns and cooking stations and one set of chests, and each question used
+        /// to walk all of them. With a limit per dish there would be ten such walks per
+        /// station a second.
         /// </summary>
-        private static int CountInChests(List<Container> first, List<Container> second, string prefab)
+        private static readonly Dictionary<string, int> Stock = new Dictionary<string, int>();
+
+        private static void CountStock()
         {
-            return CountInChests(first, prefab) + CountInChests(second, prefab);
+            Stock.Clear();
+            CountStock(CollectChests);
+            CountStock(ZoneBins);
         }
 
-        private static int CountInChests(List<Container> chests, string prefab)
+        private static void CountStock(List<Container> chests)
         {
-            var total = 0;
-
             foreach (var container in chests)
             {
                 if (container == null) continue;
@@ -646,12 +655,18 @@ namespace AstvardServerMod
                 foreach (var item in inventory.GetAllItems())
                 {
                     if (item == null || item.m_dropPrefab == null) continue;
-                    if (item.m_dropPrefab.name != prefab) continue;
-                    total += item.m_stack;
+
+                    int had;
+                    var name = item.m_dropPrefab.name;
+                    Stock[name] = (Stock.TryGetValue(name, out had) ? had : 0) + item.m_stack;
                 }
             }
+        }
 
-            return total;
+        private static int InStock(string prefab)
+        {
+            int had;
+            return Stock.TryGetValue(prefab, out had) ? had : 0;
         }
 
         private static bool MayHarvest(Component producer, List<Vector3> assignedChests, bool inZone)
@@ -802,28 +817,83 @@ namespace AstvardServerMod
             if (!OwnedAndValid(cooking)) return;
 
             var view = cooking.GetComponent<ZNetView>();
+            var zdo = view.GetZDO();
             var origin = cooking.transform.position;
 
-            if (cooking.m_useFuel && cooking.m_fuelItem != null &&
-                view.GetZDO().GetFloat(ZDOVars.s_fuel) <= cooking.m_maxFuel - 1)
+            // Еда вперёд топлива, по той же причине, что руда вперёд угля у плавильни, но
+            // причина здесь другая и хуже: железная кухня жжёт уголь и пустой
+            // (m_useFueldWhileEmpty у неё true), так что топливо в кухню, на которой ничего
+            // не готовится, - это уголь в огонь под пустым вертелом.
+            var added = false;
+
+            if (MCookingFreeSlot != null && (int)MCookingFreeSlot.Invoke(cooking, null) != -1)
             {
                 AcceptScratch.Clear();
-                AcceptScratch.Add(cooking.m_fuelItem.gameObject.name);
-                if (TakeSupply(origin, supply, AcceptScratch) != null)
-                    view.InvokeRPC("RPC_AddFuel");
+                foreach (var conversion in cooking.m_conversion)
+                {
+                    if (conversion == null || conversion.m_from == null) continue;
+
+                    // Склад считается по каждому блюду отдельно - см. FoodKeep.
+                    if (FoodKeep > 0 && conversion.m_to != null
+                        && InStock(conversion.m_to.name) >= FoodKeep) continue;
+
+                    AcceptScratch.Add(conversion.m_from.gameObject.name);
+                }
+
+                if (AcceptScratch.Count > 0)
+                {
+                    var raw = TakeSupply(origin, supply, AcceptScratch);
+                    // Same trailing cheated flag as the smelter, same crash without it.
+                    if (raw != null)
+                    {
+                        view.InvokeRPC("RPC_AddItem", raw, false);
+                        added = true;
+                    }
+                }
             }
 
-            if (MCookingFreeSlot == null) return;
-            if ((int)MCookingFreeSlot.Invoke(cooking, null) == -1) return;
+            if (!cooking.m_useFuel || cooking.m_fuelItem == null) return;
+            if (!added && !StillCooking(cooking, zdo)) return;
+            if (zdo.GetFloat(ZDOVars.s_fuel) > cooking.m_maxFuel - 1) return;
 
             AcceptScratch.Clear();
-            foreach (var conversion in cooking.m_conversion)
-                if (conversion != null && conversion.m_from != null)
-                    AcceptScratch.Add(conversion.m_from.gameObject.name);
+            AcceptScratch.Add(cooking.m_fuelItem.gameObject.name);
+            if (TakeSupply(origin, supply, AcceptScratch) != null) view.InvokeRPC("RPC_AddFuel");
+        }
 
-            var raw = TakeSupply(origin, supply, AcceptScratch);
-            // Same trailing cheated flag as the smelter, same crash without it.
-            if (raw != null) view.InvokeRPC("RPC_AddItem", raw, false);
+        /// <summary>
+        /// Готовится ли на кухне что-нибудь прямо сейчас.
+        ///
+        /// Read straight out of the ZDO, where the game keeps it: «slot0», «slot1» and so
+        /// on hold the name of whatever lies on each spit. No reflection for this - a
+        /// private helper of the game is one more thing to re-check after every update,
+        /// and these keys are plain strings we already read for fuel and ore. «Done» is
+        /// decided the way IsItemDone decides it: a slot holding the result of a
+        /// conversion, or the burnt item, is finished rather than cooking.
+        /// </summary>
+        private static bool StillCooking(CookingStation cooking, ZDO zdo)
+        {
+            if (cooking.m_slots == null || zdo == null) return false;
+
+            for (var i = 0; i < cooking.m_slots.Length; i++)
+            {
+                var name = zdo.GetString("slot" + i);
+                if (name.Length == 0) continue;
+                if (!IsCooked(cooking, name)) return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsCooked(CookingStation cooking, string name)
+        {
+            if (cooking.m_overCookedItem != null && cooking.m_overCookedItem.name == name) return true;
+
+            foreach (var conversion in cooking.m_conversion)
+                if (conversion != null && conversion.m_to != null && conversion.m_to.name == name)
+                    return true;
+
+            return false;
         }
 
         private static void FillFermenter(Fermenter fermenter, List<Container> supply)

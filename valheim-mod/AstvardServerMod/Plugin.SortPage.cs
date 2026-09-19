@@ -36,6 +36,16 @@ namespace AstvardServerMod
 
         internal static GameObject SortCoalApply;
 
+        internal static GameObject SortCookButton;
+
+        internal static GameObject SortFoodButton;
+
+        internal static GameObject SortFoodHint;
+
+        internal static GameObject SortFoodInput;
+
+        internal static GameObject SortFoodApply;
+
         internal static GameObject SortPlaceHint;
 
         internal static GameObject SortShapeButton;
@@ -599,6 +609,41 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            SortCookButton = MakeButton(gui, "", () =>
+            {
+                SetFeedCooking(!FeedCookingOn);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    FeedCookingOn
+                        ? "Еду на кухни кладём"
+                        : "Кухни стоят — запасы целы");
+                RefreshMenu();
+            });
+
+            SortFoodButton = MakeButton(gui, "", () =>
+            {
+                SetFieldText(SortFoodInput, FoodKeep.ToString());
+                MenuState = StateSortFood;
+                RefreshMenu();
+            });
+
+            SortFoodHint = MakeText(gui, "");
+
+            SortFoodInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                UnityEngine.UI.InputField.ContentType.IntegerNumber, "порций, напр. 100", 16, 160f, 32f);
+            AddFixedSize(SortFoodInput, 160f, 32f);
+
+            SortFoodApply = MakeButton(gui, "Применить", () =>
+            {
+                SetFoodKeep(Mathf.RoundToInt(ParseField(SortFoodInput, FoodKeep)));
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, FoodKeep > 0
+                    ? $"Готовим, пока блюда меньше {FoodKeep}"
+                    : "Готовим без предела");
+                MenuState = StateSortSetup;
+                RefreshMenu();
+            });
+
             SortSlotsButton = MakeButton(gui, "", () =>
             {
                 SetFieldText(SortSlotsInput, OwnChestSlots.ToString());
@@ -663,6 +708,19 @@ namespace AstvardServerMod
                             + $"Считается в сундуках сбора{NEWLINE}и в помеченных сундуках{NEWLINE}"
                             + $"зоны.{NEWLINE}0 — без предела.";
 
+            SetLabel(SortCookButton, FeedCookingOn ? "Наполнять кухни: вкл" : "Наполнять кухни: выкл");
+            SetLabel(SortFoodButton, FoodKeep > 0
+                ? $"Еды на складе: {FoodKeep}"
+                : "Еды на складе: без предела");
+
+            var food = SortFoodHint != null ? SortFoodHint.GetComponentInChildren<Text>(true) : null;
+            if (food != null)
+                food.text = $"Сколько держать готовой еды,{NEWLINE}по каждому блюду свой{NEWLINE}"
+                            + $"счёт. Набралось столько{NEWLINE}жареного мяса — мясо жарить{NEWLINE}"
+                            + $"перестают, рыбу и хлеб{NEWLINE}готовят дальше.{NEWLINE}{NEWLINE}"
+                            + $"Считается в сундуках сбора{NEWLINE}и в помеченных сундуках{NEWLINE}"
+                            + $"зоны.{NEWLINE}0 — без предела.";
+
             SetLabel(SortSlotsButton, OwnChestSlots > 0
                 ? $"Свой сундук: от {OwnChestSlots} ячеек"
                 : "Свой сундук: не делить");
@@ -689,6 +747,11 @@ namespace AstvardServerMod
             SetActive(SortCoalHint, coalPage);
             SetActive(SortCoalInput, coalPage);
             SetActive(SortCoalApply, coalPage);
+
+            var foodPage = allowed && MenuState == StateSortFood;
+            SetActive(SortFoodHint, foodPage);
+            SetActive(SortFoodInput, foodPage);
+            SetActive(SortFoodApply, foodPage);
 
             var slots = allowed && MenuState == StateSortSlots;
             SetActive(SortSlotsHint, slots);
@@ -1055,6 +1118,8 @@ namespace AstvardServerMod
             SetActive(SortAutoFillButton, setup);
             SetActive(SortKilnsButton, setup);
             SetActive(SortCoalButton, setup);
+            SetActive(SortCookButton, setup);
+            SetActive(SortFoodButton, setup);
             SetActive(SortLabelsButton, setup);
             SetActive(SortSlotsButton, setup);
             SetActive(SortLiftButton, setup);

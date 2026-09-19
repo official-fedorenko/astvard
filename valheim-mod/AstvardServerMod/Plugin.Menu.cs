@@ -87,6 +87,7 @@ namespace AstvardServerMod
         private const int StateChestWork = 69;  // всё про сундуки: подача, сбор, зона, установка
         private const int StateSortCoal = 70;   // сколько угля держать на складе
         private const int StateSortSetup = 71;  // переключатели сортировки, все вместе
+        private const int StateSortFood = 72;   // сколько готовой еды держать на складе
 
         internal static GameObject Panel;
 
@@ -1086,6 +1087,7 @@ namespace AstvardServerMod
                 // Страницы одной настройки возвращают туда, откуда их открыли, а не на
                 // страницу сортировки: иначе «Назад» уводит дальше, чем «сюда я пришёл».
                 else if (MenuState == StateSortSlots || MenuState == StateSortCoal
+                         || MenuState == StateSortFood
                          || MenuState == StateSortLift) MenuState = StateSortSetup;
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;
                 else if (MenuState == StateSortCrew) MenuState = StateSortZone;

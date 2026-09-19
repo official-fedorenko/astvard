@@ -254,6 +254,16 @@ namespace AstvardServerMod
                 + "перестают жечь, разошёлся — начинают снова. 0 — без предела. "
                 + "«Функции» → «Сортировка» → «Уголь на складе».");
 
+            _feedCooking = config.Bind("Сортировка", "FeedCooking", true,
+                "Класть ли еду на всё, где она готовится: костёр с подставкой, железную "
+                + "кухню, печь для хлеба. false — кухни стоят, запасы целы. "
+                + "«Функции» → «Сортировка» → «Настройки» → «Наполнять кухни».");
+
+            _foodKeep = config.Bind("Сортировка", "FoodKeep", 100,
+                "Сколько готовой еды держать на складе — по каждому блюду отдельно. "
+                + "Набралось столько жареного мяса — мясо жарить перестают, а рыбу и хлеб "
+                + "готовят дальше. 0 — без предела. «Настройки» → «Еды на складе».");
+
             _groupSpan = config.Bind("Сортировка", "GroupSpan", 8f,
                 "На каком расстоянии сундуки считаются стоящими вместе, от 0 до 64 м. Куча "
                 + "держится одной такой кучки и не расползается по базе. Мерится до "
@@ -322,6 +332,44 @@ namespace AstvardServerMod
         internal static void SetCoalKeep(int amount)
         {
             if (_coalKeep != null) _coalKeep.Value = Mathf.Clamp(amount, 0, 100000);
+        }
+
+        private static BepInEx.Configuration.ConfigEntry<bool> _feedCooking;
+
+        /// <summary>
+        /// Класть ли еду на кухни.
+        ///
+        /// The kilns' switch answered «не жги всё дерево»; this is the same question about
+        /// the hunt. A station left to itself will cook every last piece of meat, and meat
+        /// raw is what a new recipe wants.
+        /// </summary>
+        internal static bool FeedCookingOn
+        {
+            get { return _feedCooking == null || _feedCooking.Value; }
+        }
+
+        internal static void SetFeedCooking(bool on)
+        {
+            if (_feedCooking != null) _feedCooking.Value = on;
+        }
+
+        private static BepInEx.Configuration.ConfigEntry<int> _foodKeep;
+
+        /// <summary>
+        /// Сколько готовой еды держать на складе, по каждому блюду отдельно; 0 — без предела.
+        ///
+        /// Counted per dish rather than over all food together: one number for everything
+        /// would mean a hundred grilled necks quietly stopping the fish and the bread too,
+        /// and a larder of one thing is not a larder.
+        /// </summary>
+        internal static int FoodKeep
+        {
+            get { return Mathf.Clamp(_foodKeep != null ? _foodKeep.Value : 0, 0, 100000); }
+        }
+
+        internal static void SetFoodKeep(int amount)
+        {
+            if (_foodKeep != null) _foodKeep.Value = Mathf.Clamp(amount, 0, 100000);
         }
 
         /// <summary>How close two chests stand to count as one group.</summary>
