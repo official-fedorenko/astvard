@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using BepInEx.Configuration;
+using HarmonyLib;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -172,6 +173,48 @@ namespace AstvardServerMod
         }
 
         /// <summary>
+        /// На каком языке спрашивать у игры имена предметов для каталога.
+        ///
+        /// Сервер локализует своим языком, а он английский: на сайт уезжали «Deer Hide» и
+        /// «Barley Flour», и найти оленью шкуру по слову «шкура» было нечем. Все языки
+        /// лежат в одном CSV игры, так что довольно попросить у неё другой на время сборки
+        /// каталога. Настройкой это не сделано намеренно: сайт русский целиком.
+        /// </summary>
+        private const string CatalogueLanguage = "Russian";
+
+        // Localization.Clear() закрыт, но без него остаётся кэш на сотню строк: имя,
+        // прочитанное до переключения, вернулось бы на прежнем языке, и в каталоге легла бы
+        // горсть английских строк среди русских. SetupLanguage кладёт слова поверх и кэша
+        // не трогает — чистит только он.
+        private static readonly System.Reflection.MethodInfo MLocalizationClear =
+            AccessTools.Method(typeof(Localization), "Clear");
+
+        private static bool _saidNoLocalizationClear;
+
+        /// <summary>
+        /// Просит игру говорить на этом языке. То же самое, что её собственный SetLanguage
+        /// (вычистить словарь и загрузить заново), но без записи в настройки и без события
+        /// о смене языка: на выделенном сервере ни то, ни другое никому не нужно.
+        /// </summary>
+        private static bool SpeakLanguage(Localization words, string language)
+        {
+            if (MLocalizationClear != null)
+            {
+                MLocalizationClear.Invoke(words, null);
+            }
+            else if (!_saidNoLocalizationClear)
+            {
+                _saidNoLocalizationClear = true;
+                Log.LogWarning("[AstvardServerMod] Localization.Clear is gone: some item names may keep the old language.");
+            }
+
+            if (words.SetupLanguage(language)) return true;
+
+            Log.LogWarning($"[AstvardServerMod] Sorting: the game has no '{language}' words.");
+            return false;
+        }
+
+        /// <summary>
         /// Каталог: что в игре вообще есть. Шлётся раз за запуск, и правильно, что при
         /// каждом: предметы могли появиться с обновлением игры, а имена — с переводом.
         /// </summary>
@@ -187,26 +230,46 @@ namespace AstvardServerMod
 
             body.Append('\n');
 
+            // Язык меняется только на время сборки строк, и между переключением и
+            // возвратом нет ни одного yield: иначе чужой кадр застал бы сервер говорящим
+            // не на том языке.
+            var words = Localization.instance;
+            var previous = words != null ? words.GetSelectedLanguage() : null;
+            var switched = words != null && previous != CatalogueLanguage
+                           && SpeakLanguage(words, CatalogueLanguage);
+
+            // Не вышло — вернуть прежний сразу: язык грузится поверх вычищенного словаря,
+            // и без этого сервер остался бы вовсе без слов.
+            if (words != null && previous != null && !switched && previous != CatalogueLanguage)
+                SpeakLanguage(words, previous);
+
             var counted = 0;
-            var db = ObjectDB.instance;
-            if (db != null && db.m_items != null)
-                foreach (var prefab in db.m_items)
-                {
-                    var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
-                    if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null) continue;
+            try
+            {
+                var db = ObjectDB.instance;
+                if (db != null && db.m_items != null)
+                    foreach (var prefab in db.m_items)
+                    {
+                        var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
+                        if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null) continue;
 
-                    var shared = drop.m_itemData.m_shared;
-                    var kind = CleanForCatalogue(shared.m_name);
-                    if (kind.Length == 0) continue;
+                        var shared = drop.m_itemData.m_shared;
+                        var kind = CleanForCatalogue(shared.m_name);
+                        if (kind.Length == 0) continue;
 
-                    body.Append(kind).Append('|')
-                        .Append(CleanForCatalogue(ItemTitle(drop.m_itemData))).Append('|')
-                        .Append(CleanForCatalogue(shared.m_itemType.ToString())).Append('|')
-                        .Append(DefaultCategoryOf(drop.m_itemData))
-                        .Append('\n');
+                        body.Append(kind).Append('|')
+                            .Append(CleanForCatalogue(ItemTitle(drop.m_itemData))).Append('|')
+                            .Append(CleanForCatalogue(shared.m_itemType.ToString())).Append('|')
+                            .Append(DefaultCategoryOf(drop.m_itemData))
+                            .Append('\n');
 
-                    counted++;
-                }
+                        counted++;
+                    }
+            }
+            finally
+            {
+                if (switched) SpeakLanguage(words, previous);
+            }
 
             if (counted == 0)
             {
@@ -234,7 +297,10 @@ namespace AstvardServerMod
                     yield break;
                 }
 
-                Log.LogInfo($"[AstvardServerMod] Sorting: told the site about {counted} items.");
+                // Язык в строке не для красоты: имена, уехавшие не на том языке, иначе
+                // видны только на самом сайте и через сутки.
+                Log.LogInfo($"[AstvardServerMod] Sorting: told the site about {counted} items"
+                            + $" ({(switched ? CatalogueLanguage : previous)} names).");
                 done(true);
             }
         }
