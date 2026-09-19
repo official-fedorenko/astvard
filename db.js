@@ -243,26 +243,6 @@ const DEFAULT_SETTINGS = [
   ['yandex_verification', '', 'Код подтверждения Яндекс Вебмастера — можно вставить тег <meta> целиком'],
   ['google_verification', '', 'Код подтверждения Google Search Console — можно вставить тег <meta> целиком'],
   ['yandex_metrika_id', '', 'Номер счётчика Яндекс Метрики — можно вставить код счётчика целиком'],
-  ['public_card_enabled', 'true', 'Публичная карточка: доступна всем по QR'],
-  ['public_card_show_photo', 'true', 'Публичная карточка: показывать фото'],
-  ['public_card_show_brand', 'true', 'Публичная карточка: показывать бренд'],
-  ['public_card_show_model', 'true', 'Публичная карточка: показывать модель'],
-  ['public_card_show_serial', 'true', 'Публичная карточка: показывать серийный №'],
-  ['public_card_show_inventory', 'true', 'Публичная карточка: показывать инвентарный №'],
-  ['public_card_show_status', 'true', 'Публичная карточка: показывать статус'],
-  ['public_card_show_category', 'true', 'Публичная карточка: показывать категорию'],
-  ['public_card_show_purchase_date', 'false', 'Публичная карточка: показывать дату покупки'],
-  ['public_card_show_notes', 'false', 'Публичная карточка: показывать заметки'],
-  ['public_vehicle_card_enabled', 'true', 'Публичная карточка авто: доступна всем по QR'],
-  ['public_vehicle_card_show_photo', 'true', 'Публичная карточка авто: показывать фото'],
-  ['public_vehicle_card_show_brand', 'true', 'Публичная карточка авто: показывать бренд'],
-  ['public_vehicle_card_show_model', 'true', 'Публичная карточка авто: показывать модель'],
-  ['public_vehicle_card_show_plate', 'true', 'Публичная карточка авто: показывать гос. номер'],
-  ['public_vehicle_card_show_vin', 'false', 'Публичная карточка авто: показывать VIN'],
-  ['public_vehicle_card_show_status', 'true', 'Публичная карточка авто: показывать статус'],
-  ['public_vehicle_card_show_category', 'true', 'Публичная карточка авто: показывать тип'],
-  ['public_vehicle_card_show_year', 'true', 'Публичная карточка авто: показывать год выпуска'],
-  ['public_vehicle_card_show_mileage', 'false', 'Публичная карточка авто: показывать пробег']
 ];
 
 let resolveDbReady;

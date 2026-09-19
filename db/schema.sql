@@ -83,7 +83,6 @@ CREATE TABLE IF NOT EXISTS users (
           email TEXT UNIQUE,
           password_hash TEXT,
           role TEXT NOT NULL DEFAULT 'User',
-          account_type TEXT NOT NULL DEFAULT 'client',
           avatar_url TEXT,
           two_factor_secret TEXT,
           two_factor_enabled INTEGER NOT NULL DEFAULT 0,

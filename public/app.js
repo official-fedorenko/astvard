@@ -1419,28 +1419,6 @@ async function loadSettings() {
     yandex_verification: 'Код подтверждения Яндекс Вебмастера (можно вставить тег <meta> целиком)',
     google_verification: 'Код подтверждения Google Search Console (можно вставить тег <meta> целиком)',
     yandex_metrika_id: 'Номер счётчика Яндекс Метрики (можно вставить код счётчика целиком)',
-    public_card_enabled: 'Публичная карточка доступна всем (по QR)',
-    public_card_show_photo: 'Показывать фото',
-    public_card_show_brand: 'Показывать бренд',
-    public_card_show_model: 'Показывать модель',
-    public_card_show_serial: 'Показывать серийный №',
-    public_card_show_inventory: 'Показывать инвентарный №',
-    public_card_show_status: 'Показывать статус',
-    public_card_show_category: 'Показывать категорию',
-    public_card_show_purchase_date: 'Показывать дату покупки',
-    public_card_show_notes: 'Показывать заметки',
-    public_vehicle_card_enabled: 'Публичная карточка доступна всем (по QR)',
-    public_vehicle_card_show_photo: 'Показывать фото',
-    public_vehicle_card_show_brand: 'Показывать марку',
-    public_vehicle_card_show_model: 'Показывать модель',
-    public_vehicle_card_show_year: 'Показывать год выпуска',
-    public_vehicle_card_show_plate: 'Показывать гос. номер',
-    public_vehicle_card_show_vin: 'Показывать VIN',
-    public_vehicle_card_show_status: 'Показывать статус',
-    public_vehicle_card_show_category: 'Показывать тип',
-    public_vehicle_card_show_mileage: 'Показывать пробег',
-    public_vehicle_card_show_purchase_date: 'Показывать дату покупки',
-    public_vehicle_card_show_notes: 'Показывать заметки'
   };
 
 
