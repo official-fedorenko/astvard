@@ -110,6 +110,7 @@ namespace AstvardServerMod
             // назначаются пачкой у одной мастерской, а не по одному сундуку за заход.
             var again = HoldingShift;
             PendingChestAssign = again ? (bool?)enabled : null;
+            NoteArmedByShift(again);
 
             var view = ViewOf(container);
             if (view == null || !view.IsValid()) return false;

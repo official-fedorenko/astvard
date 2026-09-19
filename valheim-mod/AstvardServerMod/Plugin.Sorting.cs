@@ -44,6 +44,32 @@ namespace AstvardServerMod
 
         private static float _recheckUntil;
 
+        // Взведено ли «и дальше» удержанием Shift, а не кнопкой панели.
+        private static bool _armedByShift;
+
+        /// <summary>
+        /// Отпустил Shift — «и дальше» кончилось.
+        ///
+        /// Shift is also the key you run with, so a player who sprinted to the chest and
+        /// pressed E without letting go has armed the repeat without asking for it - and the
+        /// next chest they meant to open would be re-marked instead. Armed by the panel's own
+        /// button, the mark survives the walk over as it always did; armed by holding the key,
+        /// it lives exactly as long as the key does.
+        /// </summary>
+        internal static void NoteArmedByShift(bool armed)
+        {
+            _armedByShift = armed;
+        }
+
+        internal static void TickArmedByShift()
+        {
+            if (!_armedByShift || HoldingShift) return;
+
+            _armedByShift = false;
+            PendingSortMark = null;
+            PendingChestAssign = null;
+        }
+
         private static int _recheckMoved;
 
         // Дошло ли дело хоть до одного прохода. Нет - значит игрок вне зоны или в этой
@@ -511,6 +537,7 @@ namespace AstvardServerMod
             // Стена сундуков размечается за один проход, а не за десять заходов в панель.
             var again = HoldingShift;
             PendingSortMark = again ? (int?)mark : null;
+            _armedByShift = again;
 
             var view = ViewOf(container);
             if (view == null || !view.IsValid()) return false;
@@ -601,7 +628,12 @@ namespace AstvardServerMod
                     if (_rechecking && Time.realtimeSinceStartup > _recheckUntil) EndRecheck();
 
                     var player = Player.m_localPlayer;
-                    if (player == null || !SortingOn || !RuleAllows("sort")) continue;
+                    if (player == null || !SortingOn || !RuleAllows("sort"))
+                    {
+                        // Ответ известен уже сейчас, и минуту молчать «Перепроверяю…» не за чем.
+                        if (_rechecking) EndRecheck();
+                        continue;
+                    }
 
                     var where = player.transform.position;
                     var zones = SortingZones();
@@ -612,6 +644,7 @@ namespace AstvardServerMod
                         _lastBins = 0;
                         _lastSources = 0;
                         _lastPassenger = false;
+                        if (_rechecking) EndRecheck();
                         continue;
                     }
 
@@ -624,6 +657,7 @@ namespace AstvardServerMod
                     {
                         _lastBins = 0;
                         _lastSources = 0;
+                        if (_rechecking) EndRecheck();
                         continue;
                     }
 
@@ -685,7 +719,12 @@ namespace AstvardServerMod
                         Log.LogInfo($"[AstvardServerMod] Sorting zone: {said}.");
                     }
 
-                    if (bins.Count == 0) continue;
+                    if (bins.Count == 0)
+                    {
+                        // Помеченных сундуков нет - перекладывать некуда и не из чего.
+                        if (_rechecking) EndRecheck();
+                        continue;
+                    }
 
                     // A settled order, so that two chests equal in every other way are always
                     // picked between the same way round. The order the scan handed them over
@@ -716,7 +755,12 @@ namespace AstvardServerMod
                     if (recheck)
                     {
                         _recheckRan = true;
-                        _recheckMoved += moved;
+
+                        // Только то, что переложила сама перепроверка: ходы обычного разбора
+                        // (повозка в зоне) - чужая работа, и докладывать её своей значит
+                        // сказать «переложено 12» о проходе, где перепроверке было нечего
+                        // делать. Потолок считает то же самое и по той же причине.
+                        _recheckMoved += tidied;
 
                         // Проход, которому нечего было переложить, и есть конец работы.
                         // Пятнадцать секунд, стоявшие здесь раньше, были числом с потолка:

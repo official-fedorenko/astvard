@@ -31,8 +31,18 @@ namespace AstvardServerMod
             "piece_chest_blackmetal", "piece_chest_grausten", "piece_chest_barrel"
         };
 
-        /// <summary>Сколько сундуков в ряду. Хозяин просил два — столько и есть.</summary>
-        private const int ChestRowCount = 2;
+        /// <summary>
+        /// Сколько сундуков даётся за раз: пара, когда они встают рядом, и один, когда в ряд.
+        ///
+        /// A row is walked along a wall, one chest to a plate, with Shift held to keep the
+        /// projection in hand. Handing out two there would put the second on the neighbouring
+        /// plate and the row would come out built twice over; the pair belongs to the other
+        /// layout, where both stand on the plate being aimed at.
+        /// </summary>
+        private static int ChestRowCount
+        {
+            get { return _chestsAbreast ? 2 : 1; }
+        }
 
         /// <summary>
         /// Щель между сундуками.
@@ -222,6 +232,17 @@ namespace AstvardServerMod
             // build already going up would end that build wherever it had got to.
             if (BuildInProgress) return;
 
+            // Правило спрашивается и здесь, а не только там, где рисуется кнопка: страница,
+            // открытая до того, как админ закрыл сундуки, переживает это изменение.
+            if (!RuleAllows("chests"))
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "Сундуки админ больше не разрешает");
+                MenuState = StateChestWork;
+                RefreshMenu();
+                return;
+            }
+
             var prefab = CurrentChest();
             if (prefab == null)
             {
@@ -273,7 +294,9 @@ namespace AstvardServerMod
 
             InventoryGui.instance?.Hide();
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                "Наводись на постройку: сундуки встанут по её середине. Q и E — поворот");
+                offsets.Length > 1
+                    ? "Наводись на постройку: сундуки встанут по её середине. Q и E — поворот"
+                    : "Наводись на постройку: сундук встанет по её середине. Shift+ЛКМ — ставить дальше");
             Log.LogInfo($"[AstvardServerMod] Chest row: {ChestRowCount} x {prefab.name}, box "
                         + $"{width:F2} x {across:F2} m, {(sideways ? "sideways" : "square on")}, span "
                         + $"{Geometry.RowSpan(step, ChestRowGap, ChestRowCount):F2} m.");
@@ -350,8 +373,11 @@ namespace AstvardServerMod
             if (piece == null)
             {
                 // Земля: у неё нет ни краёв, ни середины, раскладывать по ней нечего.
+                // Курс - по сетке игры: сырой угол взгляда поставил бы сундук под 13.7°, и
+                // ни одна деталь, поставленная рядом молотом, к нему бы не встала, а Q и E
+                // прибавляют к нему свои 22.5° и на сетку его уже не выводят.
                 centre = hit.point;
-                yaw = player != null ? Quaternion.LookRotation(GhostForward(player)).eulerAngles.y : 0f;
+                yaw = PlayerHeading(player);
                 return true;
             }
 
@@ -401,7 +427,7 @@ namespace AstvardServerMod
                 position = player.transform.position + forward * PlacementDistance;
                 if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(position, out var ground))
                     position.y = ground;
-                heading = Quaternion.LookRotation(forward).eulerAngles.y;
+                heading = PlayerHeading(player);
             }
 
             position.y += _placeHeight;
@@ -423,7 +449,7 @@ namespace AstvardServerMod
         /// </summary>
         private static void SpreadOver(Collider surface, float yaw)
         {
-            if (surface == null || Clipboard.Count == 0) return;
+            if (surface == null || Clipboard.Count < 2) return;
 
             var across = Quaternion.Euler(0f, yaw, 0f) * Vector3.right;
             var half = HalfAcross(surface, across);
@@ -538,7 +564,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            ChestRowPlaceButton = MakeButton(gui, "Поставить пару", PlaceChestRow);
+            ChestRowPlaceButton = MakeButton(gui, "", PlaceChestRow);
         }
 
         private static void RefreshChestRowVisibility()
@@ -546,14 +572,16 @@ namespace AstvardServerMod
             var chest = CurrentChest();
             SetLabel(ChestRowKindButton, $"Сундук: {PieceTitle(chest)}");
 
-            SetLabel(ChestRowModeButton, _chestsAbreast ? "Ставить: рядом" : "Ставить: в ряд");
+            SetLabel(ChestRowModeButton, _chestsAbreast ? "Ставить: рядом (пара)" : "Ставить: в ряд (по одному)");
+            SetLabel(ChestRowPlaceButton, _chestsAbreast ? "Поставить пару" : "Поставить сундук");
 
             var hint = ChestRowHint != null ? ChestRowHint.GetComponentInChildren<Text>(true) : null;
             if (hint != null)
-                hint.text = $"Два сундука встают по{NEWLINE}середине той постройки, на{NEWLINE}"
-                            + $"которую смотришь, и на её верх.{NEWLINE}{NEWLINE}"
-                            + $"«В ряд» — вдоль самой{NEWLINE}постройки, как стоит она.{NEWLINE}"
-                            + $"«Рядом» — боком, вдвоём на{NEWLINE}одной плите и лицом к тебе.{NEWLINE}{NEWLINE}"
+                hint.text = $"Сундуки встают по середине{NEWLINE}той постройки, на которую{NEWLINE}"
+                            + $"смотришь, и на её верх.{NEWLINE}{NEWLINE}"
+                            + $"«В ряд» — один сундук, как{NEWLINE}стоит сама постройка;{NEWLINE}"
+                            + $"ряд набирается Shift+ЛКМ.{NEWLINE}"
+                            + $"«Рядом» — два боком, вдвоём{NEWLINE}на одной плите и лицом к тебе.{NEWLINE}{NEWLINE}"
                             + $"ЛКМ — поставить, Shift+ЛКМ —{NEWLINE}поставить и ставить дальше.{NEWLINE}"
                             + $"Esc — отмена, P — закрепить,{NEWLINE}"
                             + $"стрелки — сдвиг.{NEWLINE}Q и E — поворот,{NEWLINE}Shift+Q/E — выше и ниже.";
@@ -561,7 +589,8 @@ namespace AstvardServerMod
             // A player while the admins keep it open; an admin always.
             SetActive(ChestRowButton, MenuState == StateChestWork && RuleAllows("chests"));
 
-            var page = MenuState == StateChestRow;
+            // И сама страница гаснет вместе с правилом - «Назад» на ней остаётся всегда.
+            var page = MenuState == StateChestRow && RuleAllows("chests");
             SetActive(ChestRowHint, page);
             SetActive(ChestRowKindButton, page && ChestKinds.Count > 1);
             SetActive(ChestRowModeButton, page);
