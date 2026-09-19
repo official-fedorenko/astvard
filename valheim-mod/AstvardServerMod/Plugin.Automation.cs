@@ -644,6 +644,11 @@ namespace AstvardServerMod
                     // берётся из помеченных сундуков, и по тому же правилу зоны.
                     var tames = feeding && FeedTamesOn ? FeedTames(player, zone, supplyChests) : 0;
 
+                    // Огород - сам по себе: собирать урожай есть куда и тогда, когда
+                    // станций в зоне нет вовсе, а грядки растут часами, так что у него
+                    // свой, редкий такт.
+                    TickGarden(player, zone, ZoneBins.Count > 0 ? ZoneSupply : supplyChests);
+
                     if (zone != null) SayZoneStations(zoneSmelters, zoneMine, zoneFires, tames);
                 }
                 catch (System.Exception bad)

@@ -26,7 +26,7 @@ namespace AstvardServerMod
         /// old client drops it without a word. Nobody is turned away for either: see
         /// OnServerVersion, and note there is no NetworkCompatibility attribute on purpose.
         /// </summary>
-        internal const string Version = "1.2.15";
+        internal const string Version = "1.2.16";
 
         internal static bool IsAdminUnlocked;
 
@@ -93,6 +93,7 @@ namespace AstvardServerMod
             BindSorting(Config);
             BindChestLabels(Config);
             BindTames(Config);
+            BindGarden(Config);
             BindChestZone(Config);
             BindWorldRates(Config);
             BindSiteLists(Config);

@@ -41,6 +41,10 @@ namespace AstvardServerMod
 
         internal static GameObject SortTamesButton;
 
+        internal static GameObject SortReapButton;
+
+        internal static GameObject SortSowButton;
+
         internal static GameObject SortFoodButton;
 
         internal static GameObject SortFoodHint;
@@ -673,6 +677,22 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            SortReapButton = MakeButton(gui, "", () =>
+            {
+                SetReap(!ReapOn);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    ReapOn ? "Урожай из зоны едет в сундуки" : "Грядки не трогаем");
+                RefreshMenu();
+            });
+
+            SortSowButton = MakeButton(gui, "", () =>
+            {
+                SetSow(!SowOn);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    SowOn ? "На сорванное место вернётся саженец" : "Подсаживать не будем");
+                RefreshMenu();
+            });
+
             SortFoodButton = MakeButton(gui, "", () =>
             {
                 SetFieldText(SortFoodInput, FoodKeep.ToString());
@@ -764,6 +784,8 @@ namespace AstvardServerMod
 
             SetLabel(SortCookButton, FeedCookingOn ? "Наполнять кухни: вкл" : "Наполнять кухни: выкл");
             SetLabel(SortTamesButton, FeedTamesOn ? "Кормить зверей: вкл" : "Кормить зверей: выкл");
+            SetLabel(SortReapButton, ReapOn ? "Собирать урожай: вкл" : "Собирать урожай: выкл");
+            SetLabel(SortSowButton, SowOn ? "Подсаживать: вкл" : "Подсаживать: выкл");
             SetLabel(SortFoodButton, FoodKeep > 0
                 ? $"Еды на складе: {FoodKeep}"
                 : "Еды на складе: без предела");
@@ -1176,6 +1198,8 @@ namespace AstvardServerMod
             SetActive(SortCoalButton, setup);
             SetActive(SortCookButton, setup);
             SetActive(SortTamesButton, setup);
+            SetActive(SortReapButton, setup);
+            SetActive(SortSowButton, setup);
             SetActive(SortFoodButton, setup);
             SetActive(SortLabelsButton, setup);
             SetActive(SortSlotsButton, setup);
