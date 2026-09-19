@@ -1190,7 +1190,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     display: none;
 }
 
-.feature-modal {
+.site-modal {
     display: none;
     position: fixed;
     inset: 0;
@@ -1202,11 +1202,11 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     backdrop-filter: blur(3px);
 }
 
-.feature-modal.open {
+.site-modal.open {
     display: flex;
 }
 
-.feature-modal__box {
+.site-modal__box {
     position: relative;
     width: min(640px, 100%);
     max-height: min(82vh, 760px);
@@ -1216,15 +1216,15 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     border: 1px solid var(--border-light);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    animation: featureIn 0.18s ease-out;
+    animation: siteModalIn 0.18s ease-out;
 }
 
-@keyframes featureIn {
+@keyframes siteModalIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: none; }
 }
 
-.feature-modal__close {
+.site-modal__close {
     position: absolute;
     top: 14px;
     right: 14px;
@@ -1241,13 +1241,13 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     transition: var(--transition);
 }
 
-.feature-modal__close:hover {
+.site-modal__close:hover {
     color: var(--text-primary);
     background: var(--bg-hover);
     border-color: var(--border-light);
 }
 
-.feature-modal__close svg {
+.site-modal__close svg {
     width: 16px;
     height: 16px;
 }
@@ -1319,11 +1319,11 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
         grid-template-columns: 1fr;
     }
 
-    .feature-modal {
+    .site-modal {
         padding: 14px;
     }
 
-    .feature-modal__box {
+    .site-modal__box {
         padding: 24px 20px 20px;
         max-height: 88vh;
     }
@@ -1340,7 +1340,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 }
 
 .mod-install-link {
-    margin: -12px 0 28px;
+    margin: 10px 0 28px;
     font-size: 14px;
 }
 
@@ -1374,4 +1374,86 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .install-checks strong {
     color: var(--text-primary);
     font-weight: 600;
+}
+
+/* ==== «Скачать мод» в меню и окно выбора ====
+   Кнопка стоит в боковом меню на каждой странице: мод — главное, за чем сюда
+   приходят, а раньше его искали внизу страницы или в подвале. */
+.sidebar__cta {
+    padding: 4px 16px 0;
+}
+
+.sidebar__cta .btn {
+    width: 100%;
+    justify-content: center;
+}
+
+.site-modal__title {
+    font-size: 21px;
+    font-weight: 800;
+    line-height: 1.25;
+    margin-bottom: 6px;
+    padding-right: 40px;
+}
+
+.site-modal__lead {
+    color: var(--text-secondary);
+    font-size: 14.5px;
+    line-height: 1.7;
+    margin-bottom: 20px;
+}
+
+/* Две дороги: карточка целиком — ссылка, чтобы промахнуться было нечем. */
+.download-ways {
+    display: grid;
+    gap: 12px;
+}
+
+.download-way {
+    display: flex;
+    gap: 14px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.download-way:hover {
+    border-color: var(--accent-purple);
+    background: var(--bg-hover);
+}
+
+.download-way__icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--accent-purple-dim);
+    color: var(--accent-cyan);
+}
+
+.download-way__title {
+    display: block;
+    font-weight: 700;
+    font-size: 15.5px;
+    margin-bottom: 3px;
+}
+
+.download-way__text {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+    line-height: 1.6;
+}
+
+.download-note {
+    margin: 18px 0 0;
+    font-size: 13.5px;
+    color: var(--text-secondary);
 }

@@ -8,7 +8,7 @@
   const body = document.getElementById('featureModalBody');
   if (!modal || !body) return;
 
-  const box = modal.querySelector('.feature-modal__box');
+  const box = modal.querySelector('.site-modal__box');
   let opener = null;
 
   function close() {
@@ -30,7 +30,7 @@
     if (box) box.scrollTop = 0;
     // Иконки внутри окна — это <i data-lucide>, их надо перерисовать после вставки.
     if (window.lucide) window.lucide.createIcons();
-    const closeBtn = modal.querySelector('.feature-modal__close');
+    const closeBtn = modal.querySelector('.site-modal__close');
     if (closeBtn) closeBtn.focus();
   }
 
@@ -40,7 +40,7 @@
       open(card);
       return;
     }
-    if (event.target === modal || event.target.closest('.feature-modal__close')) close();
+    if (event.target === modal || event.target.closest('.site-modal__close')) close();
   });
 
   document.addEventListener('keydown', (event) => {

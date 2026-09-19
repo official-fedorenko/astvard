@@ -18,8 +18,44 @@ if (window.location.pathname === '/' && MOVED_SECTIONS[window.location.hash]) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   lucide.createIcons();
+  setupDownloadModal();
   await checkAuth(); // Проверяем сессию и обновляем навбар
 });
+
+// Кнопка «Скачать мод» в меню открывает окно с выбором: архивом с GitHub или через
+// менеджер модов. Обе ссылки уже лежат в разметке — сервер их туда положил, — так что
+// скрипт только показывает окно и ничего не грузит. Нет кнопки (адреса не заданы в
+// настройках) — нет и обработчиков.
+function setupDownloadModal() {
+  const modal = document.getElementById('downloadModal');
+  const button = document.getElementById('downloadBtn');
+  if (!modal || !button) return;
+
+  const close = () => {
+    if (!modal.classList.contains('open')) return;
+    modal.classList.remove('open');
+    button.focus();
+  };
+
+  button.addEventListener('click', () => {
+    modal.classList.add('open');
+    // Меню на телефоне выезжает поверх страницы; оставить его открытым под окном
+    // значит вернуть человека в меню, когда он закроет окно.
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) sidebar.classList.remove('open');
+    const closeBtn = modal.querySelector('.site-modal__close');
+    if (closeBtn) closeBtn.focus();
+  });
+
+  modal.addEventListener('click', (event) => {
+    // Клик по фону или по крестику; по самой ссылке — пусть уходит по адресу.
+    if (event.target === modal || event.target.closest('.site-modal__close')) close();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
+  });
+}
 
 // Проверка сессии для динамического навбара
 async function checkAuth() {

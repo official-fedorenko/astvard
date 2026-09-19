@@ -245,6 +245,64 @@ function modDownload(settings) {
     + '<span class="join-download__hint">Необязательно: без мода на сервер тоже пускают</span></p>';
 }
 
+// Та же пара адресов, но кнопкой в меню и окном с выбором: мод — главное, за чем
+// сюда приходят, а раньше его искали внизу страницы «Что умеет мод» или в подвале.
+// Кнопки нет вовсе, пока не задан ни один адрес: кнопка, открывающая пустое окно,
+// хуже её отсутствия.
+function downloadButton(settings) {
+  if (!safeUrl(settings.mod_download_url) && !safeUrl(settings.thunderstore_url)) return '';
+
+  return `        <div class="sidebar__cta">
+          <button type="button" class="btn btn--primary" id="downloadBtn" aria-haspopup="dialog">
+            <span class="sidebar__link-icon"><i data-lucide="download"></i></span>
+            <span>Скачать мод</span>
+          </button>
+        </div>`;
+}
+
+/**
+ * Окно выбора. Обе ссылки настоящие и лежат в разметке: кто выключил скрипты,
+ * всё равно дойдёт до них с «Что умеет мод» и из подвала, а тут ничего не грузится
+ * запросом — окно открывается и при мёртвом API.
+ */
+function downloadModal(settings) {
+  const direct = safeUrl(settings.mod_download_url);
+  const store = safeUrl(settings.thunderstore_url);
+  if (!direct && !store) return '';
+
+  const way = (href, key, title, text) => `
+        <a class="download-way" href="${escapeHtml(href)}" target="_blank" rel="noopener">
+          <span class="download-way__icon">${channelIcon(key)}</span>
+          <span>
+            <span class="download-way__title">${escapeHtml(title)}</span>
+            <span class="download-way__text">${escapeHtml(text)}</span>
+          </span>
+        </a>`;
+
+  const ways = [];
+
+  if (direct) {
+    ways.push(way(direct, 'mod_download_url', 'Скачать с GitHub',
+      'Архив с модом и Jotunn внутри: распаковать в папку с игрой. Годится, когда менеджера модов нет.'));
+  }
+
+  if (store) {
+    ways.push(way(store, 'thunderstore_url', 'Через менеджер модов',
+      'Thunderstore: BepInEx и Jotunn приедут сами, обновление — одной кнопкой. Игру потом запускать из менеджера.'));
+  }
+
+  return `    <div class="site-modal" id="downloadModal" role="dialog" aria-modal="true" aria-labelledby="downloadModalTitle">
+      <div class="site-modal__box">
+        <button type="button" class="site-modal__close" aria-label="Закрыть"><i data-lucide="x"></i></button>
+        <h2 class="site-modal__title" id="downloadModalTitle">Скачать мод</h2>
+        <p class="site-modal__lead">Мод необязателен: на сервер пускают и без него, просто не будет панели. Способа два, оба рабочие.</p>
+        <div class="download-ways">${ways.join('')}
+        </div>
+        <p class="download-note"><a class="text-link" href="/mod#install">Как поставить — по шагам</a></p>
+      </div>
+    </div>`;
+}
+
 function analyticsTags(settings) {
   const id = metrikaId(settings.yandex_metrika_id);
   if (!id) return '';
@@ -487,6 +545,8 @@ async function renderPage(key) {
   const values = {
     head,
     nav: navHtml(page.key),
+    download_button: downloadButton(settings),
+    download_modal: downloadModal(settings),
     scripts: (page.scripts || []).map((src) => `  <script src="${src}"></script>`).join('\n'),
     year: new Date().getFullYear(),
     articles: articleCards(articles),

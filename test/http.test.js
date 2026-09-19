@@ -673,6 +673,37 @@ test('у каждого раздела свой адрес: заголовок, 
   }
 });
 
+test('«Скачать мод» стоит в меню на каждой странице, а в окне — обе дороги', async () => {
+  const github = 'https://github.com/example/astvard/releases/latest';
+  const store = 'https://thunderstore.io/c/valheim/p/Astvard/AstvardServerMod/';
+
+  // Пока адреса не заданы, кнопки нет вовсе: она открывала бы пустое окно.
+  let html = await (await fetch(`${baseUrl}/`)).text();
+  assert.ok(!html.includes('id="downloadBtn"'), 'без адресов кнопки быть не должно');
+
+  await setSetting('mod_download_url', github);
+  await setSetting('thunderstore_url', store);
+  try {
+    for (const pagePath of ['/', '/server', '/mod', '/join', '/news', '/about']) {
+      html = await (await fetch(`${baseUrl}${pagePath}`)).text();
+      assert.ok(html.includes('id="downloadBtn"'), `${pagePath}: нет кнопки в меню`);
+      assert.strictEqual(html.split('id="downloadModal"').length - 1, 1, `${pagePath}: окно не одно`);
+      // Ссылки настоящие и лежат в разметке: окно ничего не грузит запросом.
+      assert.ok(html.includes(`href="${github}"`), `${pagePath}: нет ссылки на GitHub`);
+      assert.ok(html.includes(`href="${store}"`), `${pagePath}: нет ссылки на менеджер модов`);
+    }
+
+    // Один адрес — одна дорога, и окно всё равно на месте.
+    await resetSetting('thunderstore_url');
+    html = await (await fetch(`${baseUrl}/mod`)).text();
+    assert.ok(html.includes('id="downloadModal"'));
+    assert.strictEqual(html.split('class="download-way"').length - 1, 1, 'дорога должна остаться одна');
+  } finally {
+    await resetSetting('mod_download_url');
+    await resetSetting('thunderstore_url');
+  }
+});
+
 test('один адрес на раздел: со слэшем на конце уводит на адрес без него', async () => {
   for (const pagePath of ['/server/', '/mod/', '/join/', '/news/', '/about/']) {
     const res = await fetch(`${baseUrl}${pagePath}`, { redirect: 'manual' });
