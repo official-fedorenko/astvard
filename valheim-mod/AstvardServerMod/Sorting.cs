@@ -295,6 +295,34 @@ namespace AstvardServerMod
             return radius > MaxZoneRadius ? MaxZoneRadius : radius;
         }
 
+        // A square reaches to its corner, which is further than its half-side, so a scan
+        // that asks for a radius has to ask for the diagonal and let Inside throw back
+        // whatever fell outside the box.
+        public const float SquareDiagonal = 1.415f;
+
+        /// <summary>
+        /// Сколько метров вокруг середины зоны спрашивать у игры, чтобы не потерять края.
+        ///
+        /// The game hands out pieces by a radius measured in three dimensions from one
+        /// point, and the point we can give it stands at the player's own height. A radius
+        /// that just covers the zone on the map therefore covers almost none of it above
+        /// and below that floor: at the corner of a square zone the two distances are
+        /// equal, so a chest a metre higher than the player fell outside the scan - not
+        /// labelled, not sorted, and nothing said about either. The zone has no height of
+        /// its own (Inside asks only for x and z), so the radius is stretched to leave
+        /// Headroom metres of it either way. Asking for more costs nothing: the game walks
+        /// every piece in the world whatever radius it is given.
+        /// </summary>
+        public const float Headroom = 32f;
+
+        public static float ScanRadius(Zone zone)
+        {
+            if (zone == null) return 0f;
+
+            var reach = ClampRadius(zone.Radius) * (zone.Square ? SquareDiagonal : 1f);
+            return (float)Math.Sqrt(reach * reach + Headroom * Headroom);
+        }
+
         /// <summary>Is this spot inside the zone. Height is not asked: a cellar is the base too.</summary>
         public static bool Inside(Zone zone, float x, float z)
         {

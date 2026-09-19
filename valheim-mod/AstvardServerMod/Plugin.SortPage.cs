@@ -938,9 +938,13 @@ namespace AstvardServerMod
 
             SetLabel(SortOnButton, SortingOn ? "Сортировка: вкл" : "Сортировка: выкл");
             SetLabel(SortZonesButton, $"Зоны: {zones.Count}");
-            SetLabel(SortLabelsButton, ChestLabelsOn
-                ? $"Подписи: вкл ({ChestLabelsShown})"
-                : "Подписи: выкл");
+            // «40 из 43» - это и есть ответ на «почему вот тут подписи нет»: их больше,
+            // чем мод берётся показывать разом, и лишние отпали не молча.
+            SetLabel(SortLabelsButton, !ChestLabelsOn
+                ? "Подписи: выкл"
+                : ChestLabelsMissed > 0
+                    ? $"Подписи: вкл ({ChestLabelsShown} из {ChestLabelsShown + ChestLabelsMissed})"
+                    : $"Подписи: вкл ({ChestLabelsShown})");
             SetLabel(SortShapeButton, _sortSquare ? "Форма: квадрат" : "Форма: круг");
             SetLabel(SortRecheckButton, Rechecking ? "Перепроверяю…" : "Перепроверить");
             SetLabel(SortAutoFillButton, ZoneStationsOn ? "Автонаполнение: вкл" : "Автонаполнение: выкл");

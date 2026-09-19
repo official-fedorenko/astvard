@@ -46,8 +46,35 @@ namespace AstvardServerMod
         // base, and a new one twice a second is rubbish for somebody else to sweep up.
         private static readonly List<Piece> ChestLabelPieces = new List<Piece>();
 
-        // More than this over one zone is not a label, it is fog.
-        private const int MaxChestLabels = 40;
+        // Предел стоит против нелепого, а не против большой базы: сорок его лет не
+        // хватало - у хозяина в одной зоне 43 помеченных сундука, и трое каждый вечер
+        // оставались без подписи. Настоящая граница - сама зона и сорок метров вокруг.
+        private const int MaxChestLabels = 96;
+
+        /// <summary>Помеченные сундуки зоны, чтобы разложить их по близости к игроку.</summary>
+        private static readonly List<Container> ChestLabelChests = new List<Container>();
+
+        private static Vector3 _chestLabelFrom;
+
+        // Заведено раз и навсегда, а не лямбдой на каждый проход: проход идёт дважды в
+        // секунду весь вечер, и мусор здесь копился бы так же незаметно, как копился бы
+        // от нового списка деталей.
+        private static readonly System.Comparison<Container> NearestFirst = (a, b) =>
+        {
+            var one = (a.transform.position - _chestLabelFrom).sqrMagnitude;
+            var two = (b.transform.position - _chestLabelFrom).sqrMagnitude;
+            return one.CompareTo(two);
+        };
+
+        private static int _chestLabelsMissed;
+
+        private static int _chestLabelsMissedSaid = -1;
+
+        /// <summary>Скольким помеченным сундукам подписи не хватило.</summary>
+        internal static int ChestLabelsMissed
+        {
+            get { return _chestLabelsMissed; }
+        }
 
         internal static void BindChestLabels(BepInEx.Configuration.ConfigFile config)
         {
@@ -148,17 +175,15 @@ namespace AstvardServerMod
             }
 
             var zone = zones[at];
-            var reach = Sorting.ClampRadius(zone.Radius) * (zone.Square ? SquareDiagonal : 1f);
 
             ChestLabelPieces.Clear();
-            Piece.GetAllPiecesInRadius(new Vector3(zone.X, where.y, zone.Z), reach, ChestLabelPieces);
+            Piece.GetAllPiecesInRadius(new Vector3(zone.X, where.y, zone.Z),
+                Sorting.ScanRadius(zone), ChestLabelPieces);
 
-            var shown = 0;
-            var first = Vector3.zero;
+            ChestLabelChests.Clear();
 
             foreach (var piece in ChestLabelPieces)
             {
-                if (shown >= MaxChestLabels) break;
                 if (piece == null) continue;
 
                 var container = ContainerOf(piece);
@@ -167,38 +192,67 @@ namespace AstvardServerMod
                 var spot = container.transform.position;
                 if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
                 if (Vector3.Distance(spot, where) > ChestLabelRange) continue;
+                if (SortMarkNote(container).Length == 0) continue;
+
+                ChestLabelChests.Add(container);
+            }
+
+            // Ближние вперёд. Подписей может не хватить на всю стену, и тогда остаться без
+            // неё должен сундук за спиной, а не тот, на который смотришь. Порядок, в
+            // котором детали отдаёт игра, - это порядок их загрузки, то есть у каждого
+            // входа свой: без этого «подпись не подтянулась» доставалось каждый вечер
+            // другим сундукам, и выглядело это как случайность.
+            _chestLabelFrom = where;
+            ChestLabelChests.Sort(NearestFirst);
+
+            var room = Mathf.Min(ChestLabelChests.Count, MaxChestLabels);
+            var shown = 0;
+            var first = Vector3.zero;
+
+            for (var i = 0; i < room; i++)
+            {
+                var container = ChestLabelChests[i];
+                if (container == null) continue;
 
                 var note = SortMarkNote(container);
                 if (note.Length == 0) continue;
 
                 if (ChestLabelCounts) note += NEWLINE + ChestFill(container);
 
-                var label = ChestLabel(shown++);
+                var label = ChestLabel(shown);
                 if (label == null) break;
 
                 if (label.text != note) label.text = note;
 
                 var colour = IsPrivateChest(container) ? PrivateLabelColour : MarkLabelColour;
                 if (label.color != colour) label.color = colour;
-                label.transform.position = spot + Vector3.up * ChestLabelLift;
+                label.transform.position = container.transform.position + Vector3.up * ChestLabelLift;
                 label.gameObject.SetActive(true);
 
-                if (shown == 1) first = label.transform.position;
+                if (shown == 0) first = label.transform.position;
+                shown++;
             }
 
             for (var i = shown; i < ChestLabelPool.Count; i++)
                 if (ChestLabelPool[i] != null) ChestLabelPool[i].gameObject.SetActive(false);
 
             _chestLabelsShown = shown;
+            _chestLabelsMissed = ChestLabelChests.Count - shown;
 
             // The silence was the trouble: a label either appeared or it did not, and
-            // which of the half-dozen reasons it was could not be told from outside.
-            if (shown != _chestLabelsSaid)
+            // which of the half-dozen reasons it was could not be told from outside. The
+            // count left out is the newer half of it: a label missing because there was
+            // no room looks exactly like one missing because the mark never took.
+            if (shown != _chestLabelsSaid || _chestLabelsMissed != _chestLabelsMissedSaid)
             {
                 _chestLabelsSaid = shown;
+                _chestLabelsMissedSaid = _chestLabelsMissed;
                 Log.LogInfo($"[AstvardServerMod] Chest labels: {shown} over marked chests"
                             + (shown > 0
-                                ? $", first at ({first.x:0.#}, {first.y:0.#}, {first.z:0.#})."
+                                ? $", first at ({first.x:0.#}, {first.y:0.#}, {first.z:0.#})"
+                                : "")
+                            + (_chestLabelsMissed > 0
+                                ? $", {_chestLabelsMissed} marked chests left without one."
                                 : "."));
             }
         }
@@ -228,6 +282,7 @@ namespace AstvardServerMod
                 if (label != null && label.gameObject.activeSelf) label.gameObject.SetActive(false);
 
             _chestLabelsShown = 0;
+            _chestLabelsMissed = 0;
         }
 
         // Over the chest's own point, which is its base. A setting rather than a number in

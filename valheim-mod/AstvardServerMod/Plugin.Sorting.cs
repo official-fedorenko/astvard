@@ -156,11 +156,6 @@ namespace AstvardServerMod
             RefreshMenu();
         }
 
-        // A square reaches to its corner, which is further than its half-side. The sweep
-        // that gathers pieces asks for a radius, so it has to ask for the diagonal and let
-        // Sorting.Inside throw back what fell outside the box.
-        private const float SquareDiagonal = 1.415f;
-
         // Каймы вокруг зоны больше нет, и повозке поблажки тоже: правило одно - что внутри
         // зоны, то и разбирается, остальное не трогается. Выбор хозяина после того, как
         // кайма плюс «повозка рядом со мной» сложились в двадцать шесть метров от края и
@@ -740,10 +735,9 @@ namespace AstvardServerMod
                         continue;
                     }
 
-                    var reach = Sorting.ClampRadius(zone.Radius) * (zone.Square ? SquareDiagonal : 1f);
-
                     pieces.Clear();
-                    Piece.GetAllPiecesInRadius(new Vector3(zone.X, where.y, zone.Z), reach, pieces);
+                    Piece.GetAllPiecesInRadius(new Vector3(zone.X, where.y, zone.Z),
+                        Sorting.ScanRadius(zone), pieces);
 
                     bins.Clear();
                     sources.Clear();
