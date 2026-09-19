@@ -47,6 +47,8 @@ namespace AstvardServerMod
 
         internal static GameObject SortSowEmptyButton;
 
+        internal static GameObject SortTreesButton;
+
         internal static GameObject SortFoodButton;
 
         internal static GameObject SortFoodHint;
@@ -772,6 +774,16 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
+            SortTreesButton = MakeButton(gui, "", () =>
+            {
+                SetSowTrees(!SowTreesOn);
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    SowTreesOn
+                        ? "Деревья тоже сажаем — им вскопанная земля не нужна"
+                        : "Деревья не сажаем");
+                RefreshMenu();
+            });
+
             SortFoodButton = MakeButton(gui, "", () =>
             {
                 SetFieldText(SortFoodInput, FoodKeep.ToString());
@@ -866,6 +878,7 @@ namespace AstvardServerMod
             SetLabel(SortReapButton, ReapOn ? "Собирать урожай: вкл" : "Собирать урожай: выкл");
             SetLabel(SortSowButton, SowOn ? "Подсаживать: вкл" : "Подсаживать: выкл");
             SetLabel(SortSowEmptyButton, SowEmptyOn ? "Засаживать: вкл" : "Засаживать: выкл");
+            SetLabel(SortTreesButton, SowTreesOn ? "Деревья: сажаем" : "Деревья: не сажаем");
             SetLabel(SortFoodButton, FoodKeep > 0
                 ? $"Еды на складе: {FoodKeep}"
                 : "Еды на складе: без предела");
@@ -1310,6 +1323,7 @@ namespace AstvardServerMod
             SetActive(SortReapButton, setupGarden);
             SetActive(SortSowButton, setupGarden);
             SetActive(SortSowEmptyButton, setupGarden);
+            SetActive(SortTreesButton, setupGarden);
             SetActive(SortCropButton, setupGarden);
 
             var setupLabels = allowed && MenuState == StateSetupLabels;

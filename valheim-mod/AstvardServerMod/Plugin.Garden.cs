@@ -27,6 +27,8 @@ namespace AstvardServerMod
 
         private static BepInEx.Configuration.ConfigEntry<bool> _sowEmpty;
 
+        private static BepInEx.Configuration.ConfigEntry<bool> _sowTrees;
+
         private static BepInEx.Configuration.ConfigEntry<int> _cropKeep;
 
         internal static void BindGarden(BepInEx.Configuration.ConfigFile config)
@@ -45,6 +47,11 @@ namespace AstvardServerMod
                 + "мод сам сорвал. Сажается то, чего в сундуках зоны больше всего, и только "
                 + "там, где растение само согласилось бы расти. "
                 + "«Настройки» → «Огород» → «Засаживать».");
+
+            _sowTrees = config.Bind("Сортировка", "SowTrees", false,
+                "Сажать ли саженцы деревьев вместе с грядками. По умолчанию нет: дереву "
+                + "вскопанная земля не нужна, и засев занял бы всю зону подряд, а не одни "
+                + "грядки. «Настройки» → «Огород» → «Деревья».");
 
             _cropKeep = config.Bind("Сортировка", "CropKeep", 100,
                 "Сколько держать урожая на складе, по каждой культуре свой счёт. Набралось "
@@ -67,6 +74,16 @@ namespace AstvardServerMod
         internal static void SetSowEmpty(bool on)
         {
             if (_sowEmpty != null) _sowEmpty.Value = on;
+        }
+
+        internal static bool SowTreesOn
+        {
+            get { return _sowTrees != null && _sowTrees.Value; }
+        }
+
+        internal static void SetSowTrees(bool on)
+        {
+            if (_sowTrees != null) _sowTrees.Value = on;
         }
 
         internal static int CropKeep
@@ -548,6 +565,7 @@ namespace AstvardServerMod
             foreach (var sapling in SaplingByCrop.Values)
             {
                 if (sapling == null) continue;
+                if (!SowTreesOn && IsTree(sapling)) continue;
 
                 var piece = sapling.GetComponent<Piece>();
                 if (piece == null || piece.m_resources == null || piece.m_resources.Length == 0) continue;
@@ -573,6 +591,36 @@ namespace AstvardServerMod
             }
 
             return best;
+        }
+
+        private static readonly Dictionary<string, bool> Trees = new Dictionary<string, bool>();
+
+        /// <summary>
+        /// Вырастет ли из этого саженца дерево.
+        ///
+        /// Спрошено у игры: у выросшего дерева есть `TreeBase` - тот самый, которому сама
+        /// `Plant.Grow` зовёт `Grow()`. Список пород в коде устарел бы с ближайшим
+        /// обновлением, а признак - нет. Вопрос не праздный: дереву **вскопанная земля не
+        /// нужна**, и засев без этого отбора занял бы саженцами всю зону подряд, а не
+        /// одни грядки.
+        /// </summary>
+        private static bool IsTree(GameObject sapling)
+        {
+            bool tree;
+            if (Trees.TryGetValue(sapling.name, out tree)) return tree;
+
+            tree = false;
+            var plant = sapling.GetComponent<Plant>();
+            if (plant != null && plant.m_grownPrefabs != null)
+                foreach (var grown in plant.m_grownPrefabs)
+                    if (grown != null && grown.GetComponent<TreeBase>() != null)
+                    {
+                        tree = true;
+                        break;
+                    }
+
+            Trees[sapling.name] = tree;
+            return tree;
         }
 
         /// <summary>Что вырастет из этого саженца — имя предмета, которым это ляжет в сундук.</summary>
