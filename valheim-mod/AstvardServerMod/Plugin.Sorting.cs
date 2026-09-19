@@ -233,7 +233,7 @@ namespace AstvardServerMod
         internal static void BindSorting(BepInEx.Configuration.ConfigFile config)
         {
             _sortEnabled = config.Bind("Сортировка", "Enabled", true,
-                "Разбирает ли сортировщик сундуки, пока ты в своей зоне. "
+                "Разбирает ли сортировщик сундуки, пока ты в своей зоне или рядом с ней. "
                 + "Переключается в игре: «Функции» → «Сортировка».");
 
             // The zones belong to whoever plays on this machine, and the sorter runs on this
@@ -815,7 +815,10 @@ namespace AstvardServerMod
 
                     var where = player.transform.position;
                     var zones = SortingZones();
-                    var at = Sorting.ZoneAt(zones, where.x, where.z);
+                    // Рядом - тоже считается: печь за стеной выплёвывала уголь на землю
+                    // только потому, что хозяин стоял в двух шагах не с той стороны черты.
+                    // Кайма решает, работает ли зона; что она берёт, решает сама зона.
+                    var at = Sorting.ZoneAt(zones, where.x, where.z, Sorting.NearReach);
                     _lastZone = at;
                     if (at < 0)
                     {

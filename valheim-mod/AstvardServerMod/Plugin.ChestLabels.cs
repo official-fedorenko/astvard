@@ -165,7 +165,7 @@ namespace AstvardServerMod
         {
             var where = player.transform.position;
             var zones = SortingZones();
-            var at = Sorting.ZoneAt(zones, where.x, where.z);
+            var at = Sorting.ZoneAt(zones, where.x, where.z, Sorting.NearReach);
 
             // Outside every zone there is nothing to explain.
             if (at < 0)

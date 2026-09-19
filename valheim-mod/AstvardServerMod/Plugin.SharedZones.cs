@@ -164,7 +164,11 @@ namespace AstvardServerMod
 
                     var id = Sorting.CleanId(peer.m_socket.GetHostName());
                     if (id.Length == 0 || !Sorting.Sees(zone, id)) continue;
-                    if (!Sorting.Inside(zone, peer.m_refPos.x, peer.m_refPos.z)) continue;
+                    // Та же кайма, что у клиента. Разойдись эти два правила - и
+                    // подошедший к зоне считал бы, что работает, а сервер держал бы её за
+                    // ничьей: зона стоит, и сказать об этом некому.
+                    if (!Sorting.Near(zone, peer.m_refPos.x, peer.m_refPos.z,
+                            Sorting.NearReach)) continue;
 
                     if (best == null || string.CompareOrdinal(id, best) < 0) best = id;
                 }

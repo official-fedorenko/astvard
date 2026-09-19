@@ -180,6 +180,22 @@ namespace AstvardServerMod
 
         private const float NoRoomEvery = 60f;
 
+        // Раз на изменение, как и строка сортировщика: каждую секунду одно и то же - это
+        // не новость, а шум, в котором тонет всё остальное.
+        private static string _zoneStationsSaid;
+
+        private static void SayZoneStations(int smelters, int mine, int fires)
+        {
+            var said = $"smelters {smelters}, mine {mine}, fires {fires}";
+            if (said == _zoneStationsSaid) return;
+
+            _zoneStationsSaid = said;
+            Log.LogInfo($"[AstvardServerMod] Zone stations: {said}"
+                        + (smelters > mine
+                            ? " — остальные сейчас за другим: их кормит тот, кто ими владеет."
+                            : "."));
+        }
+
         /// <summary>Станции в зоне некуда сдать готовое - сказать это один раз.</summary>
         private static void SayNoRoom(Vector3 origin, GameObject prefab)
         {
@@ -220,11 +236,10 @@ namespace AstvardServerMod
         {
             if (MSpawnProcessed == null || !smelter.m_spawnStack) return;
 
-            var view = smelter.GetComponent<ZNetView>();
-            if (view == null || !view.IsValid()) return;
+            if (!OwnedAndValid(smelter)) return;
 
             // The counter lives in the ZDO, and only its owner may write there.
-            if (!view.IsOwner()) return;
+            var view = StationView(smelter);
             if (view.GetZDO().GetInt(ZDOVars.s_spawnAmount) <= 0) return;
 
             MSpawnProcessed.Invoke(smelter, null);
@@ -330,12 +345,12 @@ namespace AstvardServerMod
         /// own words, and a rule three halves understand differently is a rule that will
         /// be wrong in one of them.
         /// </summary>
-        internal static Sorting.Zone ZoneAround(Vector3 where)
+        internal static Sorting.Zone ZoneAround(Vector3 where, float slack = 0f)
         {
             if (!ZoneStationsOn || !SortingOn || !RuleAllows("sort")) return null;
 
             var zones = SortingZones();
-            var at = Sorting.ZoneAt(zones, where.x, where.z);
+            var at = Sorting.ZoneAt(zones, where.x, where.z, slack);
             if (at < 0) return null;
 
             // В общей зоне работает один клиент: двое вычерпали бы один сундук дважды.
@@ -468,7 +483,11 @@ namespace AstvardServerMod
                     // «Автонаполнение»: помеченные сундуки той зоны, в которой стоит игрок,
                     // годятся станциям в ней и как кладовая, и как приёмник. Собираются из
                     // того же обхода деталей - второй за ними не ходим.
-                    var zone = ZoneAround(player.transform.position);
+                    // Кайма - только игроку: он может стоять у ворот, и зона от этого не
+                    // перестаёт быть зоной. Станции и сундуки спрашиваются строго - у них
+                    // черта и есть смысл, иначе печь во дворе соседа работала бы от нашего
+                    // склада.
+                    var zone = ZoneAround(player.transform.position, Sorting.NearReach);
                     ZoneBins.Clear();
                     ZoneSupply.Clear();
 
@@ -524,6 +543,9 @@ namespace AstvardServerMod
                     // десяток, а сундуки одни и те же. Считаем там, куда уголь и уезжает -
                     // в сундуках сбора и в помеченных сундуках зоны.
                     CountStock();
+                    var zoneSmelters = 0;
+                    var zoneMine = 0;
+                    var zoneFires = 0;
                     var kilnsMayBurn = FeedKilnsOn
                                        && (CoalKeep <= 0 || InStock(CoalPrefab) < CoalKeep);
 
@@ -563,6 +585,16 @@ namespace AstvardServerMod
                         var smelter = piece.GetComponentInChildren<Smelter>();
                         if (smelter != null)
                         {
+                            // Считаем плавильни зоны и те из них, что слушаются именно
+                            // нас: чужая по сети станция молча пропускается, и «мод её не
+                            // кормит» снаружи выглядит так же, как «в ней нет руды».
+                            if (inZone)
+                            {
+                                zoneSmelters++;
+                                var own = StationView(smelter);
+                                if (own != null && own.IsOwner()) zoneMine++;
+                            }
+
                             // Печь — это плавильня, у которой из превращения выходит уголь.
                             // Забирать у неё дрова можно отдельно от всего остального.
                             if (feeding && (kilnsMayBurn || !MakesCoal(smelter))) FillSmelter(smelter, food);
@@ -573,8 +605,19 @@ namespace AstvardServerMod
                         }
 
                         var fireplace = piece.GetComponentInChildren<Fireplace>();
-                        if (fireplace != null && feeding) FillFireplace(fireplace, food);
+                        if (fireplace != null)
+                        {
+                            // Факел - это тот же Fireplace, что и костёр: одна ветка на
+                            // всё, что горит, и смола в него едет из сундуков зоны, как
+                            // дрова в костёр. Считаем их отдельно - спросили именно про них.
+                            if (inZone && !fireplace.m_infiniteFuel && fireplace.m_fuelItem != null)
+                                zoneFires++;
+
+                            if (feeding) FillFireplace(fireplace, food);
+                        }
                     }
+
+                    if (zone != null) SayZoneStations(zoneSmelters, zoneMine, zoneFires);
                 }
                 catch (System.Exception bad)
                 {
@@ -675,7 +718,7 @@ namespace AstvardServerMod
 
             // Помеченный сундук зоны годится с любого её края, поэтому спрашивается не
             // расстояние, а сама зона: станция внутри - значит есть куда сдавать.
-            if (!inZone || ZoneBins.Count == 0 || !OwnedAndValid(producer)) return false;
+            if (!inZone || ZoneBins.Count == 0 || !Alive(producer)) return false;
 
             var origin = producer.transform.position;
             var zone = ZoneAround(origin);
@@ -684,7 +727,8 @@ namespace AstvardServerMod
 
         private static bool MayHarvest(Component producer, List<Vector3> assignedChests)
         {
-            if (!OwnedAndValid(producer)) return false;
+            // Вопрос, а не работа: владение заберёт тот, кто станет опустошать.
+            if (!Alive(producer)) return false;
 
             var origin = producer.transform.position;
 
@@ -694,10 +738,41 @@ namespace AstvardServerMod
             return false;
         }
 
+        /// <summary>Живая запись станции в сети. Вверх по объекту - как у повозки.</summary>
+        private static ZNetView StationView(Component producer)
+        {
+            var view = producer != null ? producer.GetComponentInParent<ZNetView>() : null;
+            return view != null && view.IsValid() ? view : null;
+        }
+
+        /// <summary>Спросить о станции можно, не забирая её себе.</summary>
+        private static bool Alive(Component producer)
+        {
+            return StationView(producer) != null;
+        }
+
+        /// <summary>
+        /// Станция, с которой мы сейчас будем работать: берём её себе, а не ждём.
+        ///
+        /// Владелец записи - тот, кто станцию считает: у него идёт её секунда, он решает,
+        /// что из неё выпадет, и у него же выполняется наш собственный перехват выдачи. А
+        /// сундуки, зоны и пометки - наши, клиентские. Печь, оставшаяся за сервером, поэтому
+        /// выплёвывает уголь на землю: перехват там отработал, места не нашёл (откуда серверу
+        /// знать наши зоны) и честно отдал ход игре. И в обратную сторону: пока мы не хозяева,
+        /// мы её молча пропускали, а снаружи это выглядит как «мод её не видит».
+        ///
+        /// Игра сама раздаёт ничейные записи тому, кто рядом (ZDOMan.ReleaseNearbyZDOS), так
+        /// что обычно это ничего не меняет; спор двух игроков у одной печи она решает так же,
+        /// как решала бы его без нас. Берём только там, где сейчас же и работаем, - спрашивать
+        /// («готово ли») можно и чужую.
+        /// </summary>
         private static bool OwnedAndValid(Component producer)
         {
-            var view = producer.GetComponent<ZNetView>();
-            return view != null && view.IsValid() && view.IsOwner();
+            var view = StationView(producer);
+            if (view == null) return false;
+
+            if (!view.IsOwner()) view.ClaimOwnership();
+            return view.IsOwner();
         }
 
         // ---------------- feeding ----------------

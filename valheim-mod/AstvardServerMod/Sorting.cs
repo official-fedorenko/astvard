@@ -373,6 +373,40 @@ namespace AstvardServerMod
             return offX * offX + offZ * offZ < ringReach * ringReach;
         }
 
+        /// <summary>
+        /// Насколько близко надо подойти, чтобы зона считалась работающей.
+        ///
+        /// Полторы клетки игры (она держит вокруг игрока 3x3 клетки по 64 м): дальше
+        /// деталей у клиента может уже не быть вовсе, и обещать там работу нечем. Кайма
+        /// решает **только**
+        /// то, работает ли зона вообще; что именно она берёт, по-прежнему решает сама зона,
+        /// поэтому повозка у ворот, оставленная снаружи, снаружи и останется.
+        /// </summary>
+        public const float NearReach = 96f;
+
+        /// <summary>
+        /// Точка внутри зоны или в кайме вокруг неё.
+        ///
+        /// Grown here rather than by making a wider Zone and asking Inside: Inside clamps
+        /// the radius it is given to MaxZoneRadius, so a zone already at the limit would
+        /// have grown by nothing at all, and the apron would have quietly done nothing for
+        /// the largest zones - the ones most likely to have a player standing just outside.
+        /// </summary>
+        public static bool Near(Zone zone, float x, float z, float slack)
+        {
+            if (zone == null) return false;
+            if (slack <= 0f) return Inside(zone, x, z);
+
+            var reach = ClampRadius(zone.Radius) + slack;
+            var dx = x - zone.X;
+            var dz = z - zone.Z;
+
+            if (!zone.Square) return dx * dx + dz * dz <= reach * reach;
+
+            ToLocal(zone.Angle, dx, dz, out var alongX, out var alongZ);
+            return Abs(alongX) <= reach && Abs(alongZ) <= reach;
+        }
+
         /// <summary>The first zone this spot falls into, or -1.</summary>
         public static int ZoneAt(IList<Zone> zones, float x, float z)
         {
@@ -397,24 +431,7 @@ namespace AstvardServerMod
                 var zone = zones[i];
                 if (zone == null) continue;
 
-                if (slack <= 0f)
-                {
-                    if (Inside(zone, x, z)) return i;
-                    continue;
-                }
-
-                // Grown by the apron rather than measured to its edge: one shape, one answer,
-                // and a turned square grows the way it lies.
-                var wider = new Zone
-                {
-                    X = zone.X,
-                    Z = zone.Z,
-                    Radius = ClampRadius(zone.Radius) + slack,
-                    Square = zone.Square,
-                    Angle = zone.Angle,
-                };
-
-                if (Inside(wider, x, z)) return i;
+                if (Near(zone, x, z, slack)) return i;
             }
 
             return -1;

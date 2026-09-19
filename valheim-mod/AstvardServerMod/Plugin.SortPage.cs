@@ -1037,13 +1037,14 @@ namespace AstvardServerMod
 
             var player = Player.m_localPlayer;
             var at = player != null
-                ? Sorting.ZoneAt(zones, player.transform.position.x, player.transform.position.z)
+                ? Sorting.ZoneAt(zones, player.transform.position.x, player.transform.position.z,
+                    Sorting.NearReach)
                 : -1;
 
             var hint = SortHint != null ? SortHint.GetComponentInChildren<Text>(true) : null;
             if (hint != null)
                 hint.text = $"Разбирает непомеченные сундуки{NEWLINE}и тележки в помеченные,{NEWLINE}"
-                            + $"пока ты стоишь в своей зоне.{NEWLINE}{NEWLINE}"
+                            + $"пока ты в своей зоне{NEWLINE}или рядом с ней.{NEWLINE}{NEWLINE}"
                             + SortingWhy();
 
             var placeHint = SortPlaceHint != null ? SortPlaceHint.GetComponentInChildren<Text>(true) : null;
