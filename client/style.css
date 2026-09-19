@@ -1343,3 +1343,40 @@ a.feature-card {
 .text-link:hover {
     border-bottom-color: var(--accent-cyan);
 }
+
+.mod-install-link {
+    margin: -12px 0 28px;
+    font-size: 14px;
+}
+
+.install-checks {
+    list-style: none;
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+}
+
+.install-checks li {
+    position: relative;
+    padding-left: 18px;
+    font-size: 14.5px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.install-checks li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 10px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-cyan);
+}
+
+.install-checks strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}

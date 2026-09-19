@@ -4,6 +4,7 @@
         <h1 class="section__title">Что умеет мод</h1>
         <p class="section__subtitle">Панель открывается вместе с инвентарём, клавишей Tab. Нажми на возможность — расскажу, что она делает, где её искать и во что обойдётся.</p>
         {{{mod_download}}}
+        <p class="mod-install-link"><a class="text-link" href="#install">Как поставить мод — в конце страницы</a></p>
 
         <div class="section__block">
           <h3 class="block__title">С чего начать</h3>
@@ -177,7 +178,7 @@
             <button type="button" class="feature-card" data-feature="chest-zone">
               <span class="feature-card__head">
                 <span class="feature-card__icon"><i data-lucide="scan"></i></span>
-                <span class="feature-card__title">Зона сундуков</span>
+                <span class="feature-card__title">Зона станций</span>
               </span>
               <span class="feature-card__text">Как далеко станция ищет назначенный сундук: от 8 до 64 метров.</span>
               <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
@@ -427,8 +428,8 @@
             <span class="feature-tags"><span class="feature-tag feature-tag--free">даром</span></span>
           </div>
           <div id="feature-chest-zone" class="feature-text">
-            <h3 class="feature-text__title">Зона сундуков</h3>
-            <p class="feature-text__where">«Функции» → «Зона сундуков»</p>
+            <h3 class="feature-text__title">Зона станций</h3>
+            <p class="feature-text__where">«Функции» → «Работа с сундуками» → «Зона станций»</p>
             <p>Настройка расстояния для наполнения и сбора. Круг рисуется вокруг тебя, и по нему видно, какие станции дотянутся до сундука.</p>
             <ul>
               <li>Форма — круг или квадрат, как удобнее в застройке.</li>
@@ -473,6 +474,62 @@
             </ul>
             <span class="feature-tags"><span class="feature-tag">открывает админ</span></span>
           </div>
+        </div>
+      </section>
+
+      <!-- КАК ПОСТАВИТЬ: два пути, и оба необязательные. Шаги те же, что в README
+           внутри архива, — расходиться им нельзя. -->
+      <section class="section section--alt" id="install">
+        <h2 class="section__title">Как поставить</h2>
+        <p class="section__subtitle">Мод необязателен: на сервер пускают и без него, просто не будет панели. Нужен Valheim из Steam — версия из Game Pass и с консолей этот сервер не видит вовсе, на нём выключен кроссплей.</p>
+
+        <div class="section__block">
+          <h3 class="block__title">Через менеджер модов — проще</h3>
+          <p class="block__hint">Если стоит r2modman или Thunderstore Mod Manager, остальное приедет само.</p>
+          <ol class="join-steps">
+            <li class="join-step">
+              <span class="join-step__num" aria-hidden="true">1</span>
+              <h4 class="join-step__title">Найди мод в менеджере</h4>
+              <p class="join-step__text">Профиль для Valheim, поиск по слову «Astvard», кнопка Download. BepInEx и Jotunn менеджер поставит сам — они прописаны зависимостями.</p>
+            </li>
+            <li class="join-step">
+              <span class="join-step__num" aria-hidden="true">2</span>
+              <h4 class="join-step__title">Запускай игру из менеджера</h4>
+              <p class="join-step__text">Кнопка «Start modded». Через обычный ярлык Steam игра запустится без модов — это частая причина «панели нет».</p>
+            </li>
+          </ol>
+        </div>
+
+        <div class="section__block">
+          <h3 class="block__title">Файлом, без менеджера</h3>
+          <p class="block__hint">Архив с кнопки выше распаковывается прямо в папку с игрой.</p>
+          <ol class="join-steps">
+            <li class="join-step">
+              <span class="join-step__num" aria-hidden="true">1</span>
+              <h4 class="join-step__title">Поставь BepInEx</h4>
+              <p class="join-step__text">Это загрузчик модов, ставится один раз. Скачай <a class="text-link" href="https://thunderstore.io/c/valheim/p/denikson/BepInExPack_Valheim/" target="_blank" rel="noopener">BepInExPack Valheim</a>, открой в архиве папку <strong>BepInExPack_Valheim</strong> и всё её содержимое положи в папку с игрой — туда, где лежит <strong>valheim.exe</strong>. Найти папку проще всего через Steam: правой кнопкой по Valheim → «Управление» → «Просмотреть локальные файлы».</p>
+            </li>
+            <li class="join-step">
+              <span class="join-step__num" aria-hidden="true">2</span>
+              <h4 class="join-step__title">Разблокируй скачанный архив</h4>
+              <p class="join-step__text">Windows помечает файлы из интернета, и мод из-за этого может не подхватиться. Правой кнопкой по ZIP → «Свойства» → внизу галочка «Разблокировать» → ОК, и только потом распаковывать.</p>
+            </li>
+            <li class="join-step">
+              <span class="join-step__num" aria-hidden="true">3</span>
+              <h4 class="join-step__title">Распакуй мод в ту же папку</h4>
+              <p class="join-step__text">Должно получиться так: <strong>Valheim\BepInEx\plugins\AstvardServerMod.dll</strong> и рядом <strong>Jotunn.dll</strong>. Запускать игру после этого — как обычно, через Steam.</p>
+            </li>
+          </ol>
+        </div>
+
+        <div class="section__block">
+          <h3 class="block__title">Проверить, что мод встал</h3>
+          <p class="block__hint">Зайди в игру и открой инвентарь клавишей Tab: над ним должна появиться деревянная панель с кнопками.</p>
+          <ul class="install-checks">
+            <li>Панели нет — открой <strong>Valheim\BepInEx\LogOutput.log</strong> и поищи строки <strong>Loading [Jotunn</strong> и <strong>Loading [AstvardServerMod</strong>. Нет ни одной — значит BepInEx не встал или файлы легли не в ту папку.</li>
+            <li>Мод на сервер не пускает и не выгоняет: заходить можно и со старой версией, и вовсе без мода.</li>
+            <li>Если на сервере версия новее твоей, мод один раз за вход скажет об этом в чат. Тогда просто скачай свежий архив или обнови мод в менеджере.</li>
+          </ul>
         </div>
       </section>
 
