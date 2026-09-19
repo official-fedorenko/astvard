@@ -271,6 +271,7 @@ namespace AstvardServerMod
             if (words != null && !switched && previous != CatalogueLanguage) RestoreLanguage(words, previous);
 
             var counted = 0;
+            var skipped = 0;
             try
             {
                 foreach (var prefab in db.m_items)
@@ -281,6 +282,16 @@ namespace AstvardServerMod
                     var shared = drop.m_itemData.m_shared;
                     var kind = CleanForCatalogue(shared.m_name);
                     if (kind.Length == 0) continue;
+
+                    // Имя без `$` — не ключ перевода, а внутреннее имя: в ObjectDB рядом с
+                    // предметами лежат атаки существ (`WolfAttack1`, `claw`, `Unarmed`) —
+                    // у них тоже есть ItemDrop. Сортировать их некуда, и в списке админа
+                    // это два десятка строк, которые он будет читать и не понимать.
+                    if (kind[0] != '$')
+                    {
+                        skipped++;
+                        continue;
+                    }
 
                     body.Append(kind).Append('|')
                         .Append(CleanForCatalogue(ItemTitle(drop.m_itemData))).Append('|')
@@ -323,9 +334,11 @@ namespace AstvardServerMod
                 }
 
                 // Язык в строке не для красоты: имена, уехавшие не на том языке, иначе
-                // видны только на самом сайте и через сутки.
+                // видны только на самом сайте и через сутки. Отброшенное — тем же: фильтр,
+                // съевший лишнего, иначе не отличить от игры, потерявшей предметы.
                 Log.LogInfo($"[AstvardServerMod] Sorting: told the site about {counted} items"
-                            + $" ({(switched ? CatalogueLanguage : previous)} names).");
+                            + $" ({(switched ? CatalogueLanguage : previous)} names,"
+                            + $" {skipped} skipped as not items).");
                 done(true);
             }
         }
