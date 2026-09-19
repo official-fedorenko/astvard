@@ -243,6 +243,16 @@ namespace AstvardServerMod
 
             body.Append('\n');
 
+            // Пока игра не разложила свой ObjectDB, рассказывать нечего - и переключать
+            // язык тоже: этот заход повторяется раз в минуту, пока не выйдет, а каждое
+            // переключение перечитывает весь CSV игры целиком.
+            var db = ObjectDB.instance;
+            if (db == null || db.m_items == null)
+            {
+                done(false);
+                yield break;
+            }
+
             // Язык меняется только на время сборки строк, и между переключением и
             // возвратом нет ни одного yield: иначе чужой кадр застал бы сервер говорящим
             // не на том языке.
@@ -263,25 +273,23 @@ namespace AstvardServerMod
             var counted = 0;
             try
             {
-                var db = ObjectDB.instance;
-                if (db != null && db.m_items != null)
-                    foreach (var prefab in db.m_items)
-                    {
-                        var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
-                        if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null) continue;
+                foreach (var prefab in db.m_items)
+                {
+                    var drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
+                    if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null) continue;
 
-                        var shared = drop.m_itemData.m_shared;
-                        var kind = CleanForCatalogue(shared.m_name);
-                        if (kind.Length == 0) continue;
+                    var shared = drop.m_itemData.m_shared;
+                    var kind = CleanForCatalogue(shared.m_name);
+                    if (kind.Length == 0) continue;
 
-                        body.Append(kind).Append('|')
-                            .Append(CleanForCatalogue(ItemTitle(drop.m_itemData))).Append('|')
-                            .Append(CleanForCatalogue(shared.m_itemType.ToString())).Append('|')
-                            .Append(DefaultCategoryOf(drop.m_itemData))
-                            .Append('\n');
+                    body.Append(kind).Append('|')
+                        .Append(CleanForCatalogue(ItemTitle(drop.m_itemData))).Append('|')
+                        .Append(CleanForCatalogue(shared.m_itemType.ToString())).Append('|')
+                        .Append(DefaultCategoryOf(drop.m_itemData))
+                        .Append('\n');
 
-                        counted++;
-                    }
+                    counted++;
+                }
             }
             finally
             {
@@ -290,8 +298,8 @@ namespace AstvardServerMod
 
             if (counted == 0)
             {
-                // Нечего рассказывать - значит, игра ещё не разложила свой ObjectDB.
-                // Следующий заход через минуту, и там он уже будет.
+                // ObjectDB на месте, а предметов в нём нет - такого быть не должно, но
+                // пустой каталог сайт всё равно отвергнет.
                 done(false);
                 yield break;
             }
