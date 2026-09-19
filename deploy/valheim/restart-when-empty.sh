@@ -1,7 +1,9 @@
 #!/bin/bash
 # Restarts the Valheim server with a new mod DLL once nobody is playing on it.
 #
-# Put the new build beside the live one as AstvardServerMod.dll.new (chown valheim), then:
+# Put the new build beside the live one - that is
+# /srv/valheim/server/BepInEx/plugins/AstvardServerMod.dll.new, not /srv/valheim - and
+# chown it to valheim, then:
 #   systemd-run --unit=astvard-restart --collect /bin/bash /srv/astvard/deploy/valheim/restart-when-empty.sh
 # A transient unit, so it outlives the SSH session that started it. Progress goes to
 # /root/astvard-restart-status.txt and ends with DONE, GAVE UP or STOP. The previous build
