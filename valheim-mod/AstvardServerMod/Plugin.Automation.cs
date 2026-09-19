@@ -184,15 +184,28 @@ namespace AstvardServerMod
         // не новость, а шум, в котором тонет всё остальное.
         private static string _zoneStationsSaid;
 
+        // Какой огонь в зоне чем горит. Мод не знает этого заранее и знать не должен:
+        // топливо записано в самой детали, у деревянного факела смола, у костра дрова, у
+        // иного пламени нет вовсе. Спрашивать у игры дешевле, чем помнить список, который
+        // устареет с ближайшим обновлением.
+        private static readonly Dictionary<string, string> ZoneFireKinds = new Dictionary<string, string>();
+
         private static void SayZoneStations(int smelters, int mine, int fires)
         {
-            var said = $"smelters {smelters}, mine {mine}, fires {fires}";
+            var kinds = new System.Text.StringBuilder();
+            foreach (var pair in ZoneFireKinds)
+            {
+                kinds.Append(kinds.Length > 0 ? ", " : " — ");
+                kinds.Append(pair.Key).Append(": ").Append(pair.Value);
+            }
+
+            var said = $"smelters {smelters} (mine {mine}), fires {fires}{kinds}";
             if (said == _zoneStationsSaid) return;
 
             _zoneStationsSaid = said;
             Log.LogInfo($"[AstvardServerMod] Zone stations: {said}"
                         + (smelters > mine
-                            ? " — остальные сейчас за другим: их кормит тот, кто ими владеет."
+                            ? ". The rest answer to somebody else, and are fed by them."
                             : "."));
         }
 
@@ -546,6 +559,7 @@ namespace AstvardServerMod
                     var zoneSmelters = 0;
                     var zoneMine = 0;
                     var zoneFires = 0;
+                    ZoneFireKinds.Clear();
                     var kilnsMayBurn = FeedKilnsOn
                                        && (CoalKeep <= 0 || InStock(CoalPrefab) < CoalKeep);
 
@@ -610,8 +624,16 @@ namespace AstvardServerMod
                             // Факел - это тот же Fireplace, что и костёр: одна ветка на
                             // всё, что горит, и смола в него едет из сундуков зоны, как
                             // дрова в костёр. Считаем их отдельно - спросили именно про них.
-                            if (inZone && !fireplace.m_infiniteFuel && fireplace.m_fuelItem != null)
-                                zoneFires++;
+                            if (inZone)
+                            {
+                                if (!fireplace.m_infiniteFuel && fireplace.m_fuelItem != null) zoneFires++;
+
+                                var kind = Utils.GetPrefabName(piece.gameObject);
+                                if (!ZoneFireKinds.ContainsKey(kind))
+                                    ZoneFireKinds[kind] = fireplace.m_infiniteFuel ? "burns for ever"
+                                        : fireplace.m_fuelItem != null ? fireplace.m_fuelItem.gameObject.name
+                                        : "no fuel of its own";
+                            }
 
                             if (feeding) FillFireplace(fireplace, food);
                         }
