@@ -594,7 +594,7 @@ function initApp() {
   const closeUserBtn = document.getElementById('closeUserModalBtn');
   const userForm = document.getElementById('userForm');
 
-  const openUserModal = (title = 'Добавить пользователя', id = '', username = '', email = '', role = 'User', accountType = 'client') => {
+  const openUserModal = (title = 'Добавить пользователя', id = '', username = '', email = '', role = 'User') => {
     document.getElementById('userModalTitle').textContent = title;
     document.getElementById('userId').value = id;
     document.getElementById('userUsername').value = username;
@@ -605,8 +605,6 @@ function initApp() {
       ? 'Оставьте пустым, чтобы не менять пароль.'
       : 'Пароль обязателен для создания нового пользователя.';
     document.getElementById('userRole').value = role;
-    document.getElementById('userAccountType').value = accountType || 'client';
-    renderUserEmployeePanel(id || null);
     userModal.classList.add('active');
   };
 
