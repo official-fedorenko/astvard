@@ -1,43 +1,71 @@
-# Обращение к модераторам Thunderstore
+# Отказ Thunderstore: куда писать и что писать
 
-Отправлять с аккаунта хозяина в Discord Thunderstore (https://discord.thunderstore.io/),
-в канал поддержки/модерации. Текст по-английски — модераторы англоязычные.
+19.09.2026 листинг `Astvard-AstvardServerMod` в сообществе Valheim ушёл в `rejected`
+сразу после заливки 1.2.1. На странице пакета только «Package rejected / Invalid
+submission» и ссылка в их Discord; в «Manage Package» причины тоже нет — там статус
+«Not deprecated» и категории, больше ничего.
 
----
+## Куда
 
-Hi! I'm the owner of the **Astvard** team. Our Valheim package has been rejected with
-"Invalid submission" and I'd like to find out what exactly to fix.
+Discord Thunderstore (https://discord.thunderstore.io/), **канал-форум
+`#rejected-uploads`** — не в общий чат и не в личку модератору. Правило канала одно и
+написано прямо в форме: **в теме обязательно ссылка на отклонённый пакет.** Создаётся
+кнопкой «Новая публикация»: заголовок плюс сообщение.
 
-Package: https://thunderstore.io/c/valheim/p/Astvard/AstvardServerMod/ (`Astvard-AstvardServerMod`)
+## Что там видно про такие отказы
 
-**What happened.** Version 1.1.0 was uploaded a few days ago and the listing was approved and
-searchable. On 19 September I uploaded 1.2.1 and the whole listing went to "rejected": the
-package page now 404s for anyone who is not logged in, and the mod is gone from the community
-search. The upload form was filled in exactly as it was for 1.1.0 — team `Astvard`, community
-Valheim, categories `Mods` and `AI Generated`, NSFW off.
+Половина тем в канале — те же слова «Invalid submission», и отвечает на них модератор
+`753` одной строкой «Approved», перепроверив пакет руками. Полезные примеры на
+19.09.2026:
 
-**What is inside the package** (206 KB):
+- `GCValheimStats` (мод для Valheim, тот же набор файлов, что у нас): «keeps getting
+  rejected with Invalid submission. This seems like a **false positive from the
+  scanner**» — разобрано и одобрено;
+- `SimpleSell`: «i marked it AI Generated, but it was rejected for **untagged AI
+  Generated mod**» — ответ модератора: «Approved». То есть тег стоит, а автоматика
+  всё равно ругается;
+- `EnhancedValheimVRM`: единственный случай, где дело было в самом пакете — менеджеры
+  модов схлопывают вложенные папки, и мод из-за этого не работал. У нас одна папка
+  `BepInEx/plugins`, так что это не наш случай.
 
-- `manifest.json` — name `AstvardServerMod`, version 1.2.1, one dependency:
-  `ValheimModding-Jotunn-2.30.1`
-- `icon.png` — 256x256
-- `README.md`
-- `BepInEx/plugins/AstvardServerMod.dll` — a single BepInEx plugin assembly
+Отсюда вывод: **это почти наверняка ложное срабатывание проверялки**, а не претензия к
+содержимому, и лечится просьбой перепроверить. Длинное оправдание не нужно — нужна
+ссылка и короткий состав пакета.
 
-No bundled dependencies (Jötunn is declared, not shipped), no obfuscation, no installer, no
-other files.
+## Текст (он и отправлен)
 
-**What the mod is.** An in-game admin panel for our own Valheim server: blueprints, terrain
-tools, chest sorting, an in-game currency. It requires BepInEx and Jötunn. The full source is
-public — https://github.com/official-fedorenko/astvard, the mod lives in
-`valheim-mod/AstvardServerMod`, and the same build is published as a GitHub release, so the
-DLL in the package can be compared against the source it was built from.
+Заголовок:
 
-**One thing I can guess at:** the description and the README are in Russian, because the
-players on our server are Russian-speaking. If that is what makes the submission invalid, I
-will gladly add an English version — I just can't tell from "Invalid submission" alone.
+```
+Invalid submission for AstvardServerMod (Valheim)
+```
 
-Could you tell me what specifically is wrong, so I can fix it and re-submit? Happy to provide
-anything else you need — build logs, the exact zip, whatever helps.
+Сообщение:
 
-Thanks!
+```
+https://thunderstore.io/c/valheim/p/Astvard/AstvardServerMod/
+
+Version 1.1.0 was approved and listed. After I uploaded 1.2.1 the whole listing went to
+"rejected - Invalid submission": the mod is gone from community search and the package
+page 404s for anyone who is not logged in. It looks like a scanner false positive.
+
+The zip (206 KB) contains: manifest.json, icon.png (256x256), README.md and
+BepInEx/plugins/AstvardServerMod.dll - a single BepInEx plugin (net472). No bundled
+dependencies (Jotunn is declared as a dependency, not shipped), no obfuscation, no
+installer, nothing else. Tagged Mods + AI Generated, NSFW off.
+
+Source and the same build: https://github.com/official-fedorenko/astvard - the mod lives
+in valheim-mod/AstvardServerMod and every version is published as a GitHub release too, so
+the DLL in the package can be compared against the source it was built from.
+
+Could you take a look? Thanks!
+```
+
+## Если ответят иначе
+
+- **«Add an English description»** — перевести `package.md` (это и есть страница мода на
+  Thunderstore) и залить новую версию; заодно поднять номер, потому что опубликованную
+  версию править нельзя.
+- **«Folder structure»** — у нас одна папка `BepInEx/plugins`, менять нечего, показать
+  состав архива.
+- **Молчание больше суток** — написать в теме ещё раз, не заводя новую.
