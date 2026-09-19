@@ -192,11 +192,44 @@ namespace AstvardServerMod
 
         private static LineRenderer _sortLine;
 
+        /// <summary>Колечко в середине зоны: по нему и видно, куда её сдвинули.</summary>
+        private static LineRenderer _sortCentreLine;
+
+        private const float CentreMark = 1f;
+
         private const int SortBoxPerSide = 12;
 
         internal static bool IsSortZonePreviewing
         {
             get { return _sortPreviewing; }
+        }
+
+        /// <summary>
+        /// Шаг стрелки, положенный на оси самой зоны.
+        ///
+        /// The arrows step away from the camera and to its right, as they do for every other
+        /// projection, and for a circle or a square standing straight that is the whole
+        /// story. A square turned by Q and E is the exception: the step would carry it
+        /// across its own sides, so a zone lined up with the wall of a house slid off the
+        /// wall diagonally, a little sideways with every press. Here the step keeps its
+        /// length and its meaning - «away» is still away - but goes along the side of the
+        /// square nearest to that direction.
+        /// </summary>
+        private static Vector3 AlongZone(Vector3 step)
+        {
+            if (!_sortSquare || Mathf.Abs(_sortAngle) < 0.01f) return step;
+
+            var turn = Quaternion.Euler(0f, _sortAngle, 0f);
+            var forward = turn * Vector3.forward;
+            var right = turn * Vector3.right;
+
+            var alongForward = Vector3.Dot(step, forward);
+            var alongRight = Vector3.Dot(step, right);
+            var size = step.magnitude;
+
+            return Mathf.Abs(alongForward) >= Mathf.Abs(alongRight)
+                ? forward * (size * Mathf.Sign(alongForward))
+                : right * (size * Mathf.Sign(alongRight));
         }
 
         private static Vector3 SortZoneCentre(Player player)
@@ -248,11 +281,16 @@ namespace AstvardServerMod
             _sortPreviewing = true;
             _sortPinned = false;
             NoteToolStart();
-            InventoryGui.instance?.Hide();
+
+            // Панель намеренно не закрывается, как у забора и дорожки: радиус и форма
+            // читаются из полей каждый кадр, и пока панель открыта, круг идёт за тем, что
+            // в них написано. Закрытая панель превращала бы подбор радиуса в «показать -
+            // отменить - поправить - показать», а это ровно та работа, которой проекция и
+            // должна избавлять. Tab прячет панель, когда radius подобран.
             player.Message(MessageHud.MessageType.Center,
                 _sortSquare
-                    ? "ЛКМ — поставить, Esc — отменить, P — закрепить, Q/E — повернуть"
-                    : "ЛКМ — поставить зону, Esc — отменить, P — закрепить");
+                    ? "Радиус — в поле, круг идёт за ним. ЛКМ — поставить, Esc — отмена, P — закрепить, Q/E — поворот"
+                    : "Радиус — в поле, круг идёт за ним. ЛКМ — поставить, Esc — отмена, P — закрепить");
         }
 
         internal static void CancelSortZonePreview()
@@ -298,7 +336,12 @@ namespace AstvardServerMod
 
             if (_sortPinned && PinNudgeThisFrame(out var step))
             {
-                _sortPinnedAt += step;
+                _sortPinnedAt += AlongZone(step);
+
+                var away = _sortPinnedAt - player.transform.position;
+                away.y = 0f;
+                player.Message(MessageHud.MessageType.TopLeft,
+                    $"Середина зоны: {away.magnitude:0.#} м от тебя");
                 return true;
             }
 
@@ -388,6 +431,10 @@ namespace AstvardServerMod
             _sortPreview.SetActive(true);
             if (_sortSquare) DrawGroundBox(_sortLine, centre, reach, _sortAngle);
             else DrawGroundRing(_sortLine, centre, reach);
+
+            // Середина - то, что двигают стрелки, и без метки её не видно вовсе: контур
+            // зоны в двадцать метров уходит за спину, и понять, куда уехал центр, нечем.
+            if (_sortCentreLine != null) DrawGroundRing(_sortCentreLine, centre, CentreMark);
         }
 
         /// <summary>
@@ -440,12 +487,19 @@ namespace AstvardServerMod
             _sortLine.widthMultiplier = 0.5f;
             _sortLine.startColor = Faded(SortPreviewColour, 0.85f);
             _sortLine.endColor = _sortLine.startColor;
+
+            _sortCentreLine = MakeGroundLine(_sortPreview.transform, "Centre", true);
+            _sortCentreLine.widthMultiplier = 0.3f;
+            _sortCentreLine.startColor = Faded(SortPreviewColour, 0.6f);
+            _sortCentreLine.endColor = _sortCentreLine.startColor;
             return true;
         }
 
         internal static void DestroySortZonePreview()
         {
             if (_sortPreview != null) Destroy(_sortPreview);
+            _sortLine = null;
+            _sortCentreLine = null;
         }
 
         // Green, to tell it apart from the road's and the paving's amber: these two are
@@ -832,7 +886,10 @@ namespace AstvardServerMod
                 placeHint.text = $"Радиус от середины, м:{NEWLINE}от {Sorting.MinZoneRadius:0} "
                                  + $"до {Sorting.MaxZoneRadius:0}.{NEWLINE}У квадрата это половина{NEWLINE}"
                                  + $"стороны.{NEWLINE}Квадрат вращается Q и E,{NEWLINE}"
-                                 + $"с Shift — мельче.{NEWLINE}Зоны не должны пересекаться.";
+                                 + $"с Shift — мельче.{NEWLINE}{NEWLINE}"
+                                 + $"Панель можно не закрывать:{NEWLINE}меняешь радиус — круг{NEWLINE}"
+                                 + $"меняется сразу. Tab прячет{NEWLINE}панель, ЛКМ ставит.{NEWLINE}{NEWLINE}"
+                                 + $"Зоны не должны пересекаться.";
 
             if (MenuState == StateSortZones)
                 _itemOffset = MenuPaging.Clamp(_itemOffset, zones.Count, MaxTemplateButtons);
