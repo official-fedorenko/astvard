@@ -56,8 +56,8 @@ async function createSteamUser(steamId, baseName) {
     const username = attempt === 1 ? baseName : `${baseName} (${attempt})`;
     try {
       const result = await run(
-        `INSERT INTO users (username, role, account_type, steam_id, steam_id_verified)
-         VALUES (?, 'User', 'client', ?, 1)`,
+        `INSERT INTO users (username, role, steam_id, steam_id_verified)
+         VALUES (?, 'User', ?, 1)`,
         [username, steamId]
       );
       return get('SELECT * FROM users WHERE id = ?', [result.lastID]);

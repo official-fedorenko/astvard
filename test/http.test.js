@@ -184,6 +184,46 @@ test('superadmin-only /api/users works with a superadmin session', async () => {
   assert.ok(json.some(u => u.username === 'superadmin'));
 });
 
+test('типов аккаунта нет: заводится игрок, и сотрудником его снаружи не сделать', async () => {
+  // «Клиент» и «Сотрудник» достались порталу от панели электриков. Здесь человек —
+  // игрок, и другого вида аккаунта нет ни в форме, ни в ответе, ни в запросе.
+  const made = await api('/api/users', {
+    method: 'POST',
+    cookie: superadminCookie,
+    body: {
+      username: 'Игрок из теста',
+      email: 'player-test@example.com',
+      password: 'player-pass-123',
+      role: 'User',
+      account_type: 'employee'
+    }
+  });
+  assert.strictEqual(made.status, 201);
+
+  const { json: users } = await api('/api/users', { cookie: superadminCookie });
+  const made_user = users.find((u) => u.username === 'Игрок из теста');
+  assert.ok(made_user, 'аккаунт завёлся');
+  assert.strictEqual(made_user.account_type, undefined, 'типа аккаунта в ответе нет');
+  assert.strictEqual(made_user.role, 'User');
+
+  // Карточка сотрудника из этой ручки больше не заводится: раздел «Сотрудники»
+  // остался при своих кнопках, но из пользователей туда хода нет.
+  const cards = await pool.query('SELECT count(*)::int AS n FROM employees WHERE email = $1',
+                                 ['player-test@example.com']);
+  assert.strictEqual(cards.rows[0].n, 0, 'карточки сотрудника быть не должно');
+
+  // Правка того же аккаунта тоже не знает про тип.
+  const changed = await api(`/api/users?id=${made_user.id}`, {
+    method: 'PUT',
+    cookie: superadminCookie,
+    body: { role: 'Admin', account_type: 'employee' }
+  });
+  assert.strictEqual(changed.status, 200);
+  const after = await pool.query('SELECT role, account_type FROM users WHERE id = $1', [made_user.id]);
+  assert.strictEqual(after.rows[0].role, 'Admin', 'роль меняется как раньше');
+  assert.strictEqual(after.rows[0].account_type, 'client', 'колонка осталась со своим значением по умолчанию');
+});
+
 test('logout invalidates the session server-side, not just on the client', async () => {
   const loggedOut = await api('/api/auth/logout', { method: 'POST', cookie: superadminCookie });
   assert.strictEqual(loggedOut.status, 200);

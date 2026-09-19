@@ -143,7 +143,7 @@ function setupProfileMenu(user) {
   }
   document.getElementById('pmName').textContent = user.username;
   document.getElementById('pmRole').textContent =
-    user.role === 'Superadmin' ? 'Суперадмин' : (user.role === 'Admin' ? 'Администратор' : 'Пользователь');
+    user.role === 'Superadmin' ? 'Суперадмин' : (user.role === 'Admin' ? 'Администратор' : 'Игрок');
   document.getElementById('pmAdmin').style.display = isAdmin ? 'flex' : 'none';
 
   const openMenu = () => overlay.classList.add('open');

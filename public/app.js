@@ -111,7 +111,7 @@ async function checkSession() {
     
     // Update sidebar profile
     document.getElementById('userDisplay').textContent = currentUser.username;
-    document.getElementById('roleDisplay').textContent = currentUser.role === 'Superadmin' ? 'Суперадмин' : (currentUser.role === 'Admin' ? 'Администратор' : 'Редактор');
+    document.getElementById('roleDisplay').textContent = currentUser.role === 'Superadmin' ? 'Суперадмин' : (currentUser.role === 'Admin' ? 'Администратор' : 'Игрок');
     document.getElementById('avatarLetter').textContent = currentUser.username.charAt(0).toUpperCase();
 
     // Show Superadmin-only sections
@@ -629,9 +629,8 @@ function initApp() {
       const email = document.getElementById('userEmail').value;
       const password = document.getElementById('userPassword').value;
       const role = document.getElementById('userRole').value;
-      const accountType = document.getElementById('userAccountType').value;
 
-      const payload = { username, email, role, account_type: accountType };
+      const payload = { username, email, role };
       if (password) payload.password = password;
 
       const method = id ? 'PUT' : 'POST';
@@ -2613,9 +2612,6 @@ function renderUsers(filterQuery = '') {
     const tr = document.createElement('tr');
     tr.onclick = mobileRowTap(() => openUserDetail(u.id));
     const roleBadge = userRoleBadge(u.role);
-    const typeBadge = u.account_type === 'employee'
-      ? `<span class="badge" style="background:hsl(var(--accent-amber) / 0.15);color:hsl(var(--accent-amber))">Сотрудник</span>`
-      : `<span class="badge" style="background:hsl(var(--accent-cyan) / 0.15);color:hsl(var(--accent-cyan))">Клиент</span>`;
     const dateFormatted = new Date(u.created_at).toLocaleDateString('ru-RU', {
       day: 'numeric', month: 'long', year: 'numeric'
     });
@@ -2628,7 +2624,7 @@ function renderUsers(filterQuery = '') {
       <td class="hide-mobile">${u.id}</td>
       <td class="mobile-primary">${primaryCell}</td>
       <td class="mobile-hidden">${escapeHtml(u.email)}</td>
-      <td><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${roleBadge}${typeBadge}</div></td>
+      <td>${roleBadge}</td>
       <td class="mobile-hidden">${dateFormatted}</td>
       <td class="no-label" style="text-align: right;">
         <div class="action-btns" style="justify-content: flex-end;">
@@ -2646,17 +2642,14 @@ function renderUsers(filterQuery = '') {
 }
 
 function userRoleBadge(role) {
-  if (role === 'Admin') return `<span class="badge badge-success">Admin</span>`;
-  if (role === 'Superadmin') return `<span class="badge badge-success" style="background:var(--accent-purple)">Superadmin</span>`;
-  return `<span class="badge badge-warning">User</span>`;
+  if (role === 'Admin') return `<span class="badge badge-success">Администратор</span>`;
+  if (role === 'Superadmin') return `<span class="badge badge-success" style="background:var(--accent-purple)">Суперадмин</span>`;
+  return `<span class="badge badge-warning">Игрок</span>`;
 }
 
 window.openUserDetail = (id) => {
   const u = usersList.find(x => x.id === id);
   if (!u) return;
-  const typeBadge = u.account_type === 'employee'
-    ? '<span class="badge" style="background:hsl(var(--accent-amber) / 0.15);color:hsl(var(--accent-amber))">Сотрудник</span>'
-    : '<span class="badge" style="background:hsl(var(--accent-cyan) / 0.15);color:hsl(var(--accent-cyan))">Клиент</span>';
   const dateFormatted = new Date(u.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
   const name = userDisplayName(u);
   const rows = [
@@ -2664,7 +2657,6 @@ window.openUserDetail = (id) => {
     ...(name !== u.username ? [['Логин', u.username]] : []),
     ['Email', u.email],
     ['Роль', userRoleBadge(u.role), true],
-    ['Тип', typeBadge, true],
     ['Создан', dateFormatted]
   ];
   const actions = `
@@ -2732,8 +2724,6 @@ window.editUser = (id) => {
     document.getElementById('userPassword').required = false;
     document.getElementById('passwordHelp').textContent = 'Оставьте пустым, чтобы не менять пароль.';
     document.getElementById('userRole').value = u.role;
-    document.getElementById('userAccountType').value = u.account_type || 'client';
-    renderUserEmployeePanel(u.id);
     modal.classList.add('active');
   }
 };
