@@ -309,6 +309,15 @@ namespace AstvardServerMod
             // не шлёт, и это не повод отказать в дорожке.
             public bool Forever;
 
+            // Мощёные круги, уже уложенные этой же сетью: внутрь них дорожный факел не
+            // ставится - там своё кольцо. Список общий с заданием сети и растёт по ходу
+            // укладки, поэтому здесь именно ссылка, а не копия.
+            public List<PavedRing> Skip;
+
+            // Сколько факелов не встало из-за этого. Молчаливый пропуск - худший из
+            // возможных: снаружи он неотличим от «некуда поставить».
+            public int Inside;
+
             // The zones the piece in hand needs: poked, and their objects built.
             public readonly HashSet<Vector2s> Zones = new HashSet<Vector2s>();
         }
@@ -660,7 +669,8 @@ namespace AstvardServerMod
 
             Log.LogInfo($"[AstvardServerMod] Road job {job.Id} {(failure != null ? "failed: " + failure : laidTo < job.Path.Count - 1 ? "stopped" : "done")}: "
                         + $"{laid:F0}/{total:F0} m in {pieces} pieces, {Time.realtimeSinceStartup - began:F0} s, "
-                        + $"{job.Record.Before.Count} zones, cleared {cleared}, torches {placed} placed {skipped} skipped.");
+                        + $"{job.Record.Before.Count} zones, cleared {cleared}, torches {placed} placed {skipped} skipped"
+                        + (job.Inside > 0 ? $", {job.Inside} inside rings" : "") + ".");
         }
 
         /// <summary>
@@ -717,6 +727,34 @@ namespace AstvardServerMod
             job.Radius = want;
             job.Width = want * 2f;
             return true;
+        }
+
+        /// <summary>Мощёный круг, уже уложенный: где и какого радиуса он вышел.</summary>
+        internal struct PavedRing
+        {
+            public Vector3 At;
+            public float Radius;
+        }
+
+        /// <summary>
+        /// Попадает ли точка внутрь одного из уже уложенных кругов.
+        ///
+        /// Меряется по краю кольца, а не по краю краски: кольцевые факелы стоят в
+        /// `TorchMargin` за ободом, и дорожный факел рядом с ними читался бы как дубль.
+        /// Высота не в счёт - круг лежит на земле, как и дорога.
+        /// </summary>
+        private static bool InsidePavedRing(List<PavedRing> rings, Vector3 at)
+        {
+            if (rings == null) return false;
+
+            foreach (var ring in rings)
+            {
+                var reach = ring.Radius + TorchMargin + 0.5f;
+                if (new Vector2(at.x - ring.At.x, at.z - ring.At.z).sqrMagnitude < reach * reach)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>Whether the zone's ground is built here - its heightmap is up.</summary>
@@ -993,6 +1031,14 @@ namespace AstvardServerMod
                     if (!FindTorchSpot(post, true, out var spot))
                     {
                         skipped++;
+                        continue;
+                    }
+
+                    // Внутри круга факел не нужен: там своё кольцо, и второй ряд огней
+                    // вдоль дороги, идущей насквозь, выглядит мусором.
+                    if (InsidePavedRing(job.Skip, spot))
+                    {
+                        job.Inside++;
                         continue;
                     }
 

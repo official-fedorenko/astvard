@@ -360,6 +360,11 @@ namespace AstvardServerMod
             public bool Stop;
             public int Stones;
             public float Metres;
+
+            // Круги, уже уложенные этой сетью. Дороги получают этот же список ссылкой: к
+            // тому мигу, когда дорога ставит факелы, круги обоих её концов уже уложены -
+            // круг метки идёт прямо перед дорогой, которая до неё доводит.
+            public readonly List<PavedRing> Rings = new List<PavedRing>();
         }
 
         private static RuneJob _runeJob;
@@ -455,9 +460,12 @@ namespace AstvardServerMod
                 var from = net.Points[link.A];
                 var to = net.Points[link.B];
 
+                var road = RoadBetween(from, to, radius, width, paved, smooth, clear, torch,
+                                       spacing, forever, creator, platform);
+                road.Skip = job.Rings;
+
                 job.Metres += Flat(from, to);
-                job.Queue.Add(RoadBetween(from, to, radius, width, paved, smooth, clear, torch,
-                                          spacing, forever, creator, platform));
+                job.Queue.Add(road);
             }
 
             _runeJob = job;
@@ -496,6 +504,11 @@ namespace AstvardServerMod
                 // расставляет факелы вдоль пути, а путь у круга - полметра, и все они
                 // встали бы кучкой у самого камня.
                 if (piece.Ring > 0 && !job.Stop) RingTorches(piece);
+
+                // Радиус запоминается **после** укладки: круг мог дорасти до края запрета
+                // стройки, и дорогам важен тот размер, который в самом деле лёг.
+                if (piece.Grow)
+                    job.Rings.Add(new PavedRing { At = piece.Centre, Radius = piece.Radius });
 
                 job.Done++;
 
