@@ -262,12 +262,16 @@ namespace AstvardServerMod
                 else if (mark.Kind == MarkKind.Spawn) home = true;
             }
 
-            var road = 0f;
-            foreach (var edge in NetworkEdges(marks)) road += Flat(edge.Key, edge.Value);
+            var net = Whole(marks);
 
             said.Append($"Камней: {stones}, алтарей: {bosses}, спавн: ");
             said.Append(home ? "нашёлся" : "не нашёлся");
-            said.Append($". Сеть — {road / 1000f:0.0} км. Кругов {marks.Count}: {Rings(marks)}.");
+            said.Append($". Сеть — {net.Metres / 1000f:0.0} км");
+            if (net.Shortcuts > 0)
+                said.Append($", в ней срезок {net.Shortcuts} на "
+                            + $"{net.ShortcutMetres / 1000f:0.0} км");
+
+            said.Append($". Кругов {marks.Count}: {Rings(marks)}.");
 
             Say(sender, said.ToString(), census, marks);
         }
@@ -437,12 +441,12 @@ namespace AstvardServerMod
                 job.Queue.Add(CircleJob(mark, paved, smooth, clear, torch, spacing,
                                         creator, platform));
 
-            var edges = NetworkEdges(marks);
+            var net = Whole(marks);
             var home = SpawnAt(marks);
             if (home.HasValue)
-                edges.Sort((a, b) => Touches(b, home.Value).CompareTo(Touches(a, home.Value)));
+                net.Edges.Sort((a, b) => Touches(b, home.Value).CompareTo(Touches(a, home.Value)));
 
-            foreach (var edge in edges)
+            foreach (var edge in net.Edges)
             {
                 job.Metres += Flat(edge.Key, edge.Value);
                 job.Queue.Add(RoadBetween(edge.Key, edge.Value, radius, width, paved, smooth,
@@ -452,8 +456,9 @@ namespace AstvardServerMod
             _runeJob = job;
             Instance.StartCoroutine(RunRuneJob(job));
 
-            var said = $"Кругов {job.Stones}, дорог {job.Metres / 1000f:0.0} км, "
-                       + $"заданий {job.Queue.Count}. Начал.";
+            var said = $"Кругов {job.Stones}, дорог {job.Metres / 1000f:0.0} км"
+                       + (net.Shortcuts > 0 ? $" (срезок {net.Shortcuts})" : "")
+                       + $", заданий {job.Queue.Count}. Начал.";
             SayAboutZone(sender, said);
             Log.LogInfo($"[AstvardServerMod] Runes: {said} Asked by {SenderName(sender)}.");
         }
@@ -626,14 +631,24 @@ namespace AstvardServerMod
             return marks;
         }
 
-        /// <summary>
-        /// Рёбра кратчайшей сети - тот же Прим, что считает её длину в отчёте, только с
-        /// запомненными парами.
-        /// </summary>
-        private static List<KeyValuePair<Vector3, Vector3>> TreeEdges(List<Vector3> spots)
+        /// <summary>Ребро сети: две метки номерами, а не парой координат.</summary>
+        private struct Link
         {
-            var edges = new List<KeyValuePair<Vector3, Vector3>>();
-            if (spots.Count < 2) return edges;
+            public int A;
+            public int B;
+        }
+
+        /// <summary>
+        /// Кратчайшая сеть по Приму - номерами, потому что дальше по ней считаются
+        /// расстояния **по дорогам**, а для этого нужен граф, а не список точек.
+        ///
+        /// Квадрат от числа меток: их сотни, а не тысячи, и городить что-то умнее значит
+        /// платить сложностью за время, которого и так нет.
+        /// </summary>
+        private static List<Link> TreeLinks(List<Vector3> spots)
+        {
+            var links = new List<Link>();
+            if (spots.Count < 2) return links;
 
             var inTree = new bool[spots.Count];
             var best = new float[spots.Count];
@@ -651,7 +666,7 @@ namespace AstvardServerMod
                 if (pick < 0 || best[pick] == float.MaxValue) break;
 
                 inTree[pick] = true;
-                if (pick != 0) edges.Add(new KeyValuePair<Vector3, Vector3>(spots[from[pick]], spots[pick]));
+                if (pick != 0) links.Add(new Link { A = from[pick], B = pick });
 
                 for (var i = 0; i < spots.Count; i++)
                 {
@@ -662,7 +677,7 @@ namespace AstvardServerMod
                 }
             }
 
-            return edges;
+            return links;
         }
 
         /// <summary>
@@ -722,20 +737,48 @@ namespace AstvardServerMod
             return ((long)x << 32) | (uint)z;
         }
 
+        /// <summary>Сеть целиком: что класть и что о ней сказать.</summary>
+        private sealed class Network
+        {
+            public readonly List<KeyValuePair<Vector3, Vector3>> Edges =
+                new List<KeyValuePair<Vector3, Vector3>>();
+
+            public int Shortcuts;
+            public float ShortcutMetres;
+            public float Metres;
+        }
+
         /// <summary>
-        /// Вся сеть: кратчайшее дерево по всем меткам плюс отдельные дороги от спавна.
+        /// Кратчайшее дерево по меткам, дороги от спавна и срезки.
         ///
         /// Одна функция и на отчёт, и на укладку - чтобы обещанные километры были теми
         /// самыми, которые лягут.
         /// </summary>
-        private static List<KeyValuePair<Vector3, Vector3>> NetworkEdges(List<Mark> marks)
+        private static Network Whole(List<Mark> marks)
         {
             var points = new List<Vector3>(marks.Count);
             foreach (var mark in marks) points.Add(mark.At);
 
-            var edges = TreeEdges(points);
-            AddSpawnRoads(marks, edges);
-            return edges;
+            var links = TreeLinks(points);
+            AddSpawnLinks(marks, points, links);
+
+            var was = links.Count;
+            AddShortcuts(points, links);
+
+            var net = new Network { Shortcuts = links.Count - was };
+            for (var i = 0; i < links.Count; i++)
+            {
+                var from = points[links[i].A];
+                var to = points[links[i].B];
+                var step = Flat(from, to);
+
+                net.Metres += step;
+                if (i >= was) net.ShortcutMetres += step;
+
+                net.Edges.Add(new KeyValuePair<Vector3, Vector3>(from, to));
+            }
+
+            return net;
         }
 
         /// <summary>
@@ -747,41 +790,156 @@ namespace AstvardServerMod
         /// </summary>
         private const int SpawnRoads = 3;
 
-        private static void AddSpawnRoads(List<Mark> marks,
-                                          List<KeyValuePair<Vector3, Vector3>> edges)
+        private static void AddSpawnLinks(List<Mark> marks, List<Vector3> points,
+                                          List<Link> links)
         {
-            var home = SpawnAt(marks);
-            if (!home.HasValue) return;
+            var home = -1;
+            for (var i = 0; i < marks.Count; i++)
+                if (marks[i].Kind == MarkKind.Spawn) { home = i; break; }
 
-            var at = home.Value;
+            if (home < 0) return;
 
             // Считаем те, что дерево уже дало: спавн, оказавшийся посреди камней, иначе
             // получил бы четыре дороги там, где просили три.
             var had = 0;
-            foreach (var edge in edges) had += Touches(edge, at);
+            foreach (var link in links)
+                if (link.A == home || link.B == home) had++;
 
-            var stones = new List<Mark>();
-            foreach (var mark in marks)
-                if (mark.Kind == MarkKind.Stone) stones.Add(mark);
+            var stones = new List<int>();
+            for (var i = 0; i < marks.Count; i++)
+                if (marks[i].Kind == MarkKind.Stone) stones.Add(i);
 
-            stones.Sort((a, b) => Flat(at, a.At).CompareTo(Flat(at, b.At)));
+            stones.Sort((a, b) => Flat(points[home], points[a])
+                                      .CompareTo(Flat(points[home], points[b])));
 
             foreach (var stone in stones)
             {
                 if (had >= SpawnRoads) break;
+                if (Joined(links, home, stone)) continue;
 
-                var twice = false;
-                foreach (var edge in edges)
-                {
-                    if ((edge.Key == at && edge.Value == stone.At)
-                        || (edge.Value == at && edge.Key == stone.At)) { twice = true; break; }
-                }
-
-                if (twice) continue;
-
-                edges.Add(new KeyValuePair<Vector3, Vector3>(at, stone.At));
+                links.Add(new Link { A = home, B = stone });
                 had++;
             }
+        }
+
+        private static bool Joined(List<Link> links, int a, int b)
+        {
+            foreach (var link in links)
+                if ((link.A == a && link.B == b) || (link.A == b && link.B == a)) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Срезки - там, где по готовой сети приходится далеко оббегать.
+        ///
+        /// Дерево - самая короткая сеть **целиком**, но не самый короткий путь между
+        /// двумя метками: до камня за холмом можно бежать через три ветки. Поэтому мера
+        /// здесь не «близко ли камни друг к другу», а «намного ли длиннее обход»: пара
+        /// судится и тем, во сколько раз путь по дорогам длиннее прямой, и тем, сколько
+        /// метров срезка сбережёт. Малый крюк никого не стоит объезжать дорогой, которой
+        /// никто не просил.
+        ///
+        /// Жадно и по одной, пересчитывая расстояния после каждой: одна срезка чинит
+        /// разом десятки пар, и без пересчёта сеть обросла бы десятком дорог в одном и
+        /// том же месте.
+        ///
+        /// Числа подобраны на карте той же плотности (141 метка на 12 км², дерево под
+        /// тридцать километров), а не на глаз. Вчетверо длиннее прямой значит, что срезка
+        /// сберегает **втрое больше собственной длины** - иначе дорога стоит дороже, чем
+        /// экономит. Полтора километра крюка - это уже «оббегать». Потолок в шесть штук
+        /// держит прибавку около пяти километров: желающих спрямиться всегда больше, чем
+        /// стоит строить, и останавливает именно он.
+        /// </summary>
+        private const float ShortcutTimes = 4f;
+
+        private const float ShortcutSaves = 1500f;
+
+        private const int ShortcutsMax = 6;
+
+        private static void AddShortcuts(List<Vector3> points, List<Link> links)
+        {
+            for (var added = 0; added < ShortcutsMax; added++)
+            {
+                var roads = Roads(points, links);
+
+                var most = 0f;
+                int pickA = -1, pickB = -1;
+
+                for (var a = 0; a < points.Count; a++)
+                for (var b = a + 1; b < points.Count; b++)
+                {
+                    var along = roads[a][b];
+                    if (along >= float.MaxValue) continue;
+
+                    var straight = Flat(points[a], points[b]);
+                    if (along < straight * ShortcutTimes) continue;
+
+                    var saves = along - straight;
+                    if (saves < ShortcutSaves || saves <= most) continue;
+
+                    most = saves;
+                    pickA = a;
+                    pickB = b;
+                }
+
+                if (pickA < 0) return;
+
+                links.Add(new Link { A = pickA, B = pickB });
+            }
+        }
+
+        /// <summary>
+        /// Расстояния по дорогам между всеми метками - Дейкстра из каждой.
+        ///
+        /// Куб от числа меток здесь не страшен: полторы сотни точек считаются за доли
+        /// секунды, и считается это по нажатию кнопки, а не в кадре.
+        /// </summary>
+        private static float[][] Roads(List<Vector3> points, List<Link> links)
+        {
+            var count = points.Count;
+
+            var near = new List<KeyValuePair<int, float>>[count];
+            for (var i = 0; i < count; i++) near[i] = new List<KeyValuePair<int, float>>();
+
+            foreach (var link in links)
+            {
+                var step = Flat(points[link.A], points[link.B]);
+                near[link.A].Add(new KeyValuePair<int, float>(link.B, step));
+                near[link.B].Add(new KeyValuePair<int, float>(link.A, step));
+            }
+
+            var all = new float[count][];
+
+            for (var from = 0; from < count; from++)
+            {
+                var best = new float[count];
+                var done = new bool[count];
+                for (var i = 0; i < count; i++) best[i] = float.MaxValue;
+
+                best[from] = 0f;
+
+                for (var step = 0; step < count; step++)
+                {
+                    var pick = -1;
+                    for (var i = 0; i < count; i++)
+                        if (!done[i] && (pick < 0 || best[i] < best[pick])) pick = i;
+
+                    if (pick < 0 || best[pick] == float.MaxValue) break;
+
+                    done[pick] = true;
+
+                    foreach (var hop in near[pick])
+                    {
+                        var far = best[pick] + hop.Value;
+                        if (far < best[hop.Key]) best[hop.Key] = far;
+                    }
+                }
+
+                all[from] = best;
+            }
+
+            return all;
         }
 
         private static Vector3? SpawnAt(List<Mark> marks)
