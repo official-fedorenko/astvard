@@ -33,6 +33,7 @@ const handleGameSync = require('./src/routes/gameSync');
 const handleGameBuilds = require('./src/routes/gameBuilds');
 const handleGameSorting = require('./src/routes/gameSorting');
 const { ensureSuperadmin } = require('./src/bootstrap');
+const { recheckNicknames, RECHECK_INTERVAL_MS } = require('./src/steamNames');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
 const seo = require('./src/seo');
@@ -529,6 +530,21 @@ if (require.main === module) {
     .catch((err) => logger.error('Опрос серверов не удался:', err.message));
   pollStatus();
   setInterval(pollStatus, STATUS_POLL_INTERVAL_MS);
+
+  // Ник из Steam спрашивается при заведении аккаунта и при следующем входе — то
+  // есть в те минуты, когда игрок здесь. Молчащий в ту минуту Steam оставляет
+  // заглушку «Викинг NNNNN», и она живёт, пока человек не зайдёт снова: на боевом
+  // так простояла восемь дней. Поэтому сайт переспрашивает сам.
+  const recheckNames = () => recheckNicknames()
+    .then(({ renamed }) => {
+      if (renamed.length) {
+        logger.info(`Ники из Steam: ${renamed.map((r) => `${r.from} → ${r.to}`).join(', ')}`);
+      }
+    })
+    .catch((err) => logger.error('Перепроверка ников не удалась:', err.message));
+  dbReady.then(recheckNames)
+    .catch((err) => logger.error('Перепроверка ников не начата:', err.message));
+  setInterval(recheckNames, RECHECK_INTERVAL_MS);
 
   server.listen(PORT, () => {
     console.log(`Админка успешно запущена на http://localhost:${PORT}`);

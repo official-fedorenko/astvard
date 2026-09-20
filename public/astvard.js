@@ -390,6 +390,24 @@ function bindAstvardHandlers() {
       return showToast(`Списки на сервере обновлены — ${permitted}, админов: ${r.admins ? r.admins.count : 0}`);
     }
 
+    // Ник из Steam спрашивается при заведении аккаунта и при входе, а сайт сам
+    // переспрашивает раз в шесть часов. Кнопка — чтобы не ждать эти шесть часов и
+    // чтобы услышать ответ: молчит Steam или имя уже занято.
+    if (e.target.closest('#recheckNamesBtn')) {
+      const res = await fetch('/api/admin/whitelist/recheck-names', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return showToast(data.message || 'Не получилось', 'error');
+
+      if (data.renamed && data.renamed.length) {
+        showToast(`Имена из Steam: ${data.renamed.map(r => `${r.from} → ${r.to}`).join(', ')}`);
+        return loadWhitelist();
+      }
+      if (!data.checked) return showToast('Заглушек нет: у всех настоящие имена из Steam');
+      return showToast(data.taken
+        ? `Steam молчит по ${data.silent}, ещё ${data.taken} — имя занято другим аккаунтом`
+        : `Steam не дал имени: ${data.checked}. Профиль закрыт или Steam недоступен`, 'error');
+    }
+
     if (e.target.closest('#permittedListBtn')) {
       return downloadList('/api/admin/whitelist/permittedlist', 'permittedlist.txt');
     }

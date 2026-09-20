@@ -456,6 +456,88 @@ test('админку в игре даёт только суперадмин и �
   assert.doesNotMatch(fsSync.readFileSync(path.join(SAVES_DIR, 'adminlist.txt'), 'utf8'), /76561198000000910/);
 });
 
+// === Заглушка вместо ника из Steam ===
+test('ники: переспрашиваем Steam только у заглушек, выбранное имя не трогаем', async (t) => {
+  const { recheckNicknames } = require('../src/steamNames');
+  const { fallbackNickname } = require('../src/steamProfile');
+
+  // Настоящий Steam тут ни при чём: проверяется решение, а не сеть. Живьём он
+  // проверен на боевом номере — 76561199768990066 отдаёт «Vallerii».
+  const ids = {
+    found: '76561198000000931',   // Steam помнит имя
+    silent: '76561198000000932',  // Steam молчит
+    taken: '76561198000000933',   // имя уже носит другой аккаунт
+    named: '76561198000000934'    // человек назвался сам
+  };
+  const insert = (username, steamId) => new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO users (username, role, steam_id, steam_id_verified) VALUES (?, 'User', ?, 1)",
+      [username, steamId], (err) => (err ? reject(err) : resolve())
+    );
+  });
+  const nameOf = (steamId) => new Promise((resolve, reject) => {
+    db.get('SELECT username FROM users WHERE steam_id = ?', [steamId],
+      (err, row) => (err ? reject(err) : resolve(row && row.username)));
+  });
+
+  // Прибираем за собой в любом случае, в том числе если тест упал: заглушка,
+  // оставленная здесь, в следующем тесте станет живым запросом к Steam.
+  t.after(() => new Promise((resolve, reject) => {
+    db.run('DELETE FROM users WHERE steam_id IN (?, ?, ?, ?)',
+      [ids.found, ids.silent, ids.taken, ids.named], (err) => (err ? reject(err) : resolve()));
+  }));
+
+  await insert(fallbackNickname(ids.found), ids.found);
+  await insert(fallbackNickname(ids.silent), ids.silent);
+  await insert(fallbackNickname(ids.taken), ids.taken);
+  await insert('Гуннар', ids.named);
+
+  const personas = {
+    [ids.found]: 'Vallerii',
+    [ids.silent]: null,
+    [ids.taken]: 'Гуннар',
+    [ids.named]: 'Имя, которого мы не спросим'
+  };
+  const asked = [];
+  const result = await recheckNicknames({
+    pauseMs: 0,
+    fetchName: async (steamId) => { asked.push(steamId); return personas[steamId]; }
+  });
+
+  assert.deepStrictEqual(asked.sort(), [ids.found, ids.silent, ids.taken].sort(),
+    'у того, кто назвался сам, Steam не спрашивают вовсе — переименовать его было бы бесцеремонно');
+  assert.strictEqual(result.checked, 3);
+  assert.deepStrictEqual(result.renamed.map((r) => r.to), ['Vallerii']);
+  assert.strictEqual(result.silent, 1);
+  assert.strictEqual(result.taken, 1);
+
+  assert.strictEqual(await nameOf(ids.found), 'Vallerii');
+  assert.strictEqual(await nameOf(ids.silent), fallbackNickname(ids.silent), 'молчание Steam ничего не меняет');
+  assert.strictEqual(await nameOf(ids.taken), fallbackNickname(ids.taken),
+    'занятое имя не крадётся у хозяина и не роняет весь обход');
+  assert.strictEqual(await nameOf(ids.named), 'Гуннар');
+
+});
+
+test('«Обновить ники» — кнопка админа, и без заглушек она никуда не ходит', async () => {
+  const player = await api('/api/auth/login', {
+    method: 'POST', ip: '10.41.1.1', body: { username: 'user', password: '1234qwer' }
+  });
+  assert.strictEqual(player.status, 200);
+  const denied = await api('/api/admin/whitelist/recheck-names', { method: 'POST', cookie: player.cookie });
+  assert.strictEqual(denied.status, 403);
+
+  const admin = await api('/api/auth/login', {
+    method: 'POST', ip: '10.41.1.2', body: { username: 'superadmin', password: '1234qwer' }
+  });
+  const res = await api('/api/admin/whitelist/recheck-names', { method: 'POST', cookie: admin.cookie });
+  assert.strictEqual(res.status, 200);
+  // Ноль заглушек — ноль запросов к Steam: тест не ходит в сеть, и это же значит,
+  // что обход спрашивает только про тех, о ком ещё нечего сказать.
+  assert.strictEqual(res.json.checked, 0);
+  assert.deepStrictEqual(res.json.renamed, []);
+});
+
 // === Мод забирает списки доступа по токену ===
 test('списки для мода отдаются только по верному токену и в виде, который читает игра', async () => {
   const lines = (text) => text.split(String.fromCharCode(10)).map((l) => l.trim()).filter(Boolean);

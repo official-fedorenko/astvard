@@ -3,6 +3,7 @@ const { sendJson, getJsonBody, logAction } = require('../utils');
 const { parseSteamId64, toPermittedListId, toAdminListIds } = require('../steamId');
 const { fetchPersonaName, fallbackNickname } = require('../steamProfile');
 const { applyGameLists, applyGameListsQuietly } = require('../gameLists');
+const { recheckNicknames } = require('../steamNames');
 
 const MAX_NOTE_LENGTH = 500;
 
@@ -297,6 +298,17 @@ async function applyNow(req, res, actor) {
   }
 }
 
+// The site re-asks Steam for placeholder nicknames on its own every few hours;
+// this is the same sweep run now, with an answer. An admin looking at «Викинг
+// 90066» wants to know which it is: Steam keeping quiet, or the turn not come yet.
+async function recheckNames(req, res, actor) {
+  const result = await recheckNicknames();
+  if (result.renamed.length) {
+    logAction(actor.username, `Обновил ники из Steam: ${result.renamed.map((r) => r.to).join(', ')}`);
+  }
+  sendJson(res, 200, { success: true, ...result });
+}
+
 module.exports = async function handleWhitelist(req, res, sessionUser, parsedUrl, method) {
   const pathname = parsedUrl.pathname;
 
@@ -312,6 +324,7 @@ module.exports = async function handleWhitelist(req, res, sessionUser, parsedUrl
   if (pathname === '/api/admin/whitelist' && method === 'GET') return list(req, res);
   if (pathname === '/api/admin/whitelist' && method === 'POST') return add(req, res, actor);
   if (pathname === '/api/admin/whitelist/apply' && method === 'POST') return applyNow(req, res, actor);
+  if (pathname === '/api/admin/whitelist/recheck-names' && method === 'POST') return recheckNames(req, res, actor);
   if (pathname === '/api/admin/whitelist/permittedlist' && method === 'GET') return permittedList(req, res);
   if (pathname === '/api/admin/whitelist/adminlist' && method === 'GET') return adminList(req, res);
 
