@@ -97,6 +97,7 @@ namespace AstvardServerMod
             BindTames(Config);
             BindGarden(Config);
             BindWindowSpots(Config);
+            BindServerNames(Config);
             BindChestZone(Config);
             BindBrewing(Config);
             BindWorldRates(Config);

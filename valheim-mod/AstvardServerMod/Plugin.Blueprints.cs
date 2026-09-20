@@ -560,6 +560,7 @@ namespace AstvardServerMod
             TickCurrencyLabel();
             TickStateHud();
             TickInfoText();
+            TickServerNames();
             TickChestLabels();
             TickArmedByShift();
             TickListScroll();
