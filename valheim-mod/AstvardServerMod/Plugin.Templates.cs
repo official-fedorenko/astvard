@@ -213,7 +213,6 @@ namespace AstvardServerMod
                    || state == StateSharedList || state == StatePlayerTemplates || state == StateAllowedList
                    || state == StateRunes || state == StateSortZones
                    || state == StateSortCrew || state == StateSortInvite
-                   || state == StateSortMark
                    || state == StateSpawners || state == StateSpawnerList
                    || state == StateBrews;
         }
@@ -239,8 +238,6 @@ namespace AstvardServerMod
                 case StateRunes:
                     return admin;
                 case StateSortZones:
-                    return RuleAllows("sort");
-                case StateSortMark:
                     return RuleAllows("sort");
                 case StateSpawners:
                 case StateSpawnerList:
@@ -270,7 +267,6 @@ namespace AstvardServerMod
                 case StateAllowedList: return AllowedTemplates().Count;
                 case StateRunes: return RosterShown().Count;
                 case StateSortZones: return SortingZones().Count;
-                case StateSortMark: return MarkChoices().Count;
                 case StateSpawners: return SpawnerGroupCount;
                 case StateSpawnerList: return SpawnerKindCount;
                 case StateSortCrew: return CrewZone() != null ? CrewZone().Members.Count : 0;

@@ -115,14 +115,11 @@ namespace AstvardServerMod
                 return;
             }
 
+            // Только полки. Флажки - «Личный», «Не для станций», «Снять пометку» - стоят
+            // в самой панели под «Назад»: они не полка, и в сетке полок их приходилось бы
+            // искать глазами среди четырнадцати похожих кнопок.
             MarkChoicesShown.Clear();
             foreach (var category in MarkChoices()) MarkChoicesShown.Add(category);
-
-            // Флажки идут последними и рядом: они про одно и то же действие, но не про
-            // полку, и мешать их в середину списка полок значило бы прятать.
-            MarkChoicesShown.Add(MarkPrivate);
-            MarkChoicesShown.Add(MarkHold);
-            MarkChoicesShown.Add(MarkNone);
 
             if (MarkChoicesShown.Count > MaxMarkButtons)
             {

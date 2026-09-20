@@ -1345,17 +1345,17 @@ namespace AstvardServerMod
             for (var i = 0; i < MaxTemplateButtons; i++)
                 SetActive(SortZoneButtons[i], listing && i < _shownSortZones);
 
-            // Полки и флажки переехали в своё окно по центру экрана, поэтому в самой
-            // панели на этой странице остаётся только «Назад» и подсказка: две стены
-            // одинаковых кнопок на одном экране хуже одной.
+            // Полки уехали в своё окно по центру экрана, а три флажка остались в панели,
+            // под «Назад»: ими помечают чаще всего, и держать их в двух местах разом -
+            // это две стены одинаковых кнопок на одном экране.
             var marking = allowed && MenuState == StateSortMark;
             SetActive(SortMarkHint, marking);
             for (var i = 0; i < SortMarkButtons.Length; i++)
                 SetActive(SortMarkButtons[i], false);
 
-            SetActive(SortPrivateButton, false);
-            SetActive(SortHoldButton, false);
-            SetActive(SortClearButton, false);
+            SetActive(SortPrivateButton, marking);
+            SetActive(SortHoldButton, marking);
+            SetActive(SortClearButton, marking);
 
             RefreshMarkWindow(marking);
         }
