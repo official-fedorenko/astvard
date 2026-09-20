@@ -149,8 +149,6 @@ module.exports = async function handleMedia(req, res, user, parsedUrl, method, {
 
       db.run("DELETE FROM media WHERE id = ?", [id], () => {
         const fileUrl = file.file_path;
-        db.run("UPDATE tools SET photo_url = NULL WHERE photo_url = ?", [fileUrl]);
-        db.run("DELETE FROM tool_photos WHERE photo_url = ?", [fileUrl]);
         db.run("UPDATE users SET avatar_url = NULL WHERE avatar_url = ?", [fileUrl]);
         db.run("UPDATE support_messages SET image_url = NULL WHERE image_url = ?", [fileUrl]);
         
