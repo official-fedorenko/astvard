@@ -70,6 +70,15 @@ module.exports = async function handleGameSorting(req, res, sessionUser, parsedU
       return sendJson(res, 200, { success: true, revision: result.revision, changed: result.changed });
     }
 
+    // Сброс: весь выбор разом обратно под решение мода. Тела у запроса нет — сбросить
+    // можно только всё, выборочный сброс уже есть и делается пачкой выше.
+    if (parsedUrl.pathname === '/api/admin/sorting/reset' && method === 'POST') {
+      const result = await sorting.resetChoices(actor.username);
+
+      logAction(actor, `Сортировка: снят выбор с предметов — ${result.changed}`);
+      return sendJson(res, 200, { success: true, revision: result.revision, changed: result.changed });
+    }
+
     // Сами категории: завести, переименовать, убрать. Номер при этом не меняется
     // никогда — он лежит в сундуках в игре, и сдвинуть его значит переписать их все.
     if (parsedUrl.pathname === '/api/admin/sorting/categories' && method === 'POST') {

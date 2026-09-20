@@ -1316,12 +1316,46 @@ async function sortingBulkApply() {
   }
 }
 
+/**
+ * Снять выбор со всех предметов. Полки остаются как есть.
+ *
+ * Сколько строк уедет, считается здесь же, по уже загруженной таблице: спрашивать это
+ * отдельным запросом незачем, а назвать число в вопросе обязательно — «сбросить всё» без
+ * числа соглашаются не глядя.
+ */
+async function sortingReset() {
+  const items = sortingState && Array.isArray(sortingState.items) ? sortingState.items : [];
+  const chosen = items.filter((item) => item.category !== null && item.category !== undefined).length;
+
+  if (!chosen) return showToast('Выбирать нечего: всё и так решает сервер');
+
+  const yes = await confirmDialog(
+    `Выбрано вручную: ${chosen}. Снять со всех и вернуть решение серверу? `
+    + 'Полки останутся как есть.',
+    { okText: 'Сбросить', danger: true }
+  );
+  if (!yes) return undefined;
+
+  try {
+    const res = await fetch('/api/admin/sorting/reset', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) return showToast(data.message || 'Не удалось сбросить', 'error');
+
+    sortingMarks.clear();
+    showToast(`Выбор снят: ${data.changed}`);
+    return loadSortingSection();
+  } catch (err) {
+    return showToast('Ошибка сети', 'error');
+  }
+}
+
 function bindSortingHandlers() {
   if (sortingHandlersBound) return;
   sortingHandlersBound = true;
 
   document.addEventListener('click', (e) => {
     if (e.target.closest('#sortingRefreshBtn')) return loadSortingSection();
+    if (e.target.closest('#sortingResetBtn')) return sortingReset();
     if (!sortingState) return undefined;
 
     const chip = e.target.closest('.shelf-chip');

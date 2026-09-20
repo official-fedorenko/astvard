@@ -1190,6 +1190,54 @@ test('сортировка: каталог от мода, пачка с сайт
   assert.ok(!(await sortingPull(0)).lines.some((line) => line.startsWith('$test_sort_hide=')));
 });
 
+test('сортировка: сброс снимает весь выбор, но не трогает полки', async () => {
+  await resetSorting();
+  const cookie = await sortingLogin();
+
+  assert.strictEqual((await sortingPush([
+    '#categories Разное|Материалы|Еда',
+    sortRow('$test_sort_hide', 'Оленья шкура', 'Material', 1),
+    sortRow('$test_sort_tar', 'Смола', 'Material', 1),
+    sortRow('$test_sort_honey', 'Мёд', 'Consumable', 2)
+  ])).status, 200);
+
+  // Своя полка заводится до сброса: она обязана его пережить. Номер полки лежит в
+  // самих сундуках в игре, и «сброс», уносящий полки, переименовал бы стену помеченных.
+  const shelf = await api('/api/admin/sorting/categories', {
+    method: 'POST', cookie, body: { title: 'Слитки' }
+  });
+  assert.strictEqual(shelf.status, 200);
+
+  assert.strictEqual((await api('/api/admin/sorting/items', {
+    method: 'PATCH', cookie,
+    body: { kinds: ['$test_sort_hide', '$test_sort_tar'], category: 2 }
+  })).json.changed, 2);
+
+  const reset = await api('/api/admin/sorting/reset', { method: 'POST', cookie });
+  assert.strictEqual(reset.status, 200);
+  assert.strictEqual(reset.json.changed, 2, 'снято ровно выбранное');
+
+  const after = await api('/api/admin/sorting', { cookie });
+  assert.strictEqual(sortingItem(after, '$test_sort_hide').category, null);
+  assert.strictEqual(sortingItem(after, '$test_sort_tar').category, null);
+  assert.strictEqual(after.json.revision, reset.json.revision, 'сброс — одна ревизия на всех');
+
+  // Полка на месте, и номер у неё прежний.
+  const kept = after.json.categoryRows.find((row) => row.id === shelf.json.id);
+  assert.ok(kept && !kept.removed, 'сброс выбора полки не уносит');
+  assert.strictEqual(kept.title, 'Слитки');
+
+  // Моду после сброса не уезжает ни одной строки выбора.
+  const pull = await sortingPull(0);
+  assert.ok(!pull.lines.some((line) => line.startsWith('$test_sort_hide=')));
+  assert.ok(!pull.lines.some((line) => line.startsWith('$test_sort_tar=')));
+
+  // Пустой сброс ревизию не двигает: мод перечитывал бы выбор ради ничего.
+  const again = await api('/api/admin/sorting/reset', { method: 'POST', cookie });
+  assert.strictEqual(again.json.changed, 0);
+  assert.strictEqual(again.json.revision, reset.json.revision, 'сбрасывать нечего — номер тот же');
+});
+
 test('сортировка: полки заводит админ, и номер у них вечный', async () => {
   await resetSorting();
   const cookie = await sortingLogin();

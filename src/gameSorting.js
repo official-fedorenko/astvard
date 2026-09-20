@@ -347,6 +347,40 @@ async function setCategories(kinds, category, by) {
 }
 
 /**
+ * Снять выбор со всех предметов разом: каждый возвращается под решение мода.
+ *
+ * Выбор копился месяцами и по одному, а набирается его быстро: половина этих строк
+ * повторяет то, что мод и так делает сам — он с некоторых пор узнаёт сырое у самих
+ * кухонь и знает по именам полторы сотни предметов. Разбирать такое по одному в списке
+ * на тысячу строк никто не станет, а лишняя строка не безобидна: она **перебивает** мод
+ * и молча держит старое решение, даже когда он давно решает лучше.
+ *
+ * Полки при этом не трогаются ни одной. Номер полки лежит в самих сундуках по всей базе,
+ * и «сбросить» его значило бы переименовать стену помеченных сундуков — это то, чего в
+ * этом файле нельзя делать ни при каких обстоятельствах. Здесь снимается только выбор
+ * предметов, а он нигде, кроме этой таблицы, не хранится.
+ *
+ * Ревизия одна на всё и берётся только когда есть что снимать: пустой сброс, поднявший
+ * номер, заставил бы мод перечитать выбор ради ничего.
+ */
+async function resetChoices(by) {
+  const now = await state();
+  const row = await get('SELECT count(*)::int AS chosen FROM game_sort_items WHERE category IS NOT NULL');
+  const chosen = row ? row.chosen : 0;
+
+  if (!chosen) return { revision: now.revision, changed: 0 };
+
+  const revision = await nextRevision();
+  const done = await run(
+    'UPDATE game_sort_items SET category = NULL, updated_at = now(), updated_by = ?,'
+    + ' revision = ? WHERE category IS NOT NULL',
+    [by || null, revision]
+  );
+
+  return { revision, changed: done.changes || chosen };
+}
+
+/**
  * Новая категория. Номер — следующий за самым большим из бывших, и он не переиспользует
  * номер убранной: в сундуках по всей базе лежат именно номера, и вернуть чужой значит
  * молча переименовать чужое добро.
@@ -426,6 +460,6 @@ async function removeCategory(id, removed, by) {
 }
 
 module.exports = {
-  pullText, pushCatalogue, overview, setCategory, setCategories,
+  pullText, pushCatalogue, overview, setCategory, setCategories, resetChoices,
   addCategory, renameCategory, removeCategory,
 };
