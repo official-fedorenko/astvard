@@ -25,11 +25,18 @@ async function playersBySteamId(steamIds) {
   if (!steamIds || !steamIds.length) return [];
   const placeholders = steamIds.map(() => '?').join(', ');
   const rows = await all(
-    `SELECT steam_id, username FROM users WHERE steam_id IN (${placeholders})`,
+    `SELECT steam_id, username, avatar_url FROM users WHERE steam_id IN (${placeholders})`,
     steamIds
   );
-  const byId = new Map(rows.map((r) => [String(r.steam_id), r.username]));
-  return steamIds.map((id) => ({ steam_id: id, username: byId.get(String(id)) || null }));
+  const byId = new Map(rows.map((r) => [String(r.steam_id), r]));
+  return steamIds.map((id) => {
+    const ours = byId.get(String(id));
+    return {
+      steam_id: id,
+      username: ours ? ours.username : null,
+      avatar_url: ours ? ours.avatar_url : null
+    };
+  });
 }
 
 const all = (sql, params = []) => new Promise((resolve, reject) => {
@@ -97,9 +104,11 @@ async function publicList(req, res) {
         players: s.players,
         max_players: s.max_players,
         last_checked_at: s.last_checked_at,
-        // Только имена и только наших: по номеру из лога человек узнаётся, но на
-        // открытой странице ему полагается ник, а не Steam ID.
-        players_online: game.players.filter((p) => p.username).map((p) => p.username),
+        // Только наши и только ник с картинкой: по номеру из лога человек
+        // узнаётся, но на открытой странице ему полагается ник, а не Steam ID.
+        players_online: game.players
+          .filter((p) => p.username)
+          .map((p) => ({ name: p.username, avatar: p.avatar_url || null })),
         save_number: game.saveNumber,
         game_version: game.gameVersion
       };

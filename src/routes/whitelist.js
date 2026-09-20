@@ -116,7 +116,7 @@ async function list(req, res) {
   const people = await all(
     `SELECT id, username, role, steam_id, steam_id_verified, whitelist_status,
             whitelist_requested_at, whitelist_decided_at, whitelist_note,
-            whitelist_request_note, server_admin
+            whitelist_request_note, server_admin, avatar_url
      FROM users
      WHERE steam_id IS NOT NULL
      ORDER BY (whitelist_status = 'pending') DESC,

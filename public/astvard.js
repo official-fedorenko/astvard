@@ -125,9 +125,14 @@ function whitelistRow(p, middleCell) {
   return `
     <tr data-id="${p.id}">
       <td class="mobile-primary">
-        <strong>${escapeHtml(p.username)}</strong>
-        <div class="row-note"><code>${escapeHtml(p.steam_id || '—')}</code></div>
-        ${manual}
+        <div class="player-line">
+          ${playerFace(p.username, p.avatar_url)}
+          <div>
+            <strong>${escapeHtml(p.username)}</strong>
+            <div class="row-note"><code>${escapeHtml(p.steam_id || '—')}</code></div>
+            ${manual}
+          </div>
+        </div>
       </td>
       <td class="mobile-hidden"><code>${escapeHtml(p.steam_id || '—')}</code></td>
       ${middleCell}

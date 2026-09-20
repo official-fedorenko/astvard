@@ -277,9 +277,10 @@ test('game info: руны и постройки читаются из файло
   // Один из игроков файла — наш: его должно быть видно под ником с сайта.
   await new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO users (username, email, password_hash, role, steam_id, steam_id_verified)
-       VALUES (?, ?, ?, 'User', ?, 1)`,
-      ['Скальд', 'skald@example.com', 'x', '76561198000000101'],
+      `INSERT INTO users (username, email, password_hash, role, steam_id, steam_id_verified, avatar_url)
+       VALUES (?, ?, ?, 'User', ?, 1, ?)`,
+      ['Скальд', 'skald@example.com', 'x', '76561198000000101',
+       'https://avatars.fastly.steamstatic.com/1111aaaa2222bbbb3333cccc4444dddd5555eeee_full.jpg'],
       (err) => (err ? reject(err) : resolve())
     );
   });
@@ -300,8 +301,11 @@ test('game info: руны и постройки читаются из файло
   // 5 рун по 30 минут плюс 600 секунд остатка = 2,67 часа.
   assert.strictEqual(ours.hours, 2.7);
 
+  assert.match(ours.avatar, /steamstatic\.com/, 'аватар своего игрока уходит наружу вместе с ником');
+
   const guest = players.find(p => !p.known);
   assert.strictEqual(guest.name, 'Гость', 'чужого игрока не называем: имя персонажа он нам не давал');
+  assert.strictEqual(guest.avatar, null, 'у гостя нет ни ника, ни лица: он нам ничего не давал');
   assert.ok(!('character' in guest), 'имени персонажа в ответе нет вовсе');
 
   const builds = res.json.builds;
@@ -456,6 +460,24 @@ test('админку в игре даёт только суперадмин и �
   assert.doesNotMatch(fsSync.readFileSync(path.join(SAVES_DIR, 'adminlist.txt'), 'utf8'), /76561198000000910/);
 });
 
+// Обход Steam спрашивает про каждую строку, которую сайт одевал сам, — то есть и
+// про тех, кого оставили прошлые тесты. Чтобы счёт значил что-то, прочие на время
+// одеваются «своим» аватаром, а после теста возвращаются как были. Заодно это
+// держит тесты вне сети: спрашивать становится не о ком.
+async function hideOthersFromTheSweep(t) {
+  const sql = (query, params = []) => new Promise((resolve, reject) => {
+    db.all(query, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+  });
+
+  const before = await sql('SELECT id, avatar_url FROM users WHERE steam_id IS NOT NULL');
+  await sql("UPDATE users SET avatar_url = '/avatars/test.svg' WHERE steam_id IS NOT NULL");
+  t.after(async () => {
+    for (const row of before) {
+      await sql('UPDATE users SET avatar_url = ? WHERE id = ?', [row.avatar_url, row.id]);
+    }
+  });
+}
+
 // === Заглушка вместо ника из Steam ===
 test('Steam: переспрашиваем только про своё — заглушку и свой же аватар', async (t) => {
   const { refreshFromSteam } = require('../src/steamRefresh');
@@ -491,16 +513,7 @@ test('Steam: переспрашиваем только про своё — за�
       (err) => (err ? reject(err) : resolve()));
   }));
 
-  // Строки прошлых тестов тоже без аватара, то есть обход спросил бы и про них —
-  // и счёт перестал бы что-либо значить. Одеваем их, чтобы в кадре остались наши.
-  await new Promise((resolve, reject) => {
-    db.run("UPDATE users SET avatar_url = '/avatars/test.svg' WHERE steam_id IS NOT NULL AND avatar_url IS NULL",
-      [], (err) => (err ? reject(err) : resolve()));
-  });
-  t.after(() => new Promise((resolve, reject) => {
-    db.run("UPDATE users SET avatar_url = NULL WHERE avatar_url = '/avatars/test.svg'",
-      [], (err) => (err ? reject(err) : resolve()));
-  }));
+  await hideOthersFromTheSweep(t);
 
   await insert(fallbackNickname(ids.found), ids.found);
   await insert(fallbackNickname(ids.silent), ids.silent);
@@ -543,15 +556,7 @@ test('Steam: переспрашиваем только про своё — за�
 test('«Обновить из Steam» — кнопка админа, и спрашивать без нужды она не ходит', async (t) => {
   // В сеть этот тест не ходит, и это часть проверки: пока ни одной заглушки и ни
   // одного нашего аватара в базе нет, спрашивать Steam не о чем.
-  const paint = (value) => new Promise((resolve, reject) => {
-    db.run('UPDATE users SET avatar_url = ? WHERE steam_id IS NOT NULL AND avatar_url IS NULL',
-      [value], (err) => (err ? reject(err) : resolve()));
-  });
-  await paint('/avatars/test.svg');
-  t.after(() => new Promise((resolve, reject) => {
-    db.run("UPDATE users SET avatar_url = NULL WHERE avatar_url = '/avatars/test.svg'",
-      [], (err) => (err ? reject(err) : resolve()));
-  }));
+  await hideOthersFromTheSweep(t);
 
   // Именно игроком, с настоящей кукой: без неё 403 значил бы «никто не вошёл» и
   // ничего не говорил бы о правах.

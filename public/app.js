@@ -1559,6 +1559,16 @@ function escapeHtml(text) {
 }
 
 // Имя игрока — его ник: ничего другого сайт о нём не знает.
+// Лицо игрока в таблицах панели: картинка, если она есть, иначе первая буква.
+// Строку с сорока никами глазами не прочитать, а по лицам она листается.
+function playerFace(name, avatarUrl) {
+  if (avatarUrl) {
+    return `<span class="player-face"><img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy"></span>`;
+  }
+  const letter = String(name || '?').trim().charAt(0).toUpperCase() || '?';
+  return `<span class="player-face">${escapeHtml(letter)}</span>`;
+}
+
 function userDisplayName(u) {
   return u.username;
 }
@@ -1601,9 +1611,10 @@ function renderUsers(filterQuery = '') {
       day: 'numeric', month: 'long', year: 'numeric'
     });
     const name = userDisplayName(u);
-    const primaryCell = name !== u.username
+    const naming = name !== u.username
       ? `<strong>${escapeHtml(name)}</strong><div style="font-size:12px;color:hsl(var(--text-muted));">${escapeHtml(u.username)}</div>`
       : `<strong>${escapeHtml(name)}</strong>`;
+    const primaryCell = `<div class="player-line">${playerFace(name, u.avatar_url)}<div>${naming}</div></div>`;
 
     tr.innerHTML = `
       <td class="hide-mobile">${u.id}</td>

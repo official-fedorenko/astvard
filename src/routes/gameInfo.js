@@ -28,20 +28,21 @@ const all = (sql, params = []) => new Promise((resolve, reject) => {
 const NAME_LOOKUP_CHUNK = 500;
 
 /**
- * Ник на сайте по номеру Steam. Номер наружу не уходит ни в каком виде: он нужен
- * только чтобы узнать своего игрока, а страница открыта всему интернету.
+ * Ник и аватар на сайте по номеру Steam. Номер наружу не уходит ни в каком виде:
+ * он нужен только чтобы узнать своего игрока, а страница открыта всему интернету.
+ * В адресе картинки его тоже нет — там хеш самой картинки.
  */
-async function namesBySteamId(steamIds) {
+async function facesBySteamId(steamIds) {
   const found = new Map();
   for (let i = 0; i < steamIds.length; i += NAME_LOOKUP_CHUNK) {
     const chunk = steamIds.slice(i, i + NAME_LOOKUP_CHUNK);
     if (!chunk.length) continue;
     const placeholders = chunk.map(() => '?').join(', ');
     const rows = await all(
-      `SELECT steam_id, username FROM users WHERE steam_id IN (${placeholders})`,
+      `SELECT steam_id, username, avatar_url FROM users WHERE steam_id IN (${placeholders})`,
       chunk
     );
-    rows.forEach((r) => found.set(String(r.steam_id), r.username));
+    rows.forEach((r) => found.set(String(r.steam_id), r));
   }
   return found;
 }
@@ -53,7 +54,7 @@ async function gameInfoBody(res) {
     readMinutesPerRune(MOD_CFG_FILE)
   ]);
 
-  const names = await namesBySteamId(purses.map((p) => p.steamId));
+  const faces = await facesBySteamId(purses.map((p) => p.steamId));
 
   // Наигранное время считается из рун: мод начисляет руну за каждые
   // MinutesPerRune минут в мире и хранит остаток часа. Счёт верен, пока ставку не
@@ -61,12 +62,16 @@ async function gameInfoBody(res) {
   // задним числом неоткуда. Поэтому цифра честно называется «примерно».
   const players = purses.map((p) => {
     const seconds = p.runes * minutesPerRune * 60 + p.seconds;
-    const known = names.has(p.steamId);
+    const known = faces.has(p.steamId);
+    const ours = known ? faces.get(p.steamId) : null;
     return {
       // Имя показывается только своим: ник на сайте человек дал нам сам. Имя
       // персонажа чужого игрока видно на сервере, но это не повод писать его на
       // странице, открытой всему интернету, — так же решает и список серверов.
-      name: known ? names.get(p.steamId) : 'Гость',
+      name: known ? ours.username : 'Гость',
+      // Аватар — на тех же правах, что и ник: он есть только у своего игрока, и
+      // только тот, который тот сам себе поставил или взял из Steam.
+      avatar: known ? (ours.avatar_url || null) : null,
       runes: p.runes,
       hours: Math.round((seconds / 3600) * 10) / 10,
       known

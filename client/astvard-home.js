@@ -5,6 +5,21 @@
 // Карточка собрана классами страницы (.article-card, .article-date, .article-title,
 // .article-content) — теми же, что у статей в этой же сетке; своё здесь только то,
 // чего у статей нет: состояние сервера и список тех, кто сейчас в игре.
+// Лицо игрока: картинка из Steam, если она у него есть, иначе первая буква ника.
+// Одна на обе половины страницы — и на список тех, кто в игре, и на ведомость рун.
+// Картинка идёт прямо с площадки Steam, своей копии сайт не держит; у гостя её нет
+// вовсе, как нет и ника, — ему достаётся буква «Г».
+function astvardFace(name, avatar) {
+  const safe = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+  if (avatar) {
+    return `<span class="player-face"><img src="${safe(avatar)}" alt="" loading="lazy"></span>`;
+  }
+  const letter = safe(String(name || '?').trim().charAt(0).toUpperCase() || '?');
+  return `<span class="player-face player-face--letter">${letter}</span>`;
+}
+
 (async function loadPublicServers() {
   const grid = document.getElementById('serversGrid');
   if (!grid) return;
@@ -19,9 +34,11 @@
   const playersLine = (s) => {
     if (!s.is_online) return '';
     if (s.players_online && s.players_online.length) {
-      const named = s.players_online.map(escape).join(', ');
+      const named = s.players_online
+        .map((p) => `<span class="player-chip">${astvardFace(p.name, p.avatar)}${escape(p.name)}</span>`)
+        .join('');
       const rest = (s.players ?? s.players_online.length) - s.players_online.length;
-      return `<p class="server-players">В игре: ${named}${rest > 0 ? ` и ещё ${rest}` : ''}</p>`;
+      return `<p class="server-players">В игре: ${named}${rest > 0 ? `<span class="player-rest">и ещё ${rest}</span>` : ''}</p>`;
     }
     // Ноль игроков — это тоже ответ, и лучше сказать его словами.
     return s.players === 0 ? '<p class="server-players">Сейчас никого — заходи первым</p>' : '';
@@ -112,6 +129,7 @@
       ? `<ol class="rune-board">${players.map((p, i) => `
           <li class="rune-row">
             <span class="rune-place">${i + 1}</span>
+            ${astvardFace(p.name, p.avatar)}
             <span class="rune-name">${escape(p.name)}</span>
             <span class="rune-count">${escape(p.runes)} ${plural(p.runes, 'руна', 'руны', 'рун')}</span>
             <span class="rune-hours">${escape(hoursLabel(p.hours))}</span>
