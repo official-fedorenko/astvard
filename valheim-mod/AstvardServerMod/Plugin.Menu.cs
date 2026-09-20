@@ -815,6 +815,8 @@ namespace AstvardServerMod
             CreateSortPageWidgets(gui);
 
             CreateMarkWindow(gui);
+
+            CreateSortInfoWindow(gui);
             CreateChestZoneWidgets(gui);
             CreateChestRowWidgets(gui);
             CreateHelperWidgets(gui);

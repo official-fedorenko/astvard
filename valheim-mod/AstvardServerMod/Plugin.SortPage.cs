@@ -13,6 +13,8 @@ namespace AstvardServerMod
 
         internal static GameObject SortSetupButton;
 
+        internal static GameObject SortInfoButton;
+
         internal static GameObject SortOnButton;
 
         internal static GameObject SortLabelsButton;
@@ -130,6 +132,8 @@ namespace AstvardServerMod
                 MenuState = StateSortSetup;
                 RefreshMenu();
             });
+
+            SortInfoButton = MakeButton(gui, "", ToggleSortInfo);
 
             SortHint = MakeText(gui, "");
 
@@ -1216,9 +1220,6 @@ namespace AstvardServerMod
                     Sorting.NearReach)
                 : -1;
 
-            var hint = SortHint != null ? SortHint.GetComponentInChildren<Text>(true) : null;
-            if (hint != null)
-                hint.text = SortingWhy() + $"{NEWLINE}{NEWLINE}" + GardenWhy();
 
             var placeHint = SortPlaceHint != null ? SortPlaceHint.GetComponentInChildren<Text>(true) : null;
             if (placeHint != null)
@@ -1294,8 +1295,11 @@ namespace AstvardServerMod
             SetActive(SortingButton, allowed && MenuState == StateFeatures);
 
             var page = allowed && MenuState == StateSorting;
-            SetActive(SortHint, page);
+            SetActive(SortHint, false);
             SetActive(SortSetupButton, page);
+            SetActive(SortInfoButton, page);
+            SetLabel(SortInfoButton, SortInfoShown ? "Информация: скрыть" : "Информация");
+            RefreshSortInfo(page && SortInfoShown);
 
             // Сама работа осталась на странице сортировки, а всё, что настраивают один
             // раз и забывают, - за кнопкой «Настройки». Там их было двенадцать в столбик

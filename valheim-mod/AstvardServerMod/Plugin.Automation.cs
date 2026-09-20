@@ -199,6 +199,12 @@ namespace AstvardServerMod
                 kinds.Append(pair.Key).Append(": ").Append(pair.Value);
             }
 
+            ZoneStationsRu = $"Станции зоны: плавилен {smelters} (наших {mine}), "
+                             + $"огней {fires}, голодных зверей {tames}."
+                             + (smelters > mine
+                                 ? " Остальные считает другой клиент — он их и кормит."
+                                 : "");
+
             var said = $"smelters {smelters} (mine {mine}), fires {fires}, "
                        + $"hungry beasts {tames}{kinds}";
             if (said == _zoneStationsSaid) return;

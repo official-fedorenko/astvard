@@ -419,6 +419,7 @@ namespace AstvardServerMod
         {
             if (Plugin.Panel != null) Plugin.Panel.SetActive(false);
             if (Plugin.MarkPanel != null) Plugin.MarkPanel.SetActive(false);
+            if (Plugin.SortInfoPanel != null) Plugin.SortInfoPanel.SetActive(false);
             // next open starts collapsed at the root menu
             Plugin.MenuState = 0;
             Plugin.IsInfoShown = false;
