@@ -137,10 +137,18 @@ namespace AstvardServerMod
                                              MarkChoicesShown.Count - MaxMarkButtons);
             }
 
-            // Столбцов столько, чтобы окно вышло шире, чем выше: столбик из двадцати кнопок
-            // - это то, от чего уходили.
+            // Столбцов столько, чтобы окно росло **вширь, а не ввысь**: столбик из двадцати
+            // кнопок - это ровно то, от чего уходили, а высота упирается в экран раньше
+            // ширины. Ступенями, а не формулой: сетка, меняющая ширину на каждой новой
+            // полке, выглядит как дрожание.
             if (_markGrid != null)
-                _markGrid.constraintCount = MarkChoicesShown.Count > 12 ? 4 : 3;
+            {
+                var count = MarkChoicesShown.Count;
+                _markGrid.constraintCount = count > 36 ? 6
+                    : count > 24 ? 5
+                    : count > 12 ? 4
+                    : 3;
+            }
 
             for (var i = 0; i < MaxMarkButtons; i++)
             {
