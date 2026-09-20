@@ -553,10 +553,12 @@ test('«Обновить из Steam» — кнопка админа, и спра
       [], (err) => (err ? reject(err) : resolve()));
   }));
 
+  // Именно игроком, с настоящей кукой: без неё 403 значил бы «никто не вошёл» и
+  // ничего не говорил бы о правах.
   const player = await api('/api/auth/login', {
-    method: 'POST', ip: '10.41.1.1', body: { username: 'user', password: '1234qwer' }
+    method: 'POST', ip: '10.41.1.1', body: { username: 'Скальди', password: 'password123' }
   });
-  assert.strictEqual(player.status, 200);
+  assert.ok(player.cookie, 'вход игрока должен дать куку');
   const denied = await api('/api/admin/whitelist/steam-refresh', { method: 'POST', cookie: player.cookie });
   assert.strictEqual(denied.status, 403);
 
@@ -570,6 +572,47 @@ test('«Обновить из Steam» — кнопка админа, и спра
   assert.strictEqual(res.json.checked, 0);
   assert.deepStrictEqual(res.json.renamed, []);
   assert.deepStrictEqual(res.json.dressed, []);
+});
+
+test('«Взять из Steam» просит сперва привязать Steam, а чужим не отвечает вовсе', async () => {
+  const guest = await api('/api/cabinet/avatar/steam', { method: 'POST' });
+  assert.strictEqual(guest.status, 401);
+
+  // У демо-аккаунта номера Steam нет, и в этом весь ответ: до сети дело не доходит,
+  // поэтому тест не ходит в настоящий Steam. Берём «admin», а не «user»: тому тест
+  // 2FA включает двухфакторку, и вход отдаёт уже не куку, а требование кода.
+  const player = await api('/api/auth/login', {
+    method: 'POST', ip: '10.42.1.1', body: { username: 'admin', password: '1234qwer' }
+  });
+  assert.ok(player.cookie, 'вход должен дать куку, иначе проверка ниже ничего не значит');
+
+  const res = await api('/api/cabinet/avatar/steam', { method: 'POST', cookie: player.cookie });
+  assert.strictEqual(res.status, 400);
+  assert.match(res.json.message, /Steam/);
+});
+
+test('аватар в профиле: принимается свой и из Steam, чужая строка — нет', async () => {
+  const player = await api('/api/auth/login', {
+    method: 'POST', ip: '10.42.1.2', body: { username: 'admin', password: '1234qwer' }
+  });
+  assert.ok(player.cookie, 'вход должен дать куку, иначе проверка ниже ничего не значит');
+  const save = (avatar_url) => api('/api/cabinet/profile', {
+    method: 'PUT', cookie: player.cookie, body: { avatar_url }
+  });
+
+  assert.strictEqual((await save('/avatars/cat.svg')).status, 200);
+  const steam = 'https://avatars.fastly.steamstatic.com/aaaa1111bbbb2222cccc3333dddd4444eeee5555_full.jpg';
+  assert.strictEqual((await save(steam)).status, 200);
+
+  // Строка из профиля игрока доезжает до браузера админа в списке обращений и
+  // встаёт там в атрибут без экранирования — поэтому её не пускают на запись.
+  for (const bad of ['https://evil.example.com/a.jpg', '" onerror="alert(1)', 'javascript:alert(1)']) {
+    const res = await save(bad);
+    assert.strictEqual(res.status, 400, `такой адрес принимать нельзя: ${bad}`);
+  }
+
+  const me = await api('/api/cabinet/me', { cookie: player.cookie });
+  assert.strictEqual(me.json.user.avatar_url, steam, 'в базе остался последний годный');
 });
 
 // === Мод забирает списки доступа по токену ===

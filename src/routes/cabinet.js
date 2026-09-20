@@ -2,6 +2,7 @@ const { sendJson, getJsonBody, logAction } = require('../utils');
 const { db, verifyPassword, hashPassword } = require('../../db');
 const { nicknameError } = require('../nickname');
 const { safeAvatarUrl } = require('../avatar');
+const { fetchProfile } = require('../steamProfile');
 
 function getMe(req, res, user) {
   db.get(
@@ -133,6 +134,42 @@ async function updateProfile(req, res, user) {
   }
 }
 
+/**
+ * «Взять из Steam» в кабинете.
+ *
+ * Сайт и сам ставит аватар из Steam и держит его свежим, но только пока он там
+ * наш: выбрал человек стандартный или загрузил свой — обход к нему больше не
+ * подходит. Обратной дороги от этого не было вовсе, и эта кнопка и есть она.
+ *
+ * Ответ здесь важнее самой картинки: Steam молчит по разным причинам — закрытый
+ * профиль, номер, вписанный админом с опечаткой, недоступный Steam, — и все они
+ * снаружи выглядят как «кнопка не работает».
+ */
+function takeSteamAvatar(req, res, user) {
+  db.get('SELECT id, steam_id FROM users WHERE id = ?', [user.id], async (err, row) => {
+    if (err || !row) return sendJson(res, 404, { success: false, message: 'Пользователь не найден' });
+    if (!row.steam_id) {
+      return sendJson(res, 400, {
+        success: false,
+        message: 'Сначала войди через Steam — брать аватар пока неоткуда'
+      });
+    }
+
+    const profile = await fetchProfile(row.steam_id);
+    if (!profile.avatar) {
+      return sendJson(res, 502, {
+        success: false,
+        message: 'Steam не дал картинку: профиль закрыт или Steam сейчас недоступен'
+      });
+    }
+
+    db.run('UPDATE users SET avatar_url = ? WHERE id = ?', [profile.avatar, row.id], (e2) => {
+      if (e2) return sendJson(res, 500, { success: false, message: 'Не удалось сохранить аватар' });
+      sendJson(res, 200, { success: true, avatar_url: profile.avatar });
+    });
+  });
+}
+
 module.exports = async function handleCabinet(req, res, user, parsedUrl, method) {
   if (!user) {
     return sendJson(res, 401, { success: false, message: 'Неавторизован' });
@@ -142,6 +179,7 @@ module.exports = async function handleCabinet(req, res, user, parsedUrl, method)
 
   if (pathname === '/api/cabinet/me' && method === 'GET') return getMe(req, res, user);
   if (pathname === '/api/cabinet/profile' && method === 'PUT') return updateProfile(req, res, user);
+  if (pathname === '/api/cabinet/avatar/steam' && method === 'POST') return takeSteamAvatar(req, res, user);
 
   return sendJson(res, 404, { success: false, message: 'API endpoint не найден' });
 };

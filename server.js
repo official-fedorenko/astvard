@@ -270,7 +270,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Cabinet (свой профиль — нужен cabinet.html после входа)
-  if (pathname === '/api/cabinet/me' || pathname === '/api/cabinet/profile') {
+  if (pathname === '/api/cabinet/me' || pathname === '/api/cabinet/profile'
+      || pathname === '/api/cabinet/avatar/steam') {
     return handleCabinet(req, res, user, parsedUrl, method);
   }
 

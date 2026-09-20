@@ -678,6 +678,7 @@
               </div>
               <button type="button" id="chooseAvatarBtn" style="padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Выбрать</button>
               <button type="button" id="uploadAvatarBtn" style="padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Загрузить фото</button>
+              <button type="button" id="steamAvatarBtn" style="display:none; padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Взять из Steam</button>
               <input type="file" id="avatarFileInput" accept="image/*" style="display:none;">
             </div>
           </div>
@@ -1071,6 +1072,11 @@
       setAvatar(heroAvatar, user.avatar_url, letter);
       if (avatarPreview) setAvatar(avatarPreview, user.avatar_url, letter);
 
+      // Брать оттуда нечего, пока Steam не привязан: кнопка, которая всегда
+      // отвечает «сначала войди через Steam», — это кнопка ни о чём.
+      const steamAvatarBtn = document.getElementById('steamAvatarBtn');
+      if (steamAvatarBtn) steamAvatarBtn.style.display = user.steam_id ? '' : 'none';
+
       document.getElementById('navUsername').textContent = user.username;
       document.getElementById('heroUsername').textContent = user.username;
       document.getElementById('heroEmail').textContent = user.email;
@@ -1248,6 +1254,33 @@
           uploadAvatarBtn.disabled = false;
           uploadAvatarBtn.textContent = 'Загрузить фото';
           avatarFileInput.value = '';
+        }
+      };
+    }
+
+    // Аватар из Steam сайт ставит сам и держит свежим, пока он там наш. Выбрал
+    // человек свой — обход к нему больше не подходит, и эта кнопка единственная
+    // дорога обратно.
+    const steamAvatarBtn = document.getElementById('steamAvatarBtn');
+    if (steamAvatarBtn) {
+      steamAvatarBtn.onclick = async () => {
+        const label = steamAvatarBtn.textContent;
+        steamAvatarBtn.disabled = true;
+        steamAvatarBtn.textContent = 'Спрашиваем Steam...';
+        try {
+          const res = await fetch('/api/cabinet/avatar/steam', { method: 'POST' });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            showToast('Аватарка взята из Steam', 'success');
+            await loadProfile();
+          } else {
+            showToast(data.message || 'Не получилось', 'error');
+          }
+        } catch (e) {
+          showToast('Ошибка сети', 'error');
+        } finally {
+          steamAvatarBtn.disabled = false;
+          steamAvatarBtn.textContent = label;
         }
       };
     }
