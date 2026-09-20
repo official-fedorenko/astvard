@@ -63,9 +63,12 @@ namespace AstvardServerMod
 
             if (!open)
             {
+                RememberWindow(AboutPanel, _aboutSpot);
                 AboutPanel.SetActive(false);
                 return;
             }
+
+            if (!AboutPanel.activeSelf) PlaceWindow(AboutPanel, _aboutSpot);
 
             // Добираться до текста надо через скрытый объект: кнопка переключает флаг
             // раньше, чем окно включится, и без `true` поиск возвращал бы null, а правка

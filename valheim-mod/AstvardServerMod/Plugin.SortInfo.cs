@@ -136,9 +136,12 @@ namespace AstvardServerMod
 
             if (!open)
             {
+                RememberWindow(SortInfoPanel, _infoSpot);
                 SortInfoPanel.SetActive(false);
                 return;
             }
+
+            if (!SortInfoPanel.activeSelf) PlaceWindow(SortInfoPanel, _infoSpot);
 
             var text = SortInfoText != null
                 ? SortInfoText.GetComponentInChildren<Text>(true)

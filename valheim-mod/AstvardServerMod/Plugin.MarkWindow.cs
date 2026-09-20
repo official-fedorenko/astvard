@@ -111,9 +111,12 @@ namespace AstvardServerMod
 
             if (!open)
             {
+                RememberWindow(MarkPanel, _markSpot);
                 MarkPanel.SetActive(false);
                 return;
             }
+
+            if (!MarkPanel.activeSelf) PlaceWindow(MarkPanel, _markSpot);
 
             // Только полки. Флажки - «Личный», «Не для станций», «Снять пометку» - стоят
             // в самой панели под «Назад»: они не полка, и в сетке полок их приходилось бы
