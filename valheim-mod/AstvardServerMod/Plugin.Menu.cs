@@ -96,6 +96,7 @@ namespace AstvardServerMod
         private const int StateBrews = 78;      // что варить и сколько держать
         private const int StateBrewOne = 79;    // один напиток: заказ и его цена
         private const int StateTimeSkip = 80;   // на сколько игровых часов сдвинуть мир
+        private const int StateSortBeds = 81;   // сколько грядок держать в зоне
 
         internal static GameObject Panel;
 
@@ -1106,7 +1107,8 @@ namespace AstvardServerMod
                 else if (MenuState == StateSortSlots) MenuState = StateSetupSort;
                 else if (MenuState == StateSortCoal
                          || MenuState == StateSortFood) MenuState = StateSetupWork;
-                else if (MenuState == StateSortCrop) MenuState = StateSetupGarden;
+                else if (MenuState == StateSortCrop
+                         || MenuState == StateSortBeds) MenuState = StateSetupGarden;
                 else if (MenuState == StateSortLift) MenuState = StateSetupLabels;
                 else if (MenuState == StateSetupSort || MenuState == StateSetupWork
                          || MenuState == StateSetupGarden

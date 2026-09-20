@@ -3,12 +3,12 @@ using AstvardServerMod;
 namespace AstvardServerMod.Tests;
 
 /// <summary>
-/// Категории: восемь встроенных и те, что заводит админ на сайте.
+/// Категории: встроенные в мод и те, что заводит админ на сайте.
 ///
 /// The number of a category is what lies inside the chest, so these tests are mostly
 /// about one thing: that a number never comes to mean something else. A new category
 /// takes the next number, one taken away leaves a hole rather than pulling its
-/// neighbours down a place, and the built-in eight are the mod's own - what the site
+/// neighbours down a place, and the built-in ones are the mod's own - what the site
 /// says about them is not listened to at all, because the mod sorts by them when
 /// nobody has said anything about an item.
 /// </summary>
@@ -28,7 +28,7 @@ public class CategoryTests
     }
 
     [Fact]
-    public void TheBuiltInEightAreNotTheSitesToRename()
+    public void TheBuiltInOnesAreNotTheSitesToRename()
     {
         // Решение хозяина: встроенные зашиты в мод. По ним мод раскладывает сам, когда о
         // предмете ничего не сказано, так что «Разное», переименованное снаружи в «Хлам»,
@@ -47,11 +47,11 @@ public class CategoryTests
     [Fact]
     public void ACategoryOfOnesOwnIsRenamedFreely()
     {
-        Sorting.ReadCategories("14=Слитки");
-        Assert.Equal("Слитки", Sorting.Title(14));
+        Sorting.ReadCategories("15=Уголь");
+        Assert.Equal("Уголь", Sorting.Title(15));
 
-        Sorting.ReadCategories("14=Металл");
-        Assert.Equal("Металл", Sorting.Title(14));
+        Sorting.ReadCategories("15=Топливо");
+        Assert.Equal("Топливо", Sorting.Title(15));
 
         Builtin();
     }
@@ -59,11 +59,11 @@ public class CategoryTests
     [Fact]
     public void ANewCategoryTakesTheNextNumber()
     {
-        Sorting.ReadCategories("14=Слитки");
+        Sorting.ReadCategories("15=Уголь");
 
-        Assert.True(Sorting.IsCategory(14));
-        Assert.Equal("Слитки", Sorting.Title(14));
-        Assert.Equal(15, Sorting.Count);
+        Assert.True(Sorting.IsCategory(15));
+        Assert.Equal("Уголь", Sorting.Title(15));
+        Assert.Equal(16, Sorting.Count);
 
         Builtin();
     }
@@ -71,15 +71,15 @@ public class CategoryTests
     [Fact]
     public void ACategoryTakenAwayLeavesItsPlaceEmpty()
     {
-        Sorting.ReadCategories("14=Слитки;15=Уголь");
-        Assert.True(Sorting.IsCategory(15));
+        Sorting.ReadCategories("15=Уголь;16=Смола");
+        Assert.True(Sorting.IsCategory(16));
 
-        // Четырнадцатую убрали: пятнадцатая обязана остаться пятнадцатой.
-        Sorting.ReadCategories("15=Уголь");
+        // Пятнадцатую убрали: шестнадцатая обязана остаться шестнадцатой.
+        Sorting.ReadCategories("16=Смола");
 
-        Assert.False(Sorting.IsCategory(14));
-        Assert.True(Sorting.IsCategory(15));
-        Assert.Equal("Уголь", Sorting.Title(15));
+        Assert.False(Sorting.IsCategory(15));
+        Assert.True(Sorting.IsCategory(16));
+        Assert.Equal("Смола", Sorting.Title(16));
 
         Builtin();
     }
@@ -124,14 +124,14 @@ public class CategoryTests
     [Fact]
     public void TheListSurvivesBeingPackedAndReadBack()
     {
-        Sorting.ReadCategories("15=Уголь");
+        Sorting.ReadCategories("16=Смола");
         var packed = Sorting.PackCategories();
 
         Sorting.ReadCategories(packed);
 
         Assert.Equal(packed, Sorting.PackCategories());
-        Assert.Equal("Уголь", Sorting.Title(15));
-        Assert.False(Sorting.IsCategory(14));
+        Assert.Equal("Смола", Sorting.Title(16));
+        Assert.False(Sorting.IsCategory(15));
 
         Builtin();
     }

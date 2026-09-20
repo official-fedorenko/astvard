@@ -45,8 +45,12 @@ public class LootTests
         Assert.Equal(Sorting.Meads, Sorting.KnownFor("$item_barleywinebase"));
         Assert.Equal("Медовухи", Sorting.Title(Sorting.Meads));
 
-        // Слиток - не руда: его возят из плавильни, а не в неё.
-        Assert.Equal(-1, Sorting.KnownFor("$item_bronze"));
+        // Слиток - не руда: его возят из плавильни, а не в неё, и полка у него своя.
+        // Золото здесь ловушка: `$item_gold` - это слиток «Кровавое золото», а руда к
+        // нему называется `$item_goldore`, «Окаменевшие ткани».
+        Assert.Equal(Sorting.Ingots, Sorting.KnownFor("$item_bronze"));
+        Assert.Equal(Sorting.Ingots, Sorting.KnownFor("$item_gold"));
+        Assert.Equal(Sorting.Ore, Sorting.KnownFor("$item_goldore"));
         Assert.Equal(-1, Sorting.KnownFor("$item_stone"));
     }
 

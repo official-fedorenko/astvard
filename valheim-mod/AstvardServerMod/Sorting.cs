@@ -27,7 +27,7 @@ namespace AstvardServerMod
         public static readonly string[] CategoryTitles =
         {
             "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи", "Добыча",
-            "Руда", "Дерево", "Семена", "Медовухи", "Шкуры", "Ценное"
+            "Руда", "Дерево", "Семена", "Медовухи", "Шкуры", "Ценное", "Слитки"
         };
 
         /// <summary>
@@ -90,6 +90,21 @@ namespace AstvardServerMod
         public const int Valuables = 13;
 
         /// <summary>
+        /// Слитки: то, что вышло из плавильни.
+        ///
+        /// Для игры это такой же «материал», как камень и смола, - и лежали они в
+        /// «Материалах», вперемешку с гвоздями и углём, посреди самой большой полки базы.
+        /// Руду от них отделили давно и по той же причине, по которой хозяин попросил и
+        /// эту: руду возят **в** плавильню, слитки **из** неё, и ходят к ним с разных
+        /// сторон.
+        ///
+        /// Номер новый, четырнадцатый, а не чей-нибудь освободившийся: в сундуках по базе
+        /// лежит именно он. Свободен он был и здесь, и на боевом - проверено запросом к
+        /// обеим базам, а не памятью.
+        /// </summary>
+        public const int Ingots = 14;
+
+        /// <summary>
         /// Что падает с убитого. Отличить это по типу предмета нельзя: для игры шкура,
         /// потроха и глаз грейдворфа - такой же «материал», как дерево и камень, так что
         /// здесь их приходится знать по именам.
@@ -144,6 +159,15 @@ namespace AstvardServerMod
             "$item_nornthread",
         };
 
+        // Слитки. Ключи сверены по каталогу, который прислала сама игра: «Кровавое
+        // золото» - это `$item_gold`, а `$item_goldore` называется «Окаменевшие ткани» и
+        // остаётся рудой. По именам их не различить вовсе, и памяти тут верить нечему.
+        private static readonly string[] IngotKeys =
+        {
+            "$item_copper", "$item_tin", "$item_bronze", "$item_iron", "$item_silver",
+            "$item_blackmetal", "$item_flametal", "$item_flametal_old", "$item_gold",
+        };
+
         private static readonly string[] ValuableKeys =
         {
             "$item_coins", "$item_ancientcoin", "$item_amber", "$item_amberpearl",
@@ -173,6 +197,7 @@ namespace AstvardServerMod
             Fill(known, Seeds, SeedKeys);
             Fill(known, Hides, HideKeys);
             Fill(known, Valuables, ValuableKeys);
+            Fill(known, Ingots, IngotKeys);
 
             return known;
         }

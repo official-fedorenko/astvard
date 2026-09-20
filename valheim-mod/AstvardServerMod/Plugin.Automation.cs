@@ -814,6 +814,12 @@ namespace AstvardServerMod
                 said.Append($"Культур набрало предел {CropKeep}: {CropsFull} — их не засеваем.");
             }
 
+            if (BedsFull)
+            {
+                if (said.Length > 0) said.Append(NEWLINE);
+                said.Append($"Грядок в зоне {BedsInZone} при пределе {BedCap} — новых не сажаем.");
+            }
+
             ZoneLimitsRu = said.Length > 0 ? said.ToString() : "Пределы никого не держат.";
         }
 

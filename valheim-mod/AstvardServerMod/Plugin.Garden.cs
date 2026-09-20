@@ -31,6 +31,8 @@ namespace AstvardServerMod
 
         private static BepInEx.Configuration.ConfigEntry<int> _cropKeep;
 
+        private static BepInEx.Configuration.ConfigEntry<int> _bedCap;
+
         internal static void BindGarden(BepInEx.Configuration.ConfigFile config)
         {
             _reapGarden = config.Bind("Сортировка", "Reap", true,
@@ -58,6 +60,35 @@ namespace AstvardServerMod
                 + "Моркови на складе столько — новую морковь не сажаем, лук и ячмень сажаем "
                 + "дальше. Созревшее собирается в любом случае. 0 — без предела. "
                 + "«Настройки» → «Огород» → «Урожая на складе».");
+
+            _bedCap = config.Bind("Сортировка", "BedsInZone", 100,
+                "Сколько грядок держать в зоне: больше этого числа мод не сажает. "
+                + "Считаются все занятые места — растущие, созревшие и посаженные руками. "
+                + "0 — без предела. «Настройки» → «Огород» → «Грядок в зоне».");
+        }
+
+        /// <summary>
+        /// Сколько грядок мод держит в зоне.
+        ///
+        /// Засев идёт по всей вскопанной земле зоны, а её у человека обычно больше, чем он
+        /// собирался засаживать: решётка накрывает поле целиком и за несколько проходов
+        /// уносит в землю весь запас семян. «Урожая на складе» от этого не спасает - он
+        /// считает **собранное**, то есть срабатывает часами позже, когда сеять уже нечем.
+        ///
+        /// Считаются все занятые грядки, а не только наши. Предел про то, сколько огорода
+        /// нужно, а огороду всё равно, чьи руки его сажали.
+        ///
+        /// Пересадки на своё место он не касается: она возвращает сорванное, то есть
+        /// держит число на месте, а не растит его. Предел - у «Засаживать».
+        /// </summary>
+        internal static int BedCap
+        {
+            get { return Mathf.Clamp(_bedCap != null ? _bedCap.Value : 0, 0, 100000); }
+        }
+
+        internal static void SetBedCap(int amount)
+        {
+            if (_bedCap != null) _bedCap.Value = Mathf.Clamp(amount, 0, 100000);
         }
 
         /// <summary>
@@ -180,6 +211,11 @@ namespace AstvardServerMod
         /// <summary>Сколько культур сейчас не засеваем: их на складе уже довольно.</summary>
         internal static int CropsFull;
 
+        /// <summary>Сколько грядок в зоне занято и уткнулся ли засев в их предел.</summary>
+        internal static int BedsInZone;
+
+        internal static bool BedsFull;
+
         // То же самое, но по-русски и для панели: лог читать некому, пока человек играет.
         // Хозяин это и спросил первым делом - «а где посмотреть надпись?».
         private static string _gardenPanel = "Огород: ещё не смотрел.";
@@ -236,6 +272,7 @@ namespace AstvardServerMod
                   + (reaped > 0 ? $", собрано {reaped}" : "")
                   + (sown > 0 ? $", посажено {sown}" : "")
                   + (_growing > 0 ? $",{NEWLINE}ещё растёт {_growing}" : "")
+                  + (BedsFull ? $",{NEWLINE}занято {BedsInZone} грядок из {BedCap}" : "")
                   + (_outside > 0 ? $",{NEWLINE}рядом вне зоны {_outside}" : "")
                   + (_noRoom > 0 ? $",{NEWLINE}некуда сложить {_noRoom}" : "")
                   + (_noSeeds > 0 ? $",{NEWLINE}нет семян на {_noSeeds}" : "")
@@ -250,6 +287,7 @@ namespace AstvardServerMod
                 ? "ты вне зоны — грядки не трогаем"
                 : $"ripe {_ripe}, reaped {reaped}, sown {sown} of {beds} beds"
                   + (_growing > 0 ? $", {_growing} still growing" : "")
+                  + (BedsFull ? $", {BedsInZone} beds of {BedCap}, the cap holds" : "")
                   + (_outside > 0 ? $", {_outside} ripe outside the zone" : "")
                   + (_noRoom > 0 ? $", {_noRoom} with nowhere to put the crop" : "")
                   + (_notOurs > 0 ? $", {_notOurs} counted by somebody else" : "")
@@ -270,13 +308,14 @@ namespace AstvardServerMod
         /// <summary>Собирает созревшее внутри зоны. Возвращает, сколько грядок сорвано.</summary>
         private static int ReapBeds(Player player, Sorting.Zone zone)
         {
-            if (!ReapOn || zone == null) return 0;
-
             _ripe = 0;
             _noRoom = 0;
             _notOurs = 0;
             _extras = 0;
             _outside = 0;
+            BedsInZone = 0;
+
+            if (zone == null) return 0;
 
             // Грядки, которым ещё расти, считаются отдельно и не ради красоты: «созрело 0»
             // само по себе не отличает пустой огород от посаженного час назад, а это
@@ -287,7 +326,10 @@ namespace AstvardServerMod
                 if (plant == null) continue;
 
                 var bed = plant.transform.position;
-                if (Sorting.Inside(zone, bed.x, bed.z)) _growing++;
+                if (!Sorting.Inside(zone, bed.x, bed.z)) continue;
+
+                _growing++;
+                BedsInZone++;
             }
 
             var where = player.transform.position;
@@ -315,6 +357,11 @@ namespace AstvardServerMod
                     continue;
                 }
 
+                // Созревшая грядка - тоже занятое место: земля под ней не свободна, и
+                // предел считает её наравне с растущей. До всех отказов ниже - собрать её
+                // может быть и нельзя, а стоять она всё равно стоит.
+                if (SaplingFor(Utils.GetPrefabName(pickable.gameObject)) != null) BedsInZone++;
+
                 // С добавкой в придачу пусть разбирается игрок: дополнительный дроп мы
                 // сложить не умеем, а бросить его на землю - значит устроить свалку.
                 if (pickable.m_extraDrops != null && !pickable.m_extraDrops.IsEmpty())
@@ -324,6 +371,8 @@ namespace AstvardServerMod
                 }
 
                 _ripe++;
+
+                if (!ReapOn) continue;
 
                 // Владение берётся до всего: считает грядку её хозяин, и сорвать чужую
                 // мы не можем - RPC на той стороне просто ничего не сделает.
@@ -502,7 +551,15 @@ namespace AstvardServerMod
             _sowingWhat = null;
             _sowingGrow = null;
 
+            BedsFull = false;
+
             if (!SowEmptyOn || zone == null) return 0;
+
+            if (BedCap > 0 && BedsInZone >= BedCap)
+            {
+                BedsFull = true;
+                return 0;
+            }
 
             var player = Player.m_localPlayer;
             var zones = ZoneSystem.instance;
@@ -555,6 +612,12 @@ namespace AstvardServerMod
                 for (var col = firstCol; col <= lastCol; col++)
                 {
                     if (_emptySown >= SowPerPass) return _emptySown;
+
+                    if (BedCap > 0 && BedsInZone + _emptySown >= BedCap)
+                    {
+                        BedsFull = true;
+                        return _emptySown;
+                    }
 
                     var x = col * spacing + shift;
                     if (!Sorting.Inside(zone, x, z)) continue;

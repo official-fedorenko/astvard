@@ -635,6 +635,14 @@ namespace AstvardServerMod
 
         internal static GameObject SortCropApply;
 
+        internal static GameObject SortBedsButton;
+
+        internal static GameObject SortBedsHint;
+
+        internal static GameObject SortBedsInput;
+
+        internal static GameObject SortBedsApply;
+
         internal static GameObject SortLiftHint;
 
         internal static GameObject SortLiftInput;
@@ -693,6 +701,31 @@ namespace AstvardServerMod
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center, CropKeep > 0
                     ? $"Засеваем, пока культуры на складе меньше {CropKeep}"
                     : "Засеваем без оглядки на склад");
+                MenuState = StateSetupGarden;
+                RefreshMenu();
+            });
+
+            SortBedsButton = MakeButton(gui, "", () =>
+            {
+                SetFieldText(SortBedsInput, BedCap.ToString());
+                MenuState = StateSortBeds;
+                RefreshMenu();
+            });
+
+            SortBedsHint = MakeText(gui, "");
+
+            SortBedsInput = gui.CreateInputField(
+                Panel.transform,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
+                UnityEngine.UI.InputField.ContentType.IntegerNumber, "грядок, напр. 100", 16, 160f, 32f);
+            AddFixedSize(SortBedsInput, 160f, 32f);
+
+            SortBedsApply = MakeButton(gui, "Применить", () =>
+            {
+                SetBedCap(Mathf.RoundToInt(ParseField(SortBedsInput, BedCap)));
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center, BedCap > 0
+                    ? $"Держим в зоне не больше {BedCap} грядок"
+                    : "Засаживаем всю вскопанную землю зоны");
                 MenuState = StateSetupGarden;
                 RefreshMenu();
             });
@@ -907,6 +940,18 @@ namespace AstvardServerMod
                             + $"Созревшее собирается{NEWLINE}всегда: раз посажено —{NEWLINE}"
                             + $"значит нужно.{NEWLINE}0 — без предела.";
 
+            SetLabel(SortBedsButton, BedCap > 0
+                ? $"Грядок в зоне: {BedCap}"
+                : "Грядок в зоне: без предела");
+
+            var beds = SortBedsHint != null ? SortBedsHint.GetComponentInChildren<Text>(true) : null;
+            if (beds != null)
+                beds.text = $"Сколько грядок держать{NEWLINE}в зоне. Набралось столько —{NEWLINE}"
+                            + $"новых не сажаем.{NEWLINE}{NEWLINE}"
+                            + $"Считаются все: растущие,{NEWLINE}созревшие и посаженные{NEWLINE}"
+                            + $"руками. Пересадка на своё{NEWLINE}место идёт всегда.{NEWLINE}"
+                            + $"0 — без предела.";
+
             SetLabel(SortSlotsButton, OwnChestSlots > 0
                 ? $"Свой сундук: от {OwnChestSlots} ячеек"
                 : "Свой сундук: не делить");
@@ -948,6 +993,11 @@ namespace AstvardServerMod
             SetActive(SortCropHint, cropPage);
             SetActive(SortCropInput, cropPage);
             SetActive(SortCropApply, cropPage);
+
+            var bedsPage = allowed && MenuState == StateSortBeds;
+            SetActive(SortBedsHint, bedsPage);
+            SetActive(SortBedsInput, bedsPage);
+            SetActive(SortBedsApply, bedsPage);
 
             var lift = allowed && MenuState == StateSortLift;
             SetActive(SortLiftHint, lift);
@@ -1329,6 +1379,7 @@ namespace AstvardServerMod
             SetActive(SortSowEmptyButton, setupGarden);
             SetActive(SortTreesButton, setupGarden);
             SetActive(SortCropButton, setupGarden);
+            SetActive(SortBedsButton, setupGarden);
 
             var setupLabels = allowed && MenuState == StateSetupLabels;
             SetActive(SortLabelsButton, setupLabels);
