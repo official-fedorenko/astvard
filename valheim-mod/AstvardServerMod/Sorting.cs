@@ -27,7 +27,7 @@ namespace AstvardServerMod
         public static readonly string[] CategoryTitles =
         {
             "Разное", "Материалы", "Еда", "Оружие", "Броня", "Инструменты", "Трофеи", "Добыча",
-            "Руда", "Дерево", "Семена", "Зелья", "Шкуры", "Ценное"
+            "Руда", "Дерево", "Семена", "Медовухи", "Шкуры", "Ценное"
         };
 
         /// <summary>
@@ -74,7 +74,16 @@ namespace AstvardServerMod
 
         public const int Seeds = 10;
 
-        public const int Potions = 11;
+        /// <summary>
+        /// Медовухи и их основы.
+        ///
+        /// Называлась «Зельями», пока в ней не завелось ничего, кроме медовух: других
+        /// зелий в ваниль-игре нет вовсе, а с приходом варки полку стали искать по имени
+        /// «Медовухи» и не находили. **Номер тот же**, так что ни один помеченный сундук
+        /// не переехал - это правило всей затеи с полками, и переименование его не
+        /// нарушает: имя показывают человеку, а хранят номер.
+        /// </summary>
+        public const int Meads = 11;
 
         public const int Hides = 12;
 
@@ -185,7 +194,7 @@ namespace AstvardServerMod
             if (string.IsNullOrEmpty(kind)) return -1;
 
             if (kind.StartsWith("$item_mead", StringComparison.Ordinal)
-                || kind.IndexOf("winebase", StringComparison.Ordinal) >= 0) return Potions;
+                || kind.IndexOf("winebase", StringComparison.Ordinal) >= 0) return Meads;
 
             int category;
             return KnownKinds.TryGetValue(kind, out category) ? category : -1;

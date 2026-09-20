@@ -38,9 +38,12 @@ public class LootTests
         Assert.Equal(Sorting.Valuables, Sorting.KnownFor("$item_ancientgemstone_black"));
 
         // Медовухи и их основы - по началу ключа, а не списком: их сорок и прибавляется.
-        Assert.Equal(Sorting.Potions, Sorting.KnownFor("$item_mead_hp_minor"));
-        Assert.Equal(Sorting.Potions, Sorting.KnownFor("$item_meadbasehealth"));
-        Assert.Equal(Sorting.Potions, Sorting.KnownFor("$item_barleywinebase"));
+        // Полка у них своя и так и называется: искать «Медовухи» среди «Зелий» никто не
+        // догадается, а других зелий в игре нет.
+        Assert.Equal(Sorting.Meads, Sorting.KnownFor("$item_mead_hp_minor"));
+        Assert.Equal(Sorting.Meads, Sorting.KnownFor("$item_meadbasehealth"));
+        Assert.Equal(Sorting.Meads, Sorting.KnownFor("$item_barleywinebase"));
+        Assert.Equal("Медовухи", Sorting.Title(Sorting.Meads));
 
         // Слиток - не руда: его возят из плавильни, а не в неё.
         Assert.Equal(-1, Sorting.KnownFor("$item_bronze"));
