@@ -39,7 +39,11 @@ namespace AstvardServerMod
         {
             // Разведка камней живёт рядом со сдвигом времени: обе спрашивают сервер и
             // обе - про мир целиком, а не про то, что под ногами.
-            RuneStonesButton = MakeButton(gui, "Камни с надписями", AskRunes);
+            RuneStonesButton = MakeButton(gui, "", AskRunes);
+
+            // Останавливать 31 км нечем, если кнопки нет: задание живёт на сервере и
+            // переживёт выход игрока из игры.
+            RuneStonesStopButton = MakeButton(gui, "Остановить камни", StopRunes);
 
             TimeSkipButton = MakeButton(gui, "Сдвинуть время", () =>
             {
@@ -181,6 +185,8 @@ namespace AstvardServerMod
         {
             SetActive(TimeSkipButton, admin && MenuState == StateCheats);
             SetActive(RuneStonesButton, admin && MenuState == StateCheats);
+            SetLabel(RuneStonesButton, RunesArmed ? "Класть? Нажми ещё раз" : "Камни с надписями");
+            SetActive(RuneStonesStopButton, admin && MenuState == StateCheats && RunesAsked);
 
             var page = admin && MenuState == StateTimeSkip;
             SetActive(TimeSkipHint, page);

@@ -297,6 +297,11 @@ namespace AstvardServerMod
             public bool Stop;
             public RoadJobRecord Record;
 
+            // Круг вокруг камня: чем его обвести факелами и где его середина. У обычной
+            // дорожки оба нулевые - кольца у неё нет.
+            public int Ring;
+            public Vector3 Centre;
+
             // The zones the piece in hand needs: poked, and their objects built.
             public readonly HashSet<Vector2s> Zones = new HashSet<Vector2s>();
         }
@@ -445,13 +450,7 @@ namespace AstvardServerMod
                 return;
             }
 
-            job.Record = new RoadJobRecord { Id = job.Id, Running = true };
-            RoadJobRecords.Add(job.Record);
-            for (var i = 0; i < RoadJobRecords.Count && RoadJobRecords.Count > RoadJobRecordsKept; )
-            {
-                if (RoadJobRecords[i].Running) i++;
-                else RoadJobRecords.RemoveAt(i);
-            }
+            GiveRoadRecord(job);
 
             _roadJob = job;
             Instance.StartCoroutine(RunRoadJob(job));
@@ -462,6 +461,27 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] Road job {job.Id} from {SenderName(sender)}: {length:F1} m, "
                         + $"brush {job.Radius:F2}, smooth={job.Smooth} clear={job.Clear} "
                         + $"torches={TorchPrefabs[job.Torch] ?? "none"}/{job.Spacing:F0} m, {job.Path.Count} points.");
+        }
+
+        /// <summary>
+        /// Заводит заданию запись отката и подрезает список старых.
+        ///
+        /// Одним местом, потому что мест теперь два: обычная дорожка и очередь по камням.
+        /// Забыть её нельзя - `RunRoadJob` в `finally` трогает `job.Record`, и задание без
+        /// записи уронило бы корутину ровно там, где она обязана снять за собой слот.
+        /// Подрезка тоже не украшение: каждая запись держит байты рельефа всех задетых
+        /// зон, а у сети по камням заданий полторы сотни.
+        /// </summary>
+        private static void GiveRoadRecord(RoadJob job)
+        {
+            job.Record = new RoadJobRecord { Id = job.Id, Running = true };
+            RoadJobRecords.Add(job.Record);
+
+            for (var i = 0; i < RoadJobRecords.Count && RoadJobRecords.Count > RoadJobRecordsKept; )
+            {
+                if (RoadJobRecords[i].Running) i++;
+                else RoadJobRecords.RemoveAt(i);
+            }
         }
 
         private static bool Finite(float value)
