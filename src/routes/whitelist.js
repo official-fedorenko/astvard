@@ -1,9 +1,9 @@
 const { db } = require('../../db');
 const { sendJson, getJsonBody, logAction } = require('../utils');
 const { parseSteamId64, toPermittedListId, toAdminListIds } = require('../steamId');
-const { fetchPersonaName, fallbackNickname } = require('../steamProfile');
+const { fetchProfile, fallbackNickname } = require('../steamProfile');
 const { applyGameLists, applyGameListsQuietly } = require('../gameLists');
-const { recheckNicknames } = require('../steamNames');
+const { refreshFromSteam } = require('../steamRefresh');
 
 const MAX_NOTE_LENGTH = 500;
 
@@ -142,17 +142,17 @@ async function add(req, res, actor) {
 
   let user = await get('SELECT * FROM users WHERE steam_id = ?', [parsed.id]);
   if (!user) {
-    const persona = await fetchPersonaName(parsed.id);
-    const base = persona || fallbackNickname(parsed.id);
+    const profile = await fetchProfile(parsed.id);
+    const base = profile.name || fallbackNickname(parsed.id);
     for (let attempt = 1; attempt <= 10 && !user; attempt += 1) {
       const username = attempt === 1 ? base : `${base} (${attempt})`;
       try {
         // steam_id_verified stays 0: a number typed by a person is a guess until its
         // owner signs in through Steam, and the tables say which is which.
         const inserted = await run(
-          `INSERT INTO users (username, role, steam_id, steam_id_verified)
-           VALUES (?, 'User', ?, 0)`,
-          [username, parsed.id]
+          `INSERT INTO users (username, role, steam_id, steam_id_verified, avatar_url)
+           VALUES (?, 'User', ?, 0, ?)`,
+          [username, parsed.id, profile.avatar]
         );
         user = await get('SELECT * FROM users WHERE id = ?', [inserted.lastID]);
       } catch (err) {
@@ -298,13 +298,16 @@ async function applyNow(req, res, actor) {
   }
 }
 
-// The site re-asks Steam for placeholder nicknames on its own every few hours;
-// this is the same sweep run now, with an answer. An admin looking at «Викинг
-// 90066» wants to know which it is: Steam keeping quiet, or the turn not come yet.
-async function recheckNames(req, res, actor) {
-  const result = await recheckNicknames();
-  if (result.renamed.length) {
-    logAction(actor.username, `Обновил ники из Steam: ${result.renamed.map((r) => r.to).join(', ')}`);
+// The site re-asks Steam about placeholder names and about the avatars it put on
+// itself every few hours; this is the same sweep run now, with an answer. An admin
+// looking at «Викинг 90066» wants to know which it is: Steam keeping quiet, or the
+// turn not come yet.
+async function refreshSteam(req, res, actor) {
+  const result = await refreshFromSteam();
+  if (result.renamed.length || result.dressed.length) {
+    const names = result.renamed.map((r) => r.to).join(', ');
+    const faces = result.dressed.length ? `аватаров ${result.dressed.length}` : '';
+    logAction(actor.username, `Обновил из Steam: ${[names, faces].filter(Boolean).join(', ')}`);
   }
   sendJson(res, 200, { success: true, ...result });
 }
@@ -324,7 +327,7 @@ module.exports = async function handleWhitelist(req, res, sessionUser, parsedUrl
   if (pathname === '/api/admin/whitelist' && method === 'GET') return list(req, res);
   if (pathname === '/api/admin/whitelist' && method === 'POST') return add(req, res, actor);
   if (pathname === '/api/admin/whitelist/apply' && method === 'POST') return applyNow(req, res, actor);
-  if (pathname === '/api/admin/whitelist/recheck-names' && method === 'POST') return recheckNames(req, res, actor);
+  if (pathname === '/api/admin/whitelist/steam-refresh' && method === 'POST') return refreshSteam(req, res, actor);
   if (pathname === '/api/admin/whitelist/permittedlist' && method === 'GET') return permittedList(req, res);
   if (pathname === '/api/admin/whitelist/adminlist' && method === 'GET') return adminList(req, res);
 

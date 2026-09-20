@@ -33,7 +33,7 @@ const handleGameSync = require('./src/routes/gameSync');
 const handleGameBuilds = require('./src/routes/gameBuilds');
 const handleGameSorting = require('./src/routes/gameSorting');
 const { ensureSuperadmin } = require('./src/bootstrap');
-const { recheckNicknames, RECHECK_INTERVAL_MS } = require('./src/steamNames');
+const { refreshFromSteam, RECHECK_INTERVAL_MS } = require('./src/steamRefresh');
 const handleCabinet = require('./src/routes/cabinet');
 const handlePublic = require('./src/routes/public');
 const seo = require('./src/seo');
@@ -137,7 +137,9 @@ function buildCsp({ metrika = false } = {}) {
     "default-src 'self'",
     `script-src 'self' https://unpkg.com ${QUILL_CDN} 'unsafe-inline'${yandex}`,
     `style-src 'self' ${QUILL_CDN} https://fonts.googleapis.com 'unsafe-inline'`,
-    `img-src 'self' data: blob:${yandex}`,
+    // Аватары игроков показываются прямо с площадки Steam: своей копии мы не держим,
+    // а хост у неё меняется — avatars.fastly, avatars.akamai, avatars.cloudflare.
+    `img-src 'self' data: blob: https://*.steamstatic.com${yandex}`,
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src 'self'${yandex}`,
     "object-src 'none'",
@@ -531,20 +533,22 @@ if (require.main === module) {
   pollStatus();
   setInterval(pollStatus, STATUS_POLL_INTERVAL_MS);
 
-  // Ник из Steam спрашивается при заведении аккаунта и при следующем входе — то
-  // есть в те минуты, когда игрок здесь. Молчащий в ту минуту Steam оставляет
-  // заглушку «Викинг NNNNN», и она живёт, пока человек не зайдёт снова: на боевом
-  // так простояла восемь дней. Поэтому сайт переспрашивает сам.
-  const recheckNames = () => recheckNicknames()
-    .then(({ renamed }) => {
+  // Имя и аватар из Steam спрашиваются при заведении аккаунта и при следующем
+  // входе — то есть в те минуты, когда игрок здесь. Молчащий в ту минуту Steam
+  // оставляет заглушку «Викинг NNNNN», и она живёт, пока человек не зайдёт снова:
+  // на боевом так простояла восемь дней. Поэтому сайт переспрашивает сам, и заодно
+  // держит свежим аватар — его меняют чаще, чем ник.
+  const askSteam = () => refreshFromSteam()
+    .then(({ renamed, dressed }) => {
       if (renamed.length) {
         logger.info(`Ники из Steam: ${renamed.map((r) => `${r.from} → ${r.to}`).join(', ')}`);
       }
+      if (dressed.length) logger.info(`Аватары из Steam: ${dressed.length}`);
     })
-    .catch((err) => logger.error('Перепроверка ников не удалась:', err.message));
-  dbReady.then(recheckNames)
-    .catch((err) => logger.error('Перепроверка ников не начата:', err.message));
-  setInterval(recheckNames, RECHECK_INTERVAL_MS);
+    .catch((err) => logger.error('Перепроверка Steam не удалась:', err.message));
+  dbReady.then(askSteam)
+    .catch((err) => logger.error('Перепроверка Steam не начата:', err.message));
+  setInterval(askSteam, RECHECK_INTERVAL_MS);
 
   server.listen(PORT, () => {
     console.log(`Админка успешно запущена на http://localhost:${PORT}`);

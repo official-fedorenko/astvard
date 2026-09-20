@@ -1,6 +1,7 @@
 const { sendJson, getJsonBody, logAction } = require('../utils');
 const { db, verifyPassword, hashPassword } = require('../../db');
 const { nicknameError } = require('../nickname');
+const { safeAvatarUrl } = require('../avatar');
 
 function getMe(req, res, user) {
   db.get(
@@ -67,8 +68,16 @@ async function updateProfile(req, res, user) {
       }
 
       if (avatar_url) {
+        // До 20.09.2026 сюда принималось что угодно: строка, которую игрок вписал
+        // себе в профиль, доезжала до браузера админа в списке обращений и вставала
+        // в атрибут без экранирования. Проверять на входе дешевле, чем в каждом
+        // месте, где аватар рисуют.
+        const clean = safeAvatarUrl(avatar_url);
+        if (!clean) {
+          return sendJson(res, 400, { success: false, message: 'Такой адрес аватара не подходит' });
+        }
         fields.push('avatar_url = ?');
-        values.push(avatar_url);
+        values.push(clean);
       }
 
       if (password) {

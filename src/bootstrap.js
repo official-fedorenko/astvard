@@ -1,7 +1,7 @@
 const { db } = require('../db');
 const logger = require('./logger');
 const { parseSteamId64 } = require('./steamId');
-const { fetchPersonaName, fallbackNickname } = require('./steamProfile');
+const { fetchProfile, fallbackNickname } = require('./steamProfile');
 
 // A fresh install of the panel seeds superadmin/admin/user with a password that is
 // printed in its own README. For a site on the open internet that is not a way in,
@@ -42,15 +42,15 @@ async function ensureSuperadmin() {
   if (!user) {
     // The name is a convenience, like everywhere else it is fetched: a private
     // profile or a slow Steam must not leave the site without an administrator.
-    const persona = await fetchPersonaName(parsed.id);
-    const base = persona || fallbackNickname(parsed.id);
+    const profile = await fetchProfile(parsed.id);
+    const base = profile.name || fallbackNickname(parsed.id);
     for (let attempt = 1; attempt <= 10 && !user; attempt += 1) {
       const username = attempt === 1 ? base : `${base} (${attempt})`;
       try {
         const inserted = await run(
-          `INSERT INTO users (username, role, steam_id, steam_id_verified)
-           VALUES (?, 'Superadmin', ?, 0)`,
-          [username, parsed.id]
+          `INSERT INTO users (username, role, steam_id, steam_id_verified, avatar_url)
+           VALUES (?, 'Superadmin', ?, 0, ?)`,
+          [username, parsed.id, profile.avatar]
         );
         user = await get('SELECT * FROM users WHERE id = ?', [inserted.lastID]);
       } catch (err) {

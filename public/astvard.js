@@ -390,22 +390,31 @@ function bindAstvardHandlers() {
       return showToast(`Списки на сервере обновлены — ${permitted}, админов: ${r.admins ? r.admins.count : 0}`);
     }
 
-    // Ник из Steam спрашивается при заведении аккаунта и при входе, а сайт сам
-    // переспрашивает раз в шесть часов. Кнопка — чтобы не ждать эти шесть часов и
-    // чтобы услышать ответ: молчит Steam или имя уже занято.
-    if (e.target.closest('#recheckNamesBtn')) {
-      const res = await fetch('/api/admin/whitelist/recheck-names', { method: 'POST' });
+    // Имя и аватар из Steam спрашиваются при заведении аккаунта и при входе, а сайт
+    // сам переспрашивает раз в шесть часов. Кнопка — чтобы не ждать эти шесть часов
+    // и чтобы услышать ответ: молчит Steam или имя уже занято другим аккаунтом.
+    if (e.target.closest('#steamRefreshBtn')) {
+      const res = await fetch('/api/admin/whitelist/steam-refresh', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return showToast(data.message || 'Не получилось', 'error');
 
+      const news = [];
       if (data.renamed && data.renamed.length) {
-        showToast(`Имена из Steam: ${data.renamed.map(r => `${r.from} → ${r.to}`).join(', ')}`);
+        news.push(`имена: ${data.renamed.map(r => `${r.from} → ${r.to}`).join(', ')}`);
+      }
+      if (data.dressed && data.dressed.length) news.push(`аватаров: ${data.dressed.length}`);
+      if (news.length) {
+        showToast(`Из Steam — ${news.join('; ')}`);
         return loadWhitelist();
       }
-      if (!data.checked) return showToast('Заглушек нет: у всех настоящие имена из Steam');
-      return showToast(data.taken
-        ? `Steam молчит по ${data.silent}, ещё ${data.taken} — имя занято другим аккаунтом`
-        : `Steam не дал имени: ${data.checked}. Профиль закрыт или Steam недоступен`, 'error');
+
+      if (!data.checked) return showToast('Спрашивать не о чем: имена и аватары свои');
+      if (data.taken) {
+        return showToast(`Имя из Steam занято другим аккаунтом (${data.taken})`, 'error');
+      }
+      return showToast(data.silent
+        ? `Steam ничего не дал по ${data.silent}: профиль закрыт или Steam недоступен`
+        : 'Всё и так свежее: Steam отдал то же самое');
     }
 
     if (e.target.closest('#permittedListBtn')) {

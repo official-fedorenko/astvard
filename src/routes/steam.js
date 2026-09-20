@@ -8,7 +8,8 @@ const {
 } = require('../session');
 const { buildAuthUrl, verifyAssertion } = require('../steamOpenid');
 const { parseSteamId64 } = require('../steamId');
-const { fetchPersonaName, fallbackNickname } = require('../steamProfile');
+const { fetchProfile, fallbackNickname } = require('../steamProfile');
+const { isSteamAvatar } = require('../avatar');
 
 // Steam signs its answer for one exact address, and that address is ours to state:
 // taking it from the Host header would mean accepting a response minted for another
@@ -51,14 +52,14 @@ function startSession(req, res, userRow, target) {
 // Two players can carry the same Steam persona name, and username is unique here.
 // Only a name clash is worth another go: a clash on steam_id means the caller should
 // have found the existing row instead of papering over it.
-async function createSteamUser(steamId, baseName) {
+async function createSteamUser(steamId, baseName, avatarUrl) {
   for (let attempt = 1; attempt <= 10; attempt += 1) {
     const username = attempt === 1 ? baseName : `${baseName} (${attempt})`;
     try {
       const result = await run(
-        `INSERT INTO users (username, role, steam_id, steam_id_verified)
-         VALUES (?, 'User', ?, 1)`,
-        [username, steamId]
+        `INSERT INTO users (username, role, steam_id, steam_id_verified, avatar_url)
+         VALUES (?, 'User', ?, 1, ?)`,
+        [username, steamId, avatarUrl || null]
       );
       return get('SELECT * FROM users WHERE id = ?', [result.lastID]);
     } catch (err) {
@@ -123,16 +124,27 @@ async function complete(req, res, sessionUser) {
     // — it may be private, slow or simply down. That is how the site ended up
     // greeting its owner as «Викинг 08760». Only the placeholder is replaced; a name
     // somebody chose is theirs, and renaming it behind their back would be rude.
-    if (owner.username === fallbackNickname(steamId)) {
-      const persona = await fetchPersonaName(steamId);
-      if (persona && persona !== owner.username) {
+    // The avatar is asked about in the same breath and on the same terms: it is
+    // replaced while it is empty or still the one Steam gave us, never when the
+    // player has picked something of their own.
+    const placeholder = owner.username === fallbackNickname(steamId);
+    const ourAvatar = !owner.avatar_url || isSteamAvatar(owner.avatar_url);
+    if (placeholder || ourAvatar) {
+      const profile = await fetchProfile(steamId);
+
+      if (placeholder && profile.name && profile.name !== owner.username) {
         try {
-          await run('UPDATE users SET username = ? WHERE id = ?', [persona, owner.id]);
-          owner.username = persona;
+          await run('UPDATE users SET username = ? WHERE id = ?', [profile.name, owner.id]);
+          owner.username = profile.name;
         } catch (err) {
           // Taken by somebody else — the placeholder is not worth a failed login.
           logger.warn(`Ник из Steam не занять: ${err.message}`);
         }
+      }
+
+      if (ourAvatar && profile.avatar && profile.avatar !== owner.avatar_url) {
+        await run('UPDATE users SET avatar_url = ? WHERE id = ?', [profile.avatar, owner.id]);
+        owner.avatar_url = profile.avatar;
       }
     }
     return startSession(req, res, owner, '/cabinet.html');
@@ -150,8 +162,10 @@ async function complete(req, res, sessionUser) {
 
   // First visit through Steam: the account is created here. The persona name is
   // best-effort — a private profile just means the fallback name.
-  const persona = await fetchPersonaName(steamId);
-  const created = await createSteamUser(steamId, persona || fallbackNickname(steamId));
+  const profile = await fetchProfile(steamId);
+  const created = await createSteamUser(
+    steamId, profile.name || fallbackNickname(steamId), profile.avatar
+  );
   if (!created) {
     return redirectWithError(res, '/login.html', 'Не удалось создать аккаунт, попробуй ещё раз');
   }
