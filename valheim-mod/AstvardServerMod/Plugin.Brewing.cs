@@ -244,7 +244,22 @@ namespace AstvardServerMod
             // человека искать несуществующую занятую бочку.
             if (!_sawBarrel && _whyRank < 3) _whyNext = "поблизости нет бочек";
             _why = _whyNext;
+
+            // Та же причина - в лог, раз на изменение. Страницу читает человек, стоя у
+            // бочки; лог читают, когда бочка пустая, а почему - уже не видно. Вечер с
+            // огородом показал, что вторая половина случается чаще первой.
+            if (_why != _whySaid)
+            {
+                _whySaid = _why;
+                Log.LogInfo(string.IsNullOrEmpty(_why)
+                    ? "[AstvardServerMod] Brewing: nothing in the way."
+                    : $"[AstvardServerMod] Brewing: not brewing — {_why}.");
+            }
         }
+
+        // Не null и не пустая строка: и то и другое бывает настоящим ответом, а первый
+        // проход обязан сказать о себе.
+        private static string _whySaid = "\0";
 
         private static int BrewingCount(string baseName)
         {
