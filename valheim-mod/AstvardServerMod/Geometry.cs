@@ -168,6 +168,60 @@ namespace AstvardServerMod
     /// </summary>
     internal static class Geometry
     {
+        // ---------------- the world clock ----------------
+
+        /// <summary>
+        /// Час суток из доли прожитых миром суток - та же кривая, что у игры в
+        /// `EnvMan.RescaleDayFraction`.
+        ///
+        /// Время в Valheim идёт **неравномерно**: сырые 0.15..0.85 - семьдесят процентов
+        /// суток - растянуты на светлую половину циферблата, а по пятнадцати процентов с
+        /// краёв сжаты в две тёмные четверти. То есть дневной час длиннее ночного ровно
+        /// в 2⅓ раза, и «через три часа» в настоящих минутах значит разное в полдень и
+        /// в полночь.
+        ///
+        /// Обратная к ней нужна не для красоты: только через неё «до заката» превращается
+        /// в секунды, которые человек может подождать. Прямая здесь ради обратной - парой
+        /// их можно проверить, а поодиночке каждая выглядит верной.
+        /// </summary>
+        public static float ClockFromElapsed(float elapsed)
+        {
+            elapsed = Repeat01(elapsed);
+
+            if (elapsed >= 0.15f && elapsed <= 0.85f) return 0.25f + (elapsed - 0.15f) / 0.7f * 0.5f;
+
+            // У игры здесь написано `elapsed < 0.5f`, и это то же самое: всё, что дожило
+            // до этой ветки, лежит либо ниже 0.15, либо выше 0.85. Повторено дословно,
+            // чтобы сверка со свежим декомпилятом была сверкой, а не рассуждением.
+            if (elapsed < 0.5f) return elapsed / 0.15f * 0.25f;
+
+            return 0.75f + (elapsed - 0.85f) / 0.15f * 0.25f;
+        }
+
+        /// <summary>Обратно: какая доля суток прожита к этому часу циферблата.</summary>
+        public static float ElapsedFromClock(float clock)
+        {
+            clock = Repeat01(clock);
+
+            if (clock >= 0.25f && clock <= 0.75f) return 0.15f + (clock - 0.25f) / 0.5f * 0.7f;
+            if (clock < 0.25f) return clock / 0.25f * 0.15f;
+
+            return 0.85f + (clock - 0.75f) / 0.25f * 0.15f;
+        }
+
+        /// <summary>Сколько суток пройдёт от одной доли до другой, вперёд по кругу.</summary>
+        public static float ElapsedUntil(float from, float to)
+        {
+            var left = Repeat01(to) - Repeat01(from);
+            return left < 0f ? left + 1f : left;
+        }
+
+        private static float Repeat01(float value)
+        {
+            value -= (float)Math.Floor(value);
+            return value < 0f ? value + 1f : value;
+        }
+
         // ---------------- road curve ----------------
 
         /// <summary>

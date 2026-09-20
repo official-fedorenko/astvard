@@ -79,6 +79,78 @@ namespace AstvardServerMod
             return day / 24f;
         }
 
+        /// <summary>
+        /// Который час в мире - для «Ознакомиться».
+        ///
+        /// Часов игра не знает вовсе: у неё есть доля прожитых суток 0..1, а часы здесь
+        /// наши, двадцать четыре на сутки, - те же, которыми двигает время кнопка выше.
+        ///
+        /// Сроки считаются по **прожитой доле**, а не по часам (`Geometry`): час дня
+        /// длиннее часа ночи в 2⅓ раза, и «до заката 3:28» в настоящих минутах значит
+        /// совсем не то, что те же 3:28 до рассвета.
+        ///
+        /// Что сейчас - утро, день или ночь - спрашивается у самой игры, а не считается
+        /// по нашим часам: на этих же флагах у неё висят холод, погода и сон, и ответ
+        /// должен быть тот самый, а не похожий.
+        /// </summary>
+        internal static string GameClockRu()
+        {
+            var env = EnvMan.instance;
+            var net = ZNet.instance;
+            if (env == null || net == null || env.m_dayLengthSec <= 0) return "";
+
+            var length = (double)env.m_dayLengthSec;
+            var elapsed = (float)(net.GetTimeSeconds() % length / length);
+            var clock = Geometry.ClockFromElapsed(elapsed);
+
+            var said = new System.Text.StringBuilder();
+            said.Append($"Время: {Clock(clock)}, день {env.GetDay()}");
+
+            var night = EnvMan.IsNight();
+            var what = night ? "ночь" : EnvMan.IsAfternoon() ? "день" : "утро";
+
+            said.Append($"{NEWLINE}Сейчас: {what}, ")
+                .Append(night
+                    ? $"до рассвета {Until(elapsed, 0.25f, length)}"
+                    : $"до заката {Until(elapsed, 0.75f, length)}");
+
+            // Спать можно с полудня и всю ночь (`IsAfternoon || IsNight`), плюс полминуты
+            // выдержки после подъёма - её мы не считаем, а спрашиваем вместе со всем
+            // остальным у `CanSleep`.
+            said.Append($"{NEWLINE}Спать: ")
+                .Append(EnvMan.CanSleep()
+                    ? "можно"
+                    : clock >= 0.5f || clock <= 0.25f
+                        ? "только что вставал"
+                        : $"с 12:00, через {Until(elapsed, 0.5f, length)}");
+
+            said.Append($"{NEWLINE}До полуночи: {Until(elapsed, 0f, length)}");
+            said.Append($"{NEWLINE}Сутки: {Span(length)} — светло {Span(length * 0.7)}, "
+                        + $"темно {Span(length * 0.3)}");
+
+            return said.ToString();
+        }
+
+        private static string Clock(float clock)
+        {
+            var minutes = (int)(clock * 24f * 60f) % (24 * 60);
+            return $"{minutes / 60:00}:{minutes % 60:00}";
+        }
+
+        /// <summary>Сколько настоящего времени осталось до этого часа циферблата.</summary>
+        private static string Until(float elapsed, float clock, double length)
+        {
+            return Span(Geometry.ElapsedUntil(elapsed, Geometry.ElapsedFromClock(clock)) * length);
+        }
+
+        private static string Span(double seconds)
+        {
+            var whole = (int)System.Math.Round(seconds);
+            if (whole < 60) return $"{whole} с";
+
+            return whole % 60 == 0 ? $"{whole / 60} мин" : $"{whole / 60} мин {whole % 60:00} с";
+        }
+
         private static void OnTimeSkip(long sender, float hours)
         {
             if (!ServerAllows(sender)) return;

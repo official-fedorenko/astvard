@@ -1242,6 +1242,24 @@ namespace AstvardServerMod
                 $"Сид скопирован: {world.m_seedName}");
         }
 
+        // Часы на снимке - это остановившиеся часы. Страница строилась один раз, на
+        // нажатие, и «до полуночи 9 мин» врало тем сильнее, чем дольше её держат
+        // открытой. Раз в полсекунды: читать чаще нечего, а строка про сон меняется
+        // на границе и должна успеть.
+        private static float _infoTickAt;
+
+        internal static void TickInfoText()
+        {
+            if (GUIManager.IsHeadless()) return;
+            if (!IsInfoShown || MenuState != StateRoot) return;
+            if (Panel == null || !Panel.activeSelf) return;
+
+            if (Time.realtimeSinceStartup < _infoTickAt) return;
+            _infoTickAt = Time.realtimeSinceStartup + 0.5f;
+
+            UpdateInfoText();
+        }
+
         private static void UpdateInfoText()
         {
             // The button calls this before RefreshMenu switches the text on, so the
@@ -1260,6 +1278,9 @@ namespace AstvardServerMod
                 text.Append($"{NEWLINE}{NEWLINE}Мир: {world.m_name}");
                 text.Append($"{NEWLINE}Сид: {world.m_seedName} ({world.m_seed})");
             }
+
+            var clock = GameClockRu();
+            if (clock.Length > 0) text.Append($"{NEWLINE}{NEWLINE}{clock}");
 
             var player = Player.m_localPlayer;
             if (player != null)
