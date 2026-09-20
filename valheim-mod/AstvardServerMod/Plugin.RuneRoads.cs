@@ -129,6 +129,7 @@ namespace AstvardServerMod
             pkg.Write(TorchSpacing());
             pkg.Write(player.GetPlayerID());
             pkg.Write(PlatformManager.DistributionPlatform.LocalUser.PlatformUserID.ToString());
+            pkg.Write(RoadTorchForever);
             ZRoutedRpc.instance.InvokeRoutedRPC(RpcRunesLay, pkg);
 
             _runesAsked = true;
@@ -420,6 +421,12 @@ namespace AstvardServerMod
                 return;
             }
 
+            // Хвостовое поле, и читается отдельно: клиент постарше его не шлёт, а сеть ему
+            // всё равно полагается.
+            var forever = false;
+            try { forever = pkg.ReadBool(); }
+            catch (System.Exception) { forever = false; }
+
             var zones = ZoneSystem.instance;
             var world = WorldGenerator.instance;
             if (zones == null || world == null) return;
@@ -433,25 +440,24 @@ namespace AstvardServerMod
 
             var job = new RuneJob { Sender = sender, Stones = marks.Count };
 
-            // Круги вперёд дорог: если укладку остановят на полпути, у меток уже будет
-            // то, ради чего всё затевалось, а недостающая дорога - это просто дорога.
-            // А среди кругов спавн и алтари вперёд камней, по той же причине.
-            marks.Sort((a, b) => Rank(a.Kind).CompareTo(Rank(b.Kind)));
-
-            foreach (var mark in marks)
-                job.Queue.Add(CircleJob(mark, paved, smooth, clear, torch, spacing,
-                                        creator, platform));
-
             var net = Whole(marks);
-            var home = SpawnAt(marks);
-            if (home.HasValue)
-                net.Edges.Sort((a, b) => Touches(b, home.Value).CompareTo(Touches(a, home.Value)));
 
-            foreach (var edge in net.Edges)
+            foreach (var step in Steps(marks, net, new Vector3(x, 0f, z)))
             {
-                job.Metres += Flat(edge.Key, edge.Value);
-                job.Queue.Add(RoadBetween(edge.Key, edge.Value, radius, width, paved, smooth,
-                                          clear, torch, spacing, creator, platform));
+                if (step.Mark >= 0)
+                {
+                    job.Queue.Add(CircleJob(marks[step.Mark], paved, smooth, clear, torch,
+                                            spacing, forever, creator, platform));
+                    continue;
+                }
+
+                var link = net.Links[step.Edge];
+                var from = net.Points[link.A];
+                var to = net.Points[link.B];
+
+                job.Metres += Flat(from, to);
+                job.Queue.Add(RoadBetween(from, to, radius, width, paved, smooth, clear, torch,
+                                          spacing, forever, creator, platform));
             }
 
             _runeJob = job;
@@ -514,7 +520,8 @@ namespace AstvardServerMod
 
         /// <summary>Мощёный круг вокруг метки и кольцо факелов по нему.</summary>
         private static RoadJob CircleJob(Mark mark, bool paved, bool smooth, bool clear,
-                                         int torch, float spacing, long creator, string platform)
+                                         int torch, float spacing, bool forever, long creator,
+                                         string platform)
         {
             // Путь из двух точек в полуметре: укладка идёт по отрезкам, и одной точки ей
             // мало - цикл по парам не сделал бы ни шага. Круг задаёт не путь, а радиус,
@@ -537,12 +544,14 @@ namespace AstvardServerMod
                 Ring = torch > 0 ? torch : 0,
                 Centre = mark.At,
                 Grow = true,
+                Forever = forever,
             };
         }
 
         private static RoadJob RoadBetween(Vector3 from, Vector3 to, float radius, float width,
                                            bool paved, bool smooth, bool clear, int torch,
-                                           float spacing, long creator, string platform)
+                                           float spacing, bool forever, long creator,
+                                           string platform)
         {
             // Тем же сэмплером, что и обычная дорожка: точка на метр пути. Своя кривая
             // здесь разошлась бы с той, которую кладёт кнопка, на первой же правке.
@@ -562,6 +571,7 @@ namespace AstvardServerMod
                 Spacing = spacing,
                 Creator = creator,
                 Platform = platform,
+                Forever = forever,
             };
         }
 
@@ -739,11 +749,16 @@ namespace AstvardServerMod
             return ((long)x << 32) | (uint)z;
         }
 
-        /// <summary>Сеть целиком: что класть и что о ней сказать.</summary>
+        /// <summary>
+        /// Сеть целиком: точки, рёбра между ними и то, что о ней стоит сказать.
+        ///
+        /// Граф, а не список пар координат: по нему считается и длина обхода для срезок, и
+        /// порядок укладки - от дома наружу.
+        /// </summary>
         private sealed class Network
         {
-            public readonly List<KeyValuePair<Vector3, Vector3>> Edges =
-                new List<KeyValuePair<Vector3, Vector3>>();
+            public readonly List<Vector3> Points = new List<Vector3>();
+            public readonly List<Link> Links = new List<Link>();
 
             public int Shortcuts;
             public float ShortcutMetres;
@@ -758,29 +773,101 @@ namespace AstvardServerMod
         /// </summary>
         private static Network Whole(List<Mark> marks)
         {
-            var points = new List<Vector3>(marks.Count);
-            foreach (var mark in marks) points.Add(mark.At);
+            var net = new Network();
+            foreach (var mark in marks) net.Points.Add(mark.At);
 
-            var links = TreeLinks(points);
-            AddSpawnLinks(marks, points, links);
+            net.Links.AddRange(TreeLinks(net.Points));
+            AddSpawnLinks(marks, net.Points, net.Links);
 
-            var was = links.Count;
-            AddShortcuts(points, links);
+            var was = net.Links.Count;
+            AddShortcuts(net.Points, net.Links);
+            net.Shortcuts = net.Links.Count - was;
 
-            var net = new Network { Shortcuts = links.Count - was };
-            for (var i = 0; i < links.Count; i++)
+            for (var i = 0; i < net.Links.Count; i++)
             {
-                var from = points[links[i].A];
-                var to = points[links[i].B];
-                var step = Flat(from, to);
+                var step = Flat(net.Points[net.Links[i].A], net.Points[net.Links[i].B]);
 
                 net.Metres += step;
                 if (i >= was) net.ShortcutMetres += step;
-
-                net.Edges.Add(new KeyValuePair<Vector3, Vector3>(from, to));
             }
 
             return net;
+        }
+
+        /// <summary>Шаг укладки: либо круг вокруг метки, либо дорога между двумя.</summary>
+        private struct Step
+        {
+            public int Mark;
+            public int Edge;
+            public float Far;
+        }
+
+        /// <summary>
+        /// Порядок укладки: спавн и алтари вперёд, остальное - от дома наружу.
+        ///
+        /// Раньше ложились сперва все круги, и внутри - в том порядке, в каком мир отдал
+        /// локации, то есть как попало; остановка на половине оставляла полторы сотни кругов
+        /// по всему материку и обрывки дорог между ними. Теперь шаги идут по расстоянию **по
+        /// дорогам** от начала, и круг метки ставится перед дорогой, которая до неё доводит:
+        /// в любой миг уложенное - связная сеть, растущая от дома.
+        ///
+        /// Спавн и алтари - исключение по просьбе хозяина: их круги и есть то, ради чего
+        /// нажимают, и ждать их в конце очереди незачем.
+        ///
+        /// Заодно это быстрее, и заметно: каждое задание ждёт, пока встанут земля и объекты
+        /// его зон, а соседние куски делят уже загруженные - прыжок же через материк грузит
+        /// всё заново.
+        ///
+        /// Начало - спавн; если его на этом материке нет, ближайшая к нажавшему метка.
+        /// </summary>
+        private static List<Step> Steps(List<Mark> marks, Network net, Vector3 asked)
+        {
+            var steps = new List<Step>(marks.Count + net.Links.Count);
+            if (marks.Count == 0) return steps;
+
+            var start = 0;
+            var near = float.MaxValue;
+            for (var i = 0; i < marks.Count; i++)
+            {
+                if (marks[i].Kind == MarkKind.Spawn) { start = i; break; }
+
+                var away = Flat(asked, marks[i].At);
+                if (away < near) { near = away; start = i; }
+            }
+
+            var far = Roads(net.Points, net.Links)[start];
+
+            var first = new List<Step>();
+            var rest = new List<Step>();
+
+            for (var i = 0; i < marks.Count; i++)
+            {
+                var step = new Step { Mark = i, Edge = -1, Far = far[i] };
+                if (marks[i].Kind == MarkKind.Stone) rest.Add(step);
+                else first.Add(step);
+            }
+
+            for (var i = 0; i < net.Links.Count; i++)
+                rest.Add(new Step
+                {
+                    Mark = -1,
+                    Edge = i,
+                    Far = Mathf.Max(far[net.Links[i].A], far[net.Links[i].B]),
+                });
+
+            first.Sort((a, b) => a.Far.CompareTo(b.Far));
+
+            // Круг метки - перед дорогой, которая до неё доводит: расстояние у них одно, и
+            // порядок решает только это.
+            rest.Sort((a, b) =>
+            {
+                var by = a.Far.CompareTo(b.Far);
+                return by != 0 ? by : (a.Mark >= 0 ? -1 : b.Mark >= 0 ? 1 : 0);
+            });
+
+            steps.AddRange(first);
+            steps.AddRange(rest);
+            return steps;
         }
 
         /// <summary>
@@ -942,19 +1029,6 @@ namespace AstvardServerMod
             }
 
             return all;
-        }
-
-        private static Vector3? SpawnAt(List<Mark> marks)
-        {
-            foreach (var mark in marks)
-                if (mark.Kind == MarkKind.Spawn) return mark.At;
-
-            return null;
-        }
-
-        private static int Touches(KeyValuePair<Vector3, Vector3> edge, Vector3 at)
-        {
-            return edge.Key == at || edge.Value == at ? 1 : 0;
         }
 
         /// <summary>

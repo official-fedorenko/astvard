@@ -40,6 +40,54 @@ namespace AstvardServerMod
             get { return _roadTorch != 0; }
         }
 
+        /// <summary>
+        /// Вечные факелы: горят, не прося смолы.
+        ///
+        /// `m_infiniteFuel` - поле **префаба**, и поднятое у поставленного экземпляра оно
+        /// живёт лишь до выгрузки зоны: объект создаётся из префаба заново. Поэтому признак
+        /// лежит в ZDO самого факела, а патч на `Fireplace.UpdateFireplace` поднимает по
+        /// нему флаг у живого экземпляра. Так топливо не тратится **вовсе** - это дешевле,
+        /// чем доливать его каждые две секунды, гоняя по сети новую ревизию ZDO на каждый
+        /// факел из шести тысяч.
+        ///
+        /// Игра при этом ведёт себя как со своим вечным огнём: `IsBurning` отвечает «да» на
+        /// пустом баке, а подсказка не предлагает подлить.
+        /// </summary>
+        internal const string TorchForeverKey = "astvard_forever";
+
+        private static bool _roadTorchForever;
+
+        internal static bool RoadTorchForever
+        {
+            get { return _roadTorchForever; }
+        }
+
+        internal static GameObject RoadTorchForeverButton;
+
+        private static void UpdateRoadTorchForeverLabel()
+        {
+            var label = RoadTorchForeverButton != null
+                ? RoadTorchForeverButton.GetComponentInChildren<Text>(true)
+                : null;
+            if (label != null) label.text = _roadTorchForever ? "Вечные: вкл" : "Вечные: выкл";
+        }
+
+        internal static void ToggleRoadTorchForever()
+        {
+            _roadTorchForever = !_roadTorchForever;
+            UpdateRoadTorchForeverLabel();
+            Log.LogInfo($"[AstvardServerMod] Road torches: forever {(_roadTorchForever ? "on" : "off")}.");
+        }
+
+        /// <summary>Помечает факел вечным - и в записи, и у экземпляра, что уже стоит.</summary>
+        internal static void MakeTorchForever(ZNetView view, Fireplace fire)
+        {
+            if (view == null || !view.IsValid()) return;
+
+            view.GetZDO().Set(TorchForeverKey, true);
+            if (fire != null) fire.m_infiniteFuel = true;
+        }
+
         // Off the paint, but close enough to read as the road's own.
         private const float TorchMargin = 0.6f;
 
@@ -80,6 +128,7 @@ namespace AstvardServerMod
                 ? RoadTorchButton.GetComponentInChildren<Text>(true)
                 : null;
             if (label != null) label.text = "Факелы: " + TorchLabels[_roadTorch];
+            UpdateRoadTorchForeverLabel();
         }
 
         private static void ChooseRoadTorch(int choice)
@@ -189,6 +238,7 @@ namespace AstvardServerMod
                 if (free && fire != null && !fire.m_infiniteFuel) fire.SetFuel(fire.m_maxFuel);
 
                 var view = go.GetComponent<ZNetView>();
+                if (_roadTorchForever) MakeTorchForever(view, fire);
                 if (view != null && view.IsValid()) built.Add(view.GetZDO().m_uid);
             }
 

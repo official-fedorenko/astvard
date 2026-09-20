@@ -746,6 +746,10 @@ namespace AstvardServerMod
                 });
             }
 
+            // Последней на странице: вид факела выбирают, уходя со страницы, а этот
+            // переключатель остаётся на ней и меняется отдельно от вида.
+            RoadTorchForeverButton = MakeButton(gui, "Вечные: выкл", ToggleRoadTorchForever);
+
             RoadAreaInput = gui.CreateInputField(
                 Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
@@ -1670,6 +1674,7 @@ namespace AstvardServerMod
             SetActive(RoadLeftButton, MenuState == StateRoadBend);
             SetActive(RoadRightButton, MenuState == StateRoadBend);
             SetActive(RoadTorchInput, MenuState == StateRoadTorches);
+            SetActive(RoadTorchForeverButton, MenuState == StateRoadTorches);
             foreach (var choice in RoadTorchChoiceButtons)
                 SetActive(choice, MenuState == StateRoadTorches);
             SetActive(RoadAreaInput, MenuState == StateRoadArea);

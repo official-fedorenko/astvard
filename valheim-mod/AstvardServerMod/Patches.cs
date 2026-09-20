@@ -232,6 +232,31 @@ namespace AstvardServerMod
     }
 
     /// <summary>
+    /// Факел, поставленный нами вечным, топлива не тратит.
+    ///
+    /// Флаг лежит в ZDO факела, а `m_infiniteFuel` - у экземпляра, и поднимать его надо
+    /// заново после каждой загрузки зоны. Дешевле способа нет: пока флаг поднят, префикс
+    /// выходит первой строкой, а игра, увидев `m_infiniteFuel`, топливо не считает вовсе -
+    /// ни записи в ZDO, ни рассылки по сети.
+    ///
+    /// `ZNetView` ищется вверх по объекту: у иных огней `Fireplace` сидит на дочернем.
+    /// </summary>
+    [HarmonyPatch(typeof(Fireplace), "UpdateFireplace")]
+    public static class FireplaceForever
+    {
+        private static void Prefix(Fireplace __instance)
+        {
+            if (__instance == null || __instance.m_infiniteFuel) return;
+
+            var view = __instance.GetComponentInParent<ZNetView>();
+            if (view == null || !view.IsValid()) return;
+            if (!view.GetZDO().GetBool(Plugin.TorchForeverKey)) return;
+
+            __instance.m_infiniteFuel = true;
+        }
+    }
+
+    /// <summary>
     /// Mead. DelayedTap is the pour that follows the tap animation, and it is the only
     /// place the bottles come into existence.
     /// </summary>

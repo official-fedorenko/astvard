@@ -135,6 +135,7 @@ namespace AstvardServerMod
             pkg.Write(TorchSpacing());
             pkg.Write(player.GetPlayerID());
             pkg.Write(PlatformManager.DistributionPlatform.LocalUser.PlatformUserID.ToString());
+            pkg.Write(RoadTorchForever);
             ZRoutedRpc.instance.InvokeRoutedRPC(RpcRoadJob, pkg);
 
             UpdateRoadHint();
@@ -304,6 +305,10 @@ namespace AstvardServerMod
             public Vector3 Centre;
             public bool Grow;
 
+            // Вечные ли факелы этого задания. Хвостовое поле пакета: клиент постарше его
+            // не шлёт, и это не повод отказать в дорожке.
+            public bool Forever;
+
             // The zones the piece in hand needs: poked, and their objects built.
             public readonly HashSet<Vector2s> Zones = new HashSet<Vector2s>();
         }
@@ -391,6 +396,11 @@ namespace AstvardServerMod
                 Log.LogWarning($"[AstvardServerMod] Road job unreadable from {SenderName(sender)}: {e.Message}");
                 return;
             }
+
+            // Хвостовое поле, и читается оно отдельно: клиент без него шлёт пакет короче,
+            // а дорожка ему всё равно полагается.
+            try { job.Forever = pkg.ReadBool(); }
+            catch (System.Exception) { job.Forever = false; }
 
             if (!ServerAllows(sender))
             {
@@ -993,6 +1003,7 @@ namespace AstvardServerMod
                     if (fire != null && !fire.m_infiniteFuel) fire.SetFuel(fire.m_maxFuel);
 
                     var view = go.GetComponent<ZNetView>();
+                    if (job.Forever) MakeTorchForever(view, fire);
                     if (view != null && view.IsValid()) job.Record.Torches.Add(view.GetZDO().m_uid);
                     placed++;
                 }
