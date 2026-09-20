@@ -102,8 +102,6 @@ namespace AstvardServerMod
 
         internal static GameObject InfoButton;
 
-        internal static GameObject InfoText;
-
         internal static GameObject SeedCopyButton;
 
         internal static GameObject ActivateButton;
@@ -208,14 +206,11 @@ namespace AstvardServerMod
             // First on the first page: what a player has earned, above everything to do.
             CreateCurrencyWidget(gui);
 
-            InfoButton = MakeButton(gui, "Ознакомиться", () =>
+            InfoButton = MakeButton(gui, "", () =>
             {
                 IsInfoShown = !IsInfoShown;
-                UpdateInfoText();
                 RefreshMenu();
             });
-
-            InfoText = MakeText(gui, ProjectDescription);
 
             SeedCopyButton = MakeButton(gui, "Скопировать сид", CopySeed);
 
@@ -818,6 +813,7 @@ namespace AstvardServerMod
             CreateMarkWindow(gui);
 
             CreateSortInfoWindow(gui);
+            CreateAboutWindow(gui);
             CreateChestZoneWidgets(gui);
             CreateChestRowWidgets(gui);
             CreateHelperWidgets(gui);
@@ -1257,19 +1253,12 @@ namespace AstvardServerMod
             if (Time.realtimeSinceStartup < _infoTickAt) return;
             _infoTickAt = Time.realtimeSinceStartup + 0.5f;
 
-            UpdateInfoText();
+            RefreshAbout(true);
         }
 
-        private static void UpdateInfoText()
+        /// <summary>Что показывает окно «Ознакомиться»: сервер, мир, часы и где ты стоишь.</summary>
+        internal static string AboutLines()
         {
-            // The button calls this before RefreshMenu switches the text on, so the
-            // lookup has to reach a hidden object. Without that it came back null and
-            // the update was dropped - the page only refreshed when it was CLOSED, and
-            // each open showed the snapshot from the last close. The first open of a
-            // session showed no world, seed or position at all.
-            var label = InfoText != null ? InfoText.GetComponentInChildren<Text>(true) : null;
-            if (label == null) return;
-
             var text = new System.Text.StringBuilder(ProjectDescription);
 
             var world = ZNet.World;
@@ -1301,7 +1290,7 @@ namespace AstvardServerMod
                 text.Append($"{NEWLINE}Биом: {biome}");
             }
 
-            label.text = text.ToString();
+            return text.ToString();
         }
 
         private GameObject MakeText(GUIManager gui, string text)
@@ -1382,7 +1371,8 @@ namespace AstvardServerMod
 
             SetActive(CurrencyText, MenuState == StateRoot && _myRunes >= 0);
             SetActive(InfoButton, MenuState == StateRoot);
-            SetActive(InfoText, MenuState == StateRoot && IsInfoShown);
+            SetLabel(InfoButton, IsInfoShown ? "Ознакомиться: скрыть" : "Ознакомиться");
+            RefreshAbout(MenuState == StateRoot && IsInfoShown);
             SetActive(SeedCopyButton, MenuState == StateRoot && IsInfoShown);
             SetActive(ActivateButton, admin && MenuState == StateRoot);
             SetActive(AdminLeaveButton, admin && MenuState == StateRoot);
