@@ -271,7 +271,8 @@ namespace AstvardServerMod
                 said.Append($", в ней срезок {net.Shortcuts} на "
                             + $"{net.ShortcutMetres / 1000f:0.0} км");
 
-            said.Append($". Кругов {marks.Count}: {Rings(marks)}.");
+            said.Append($". Кругов {marks.Count}: {Rings(marks)}");
+            said.Append(" — и каждый дорастёт до края запрета стройки, если тот шире.");
 
             Say(sender, said.ToString(), census, marks);
         }
@@ -535,6 +536,7 @@ namespace AstvardServerMod
                 Platform = platform,
                 Ring = torch > 0 ? torch : 0,
                 Centre = mark.At,
+                Grow = true,
             };
         }
 

@@ -297,10 +297,12 @@ namespace AstvardServerMod
             public bool Stop;
             public RoadJobRecord Record;
 
-            // Круг вокруг камня: чем его обвести факелами и где его середина. У обычной
-            // дорожки оба нулевые - кольца у неё нет.
+            // Круг вокруг метки: чем его обвести факелами и где его середина. У обычной
+            // дорожки оба нулевые - кольца у неё нет. `Grow` просит дорастить круг до края
+            // запрета стройки, когда зона встанет и спросить об этом станет у кого.
             public int Ring;
             public Vector3 Centre;
+            public bool Grow;
 
             // The zones the piece in hand needs: poked, and their objects built.
             public readonly HashSet<Vector2s> Zones = new HashSet<Vector2s>();
@@ -577,6 +579,11 @@ namespace AstvardServerMod
                                        + "after a minute; laying the paint only.");
                     }
 
+                    // Круг растёт только теперь: пока зона не встала, `Location` в сцене нет,
+                    // и спросить про запрет стройки не у кого.
+                    if (job.Grow && complete && GrowRoadJobRing(job))
+                        reach = job.Smooth ? job.Radius + SmoothBlend(job.Radius) : job.Radius;
+
                     // A frame for what has just woken - compilers loading their edits, locations
                     // flattening their ground - to reach the heightmaps the smoothing reads.
                     yield return null;
@@ -663,6 +670,43 @@ namespace AstvardServerMod
             for (var dx = -margin; dx < margin + step; dx += step)
                 for (var dz = -margin; dz < margin + step; dz += step)
                     into.Add(ZoneSystem.GetZone(at + new Vector3(Mathf.Min(dx, margin), 0f, Mathf.Min(dz, margin))));
+        }
+
+        /// <summary>
+        /// Растит круг до края той зоны, где игра запрещает строить.
+        ///
+        /// Своей меры для этого нет и быть не может: запрет считает сама игра - из
+        /// `m_noBuildRadiusOverride`, если он задан, и из радиуса локации, если нет
+        /// (`Location.IsInside(…, buildCheck: true)`), - а лежит это на префабе локации, не
+        /// в записи генератора, которую мы читаем при разведке. Зато когда зона встала,
+        /// `Location` есть в сцене, и число берётся у него, а не угадывается шагами наружу.
+        ///
+        /// Зачем: факел внутри запрета мод не ставит (`FindTorchSpot`), так что кольцо
+        /// вокруг круга, который уже запрета, не вставало вовсе - и молча. Теперь край
+        /// круга совпадает с краем запрета, а факелы встают сразу за ним.
+        ///
+        /// Потолок - `RingMax`: зоны задания держатся в `RoadJobMargin` = 40 м от пути, и
+        /// краска, вышедшая за них, писала бы в компиляторы, которых никто не грузил.
+        /// </summary>
+        private static bool GrowRoadJobRing(RoadJob job)
+        {
+            var here = Location.GetZoneLocation(job.Centre);
+            if (here == null || !here.m_noBuild) return false;
+
+            var edge = here.m_noBuildRadiusOverride > 0f
+                ? here.m_noBuildRadiusOverride
+                : here.GetMaxRadius();
+
+            var want = Mathf.Min(edge, RingMax);
+            if (want <= job.Radius + 0.1f) return false;
+
+            Log.LogInfo($"[AstvardServerMod] Road job {job.Id}: ring {job.Radius:F1} → {want:F1} m, "
+                        + $"to the no-build edge of {Utils.GetPrefabName(here.gameObject)}"
+                        + (edge > RingMax ? $" (held at {RingMax:F0} m)" : "") + ".");
+
+            job.Radius = want;
+            job.Width = want * 2f;
+            return true;
         }
 
         /// <summary>Whether the zone's ground is built here - its heightmap is up.</summary>
