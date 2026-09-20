@@ -177,6 +177,9 @@ namespace AstvardServerMod
 
         private static string _gardenSaid;
 
+        /// <summary>Сколько культур сейчас не засеваем: их на складе уже довольно.</summary>
+        internal static int CropsFull;
+
         // То же самое, но по-русски и для панели: лог читать некому, пока человек играет.
         // Хозяин это и спросил первым делом - «а где посмотреть надпись?».
         private static string _gardenPanel = "Огород: ещё не смотрел.";
@@ -603,6 +606,7 @@ namespace AstvardServerMod
 
             GameObject best = null;
             var bestSeeds = 0;
+            CropsFull = 0;
 
             foreach (var sapling in SaplingByCrop.Values)
             {
@@ -614,7 +618,11 @@ namespace AstvardServerMod
 
                 // Урожай этого саженца: если его на складе уже довольно, сажать незачем.
                 var crop = CropOf(sapling);
-                if (crop != null && CropKeep > 0 && InStock(crop) >= CropKeep) continue;
+                if (crop != null && CropKeep > 0 && InStock(crop) >= CropKeep)
+                {
+                    CropsFull++;
+                    continue;
+                }
 
                 var seeds = int.MaxValue;
                 foreach (var need in piece.m_resources)

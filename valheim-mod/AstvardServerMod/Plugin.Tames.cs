@@ -67,6 +67,8 @@ namespace AstvardServerMod
             var where = player.transform.position;
             var hungry = 0;
 
+            TamesSeen = 0;
+
             foreach (var character in Character.GetAllCharacters())
             {
                 if (character == null || character.IsDead()) continue;
@@ -75,7 +77,13 @@ namespace AstvardServerMod
                 if ((spot - where).sqrMagnitude > HarvestScanRadius * HarvestScanRadius) continue;
 
                 var tame = character.GetComponent<Tameable>();
-                if (tame == null || !tame.IsHungry()) continue;
+                if (tame == null) continue;
+
+                // Всех, а не только голодных: «голодных 0» при пустом загоне и при десятке
+                // сытых читается одинаково, а значит по-разному.
+                TamesSeen++;
+
+                if (!tame.IsHungry()) continue;
 
                 var ai = character.GetComponent<MonsterAI>();
                 if (ai == null || ai.m_consumeItems == null || ai.m_consumeItems.Count == 0) continue;
@@ -115,6 +123,7 @@ namespace AstvardServerMod
                 DropFood(prefab, spot);
             }
 
+            TamesHungry = hungry;
             return hungry;
         }
 
@@ -123,6 +132,11 @@ namespace AstvardServerMod
         /// слой предметов, тот же радиус поиска и сравнение по имени вещи, а не по префабу.
         /// </summary>
         private static bool _tameFactsSaid;
+
+        /// <summary>Сколько приручённых зверей нашлось в зоне за прошлый проход.</summary>
+        internal static int TamesSeen;
+
+        internal static int TamesHungry;
 
         /// <summary>
         /// Что игра сама знает о приручении и приплоде — один раз в лог.

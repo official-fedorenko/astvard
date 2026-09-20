@@ -1020,6 +1020,15 @@ namespace AstvardServerMod
         /// been told what players may do treats everything as closed, which is right,
         /// and silent, which is not.
         /// </summary>
+        /// <summary>Зона, в которой игрок стоял на прошлом проходе, или null.</summary>
+        internal static Sorting.Zone StandingZone()
+        {
+            if (_lastZone < 0) return null;
+
+            var zones = SortingZones();
+            return _lastZone < zones.Count ? zones[_lastZone] : null;
+        }
+
         internal static string SortingWhy()
         {
             if (!SortingOn) return "Сортировка выключена.";

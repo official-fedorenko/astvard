@@ -455,6 +455,19 @@ namespace AstvardServerMod
 
         private static string _kilnSaid;
 
+        /// <summary>Что стоит в зоне и что упёрлось в предел — для окна «Информация».</summary>
+        internal static string ZoneHasRu = "";
+
+        internal static string ZoneLimitsRu = "";
+
+        internal static string ZoneFiresRu = "";
+
+        /// <summary>Блюда, которых на складе уже довольно: их перестали готовить.</summary>
+        private static readonly HashSet<string> FoodFull = new HashSet<string>();
+
+        private static readonly Dictionary<string, string> ZoneFiresSeen =
+            new Dictionary<string, string>();
+
         private static IEnumerator AutomationLoop()
         {
             var pieces = new List<Piece>();
@@ -576,6 +589,9 @@ namespace AstvardServerMod
                     var kilnsMayBurn = FeedKilnsOn
                                        && (CoalKeep <= 0 || InStock(CoalPrefab) < CoalKeep);
 
+                    FoodFull.Clear();
+                    int zoneCook = 0, zoneBarrels = 0, zoneHives = 0, zoneKilns = 0;
+
                     foreach (var piece in pieces)
                     {
                         if (piece == null) continue;
@@ -589,6 +605,7 @@ namespace AstvardServerMod
                         var cooking = piece.GetComponentInChildren<CookingStation>();
                         if (cooking != null)
                         {
+                            if (inZone) zoneCook++;
                             if (harvesting && MayHarvest(cooking, collectSpots, inZone))
                                 cooking.GetComponent<ZNetView>()
                                     .InvokeRPC("RPC_RemoveDoneItem", player.transform.position, 1);
@@ -598,12 +615,14 @@ namespace AstvardServerMod
                         }
 
                         var beehive = piece.GetComponentInChildren<Beehive>();
+                        if (beehive != null && inZone) zoneHives++;
                         if (beehive != null && harvesting && MayHarvest(beehive, collectSpots, inZone))
                             beehive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
 
                         var fermenter = piece.GetComponentInChildren<Fermenter>();
                         if (fermenter != null)
                         {
+                            if (inZone) zoneBarrels++;
                             if (harvesting && MayHarvest(fermenter, collectSpots, inZone))
                                 fermenter.GetComponent<ZNetView>().InvokeRPC("RPC_Tap");
                             if (feeding) FillFermenter(fermenter, food);
@@ -623,6 +642,7 @@ namespace AstvardServerMod
                             if (inZone)
                             {
                                 zoneSmelters++;
+                                if (MakesCoal(smelter)) zoneKilns++;
                                 var own = StationView(smelter);
                                 if (own != null && own.IsOwner()) zoneMine++;
                             }
@@ -651,6 +671,16 @@ namespace AstvardServerMod
                                     ZoneFireKinds[kind] = fireplace.m_infiniteFuel ? "burns for ever"
                                         : fireplace.m_fuelItem != null ? fireplace.m_fuelItem.gameObject.name
                                         : "no fuel of its own";
+
+                                // То же, но словами игрока: в логе имена префабов, а в
+                                // окне человек ищет глазами «смолу», а не «Resin».
+                                if (!ZoneFiresSeen.ContainsKey(kind))
+                                    ZoneFiresSeen[kind] = fireplace.m_infiniteFuel
+                                        ? PieceTitle(piece.gameObject) + ": горит вечно"
+                                        : fireplace.m_fuelItem != null
+                                            ? PieceTitle(piece.gameObject) + ": "
+                                              + ItemTitle(fireplace.m_fuelItem)
+                                            : PieceTitle(piece.gameObject) + ": без топлива";
                             }
 
                             if (feeding) FillFireplace(fireplace, food);
@@ -660,6 +690,10 @@ namespace AstvardServerMod
                     // Звери - такая же половина наполнения, как станции: еда им тоже
                     // берётся из помеченных сундуков, и по тому же правилу зоны.
                     var tames = feeding && FeedTamesOn ? FeedTames(player, zone, supplyChests) : 0;
+
+                    SayZoneHas(zone, zoneSmelters, zoneKilns, zoneCook, zoneFires,
+                               zoneBarrels, zoneHives);
+                    SayZoneLimits();
 
                     // Огород - сам по себе: собирать урожай есть куда и тогда, когда
                     // станций в зоне нет вовсе, а грядки растут часами, так что у него
@@ -696,6 +730,93 @@ namespace AstvardServerMod
         /// whatever turns something into coal, and a name checked against a list is a name
         /// that stops being right the day the game adds another one.
         /// </summary>
+        /// <summary>
+        /// Что стоит в зоне — человеческими словами, для окна «Информация».
+        ///
+        /// Счёт идёт в том же обходе, которым делается работа: второй проход ради показа
+        /// не окупится, а эти числа всё равно уже посчитаны по дороге. Пустые виды не
+        /// перечисляются - «ульев 0» в списке из семи строк читать некому.
+        /// </summary>
+        private static void SayZoneHas(Sorting.Zone zone, int smelters, int kilns, int cooking,
+                                       int fires, int barrels, int hives)
+        {
+            if (zone == null)
+            {
+                ZoneHasRu = "";
+                return;
+            }
+
+            var said = new System.Text.StringBuilder();
+            Add(said, smelters - kilns, "плавильня", "плавильни", "плавилен");
+            Add(said, kilns, "угольная печь", "угольные печи", "угольных печей");
+            Add(said, cooking, "кухня", "кухни", "кухонь");
+            Add(said, fires, "огонь", "огня", "огней");
+            Add(said, barrels, "бочка", "бочки", "бочек");
+            Add(said, hives, "улей", "улья", "ульев");
+
+            ZoneHasRu = said.Length > 0
+                ? "В зоне: " + said + "."
+                : "В зоне нет ни одной станции.";
+
+            var fireLines = new System.Text.StringBuilder();
+            foreach (var pair in ZoneFiresSeen)
+            {
+                if (fireLines.Length > 0) fireLines.Append(NEWLINE);
+                fireLines.Append(pair.Value);
+            }
+
+            ZoneFiresRu = fireLines.ToString();
+        }
+
+        /// <summary>Число со словом в нужном падеже: «одна бочка», «две бочки», «пять бочек».</summary>
+        private static void Add(System.Text.StringBuilder said, int count,
+                                string one, string few, string many)
+        {
+            if (count <= 0) return;
+
+            if (said.Length > 0) said.Append(", ");
+
+            var tail = count % 100 / 10 == 1 ? many
+                : count % 10 == 1 ? one
+                : count % 10 >= 2 && count % 10 <= 4 ? few
+                : many;
+
+            said.Append(count).Append(' ').Append(tail);
+        }
+
+        /// <summary>
+        /// Какие пределы держат прямо сейчас.
+        ///
+        /// Предел, о котором не сказано, неотличим от поломки: за один вечер «ничего не
+        /// происходит» трижды означало «на складе уже довольно» - уголь, готовая еда и
+        /// урожай. Поэтому здесь не сами числа из настроек, а то, **сработали ли они**.
+        /// </summary>
+        private static void SayZoneLimits()
+        {
+            var said = new System.Text.StringBuilder();
+
+            if (CoalKeep > 0)
+            {
+                var coal = InStock(CoalPrefab);
+                if (coal >= CoalKeep)
+                    said.Append($"Угля {coal} при пределе {CoalKeep} — печи стоят.");
+            }
+
+            if (FoodFull.Count > 0)
+            {
+                if (said.Length > 0) said.Append(NEWLINE);
+                said.Append($"Блюд набрало предел {FoodKeep}: {FoodFull.Count} — их не готовим.");
+            }
+
+            if (CropsFull > 0)
+            {
+                if (said.Length > 0) said.Append(NEWLINE);
+                said.Append($"Культур набрало предел {CropKeep}: {CropsFull} — их не засеваем.");
+            }
+
+            ZoneLimitsRu = said.Length > 0 ? said.ToString() : "Пределы никого не держат.";
+        }
+
         private static bool MakesCoal(Smelter smelter)
         {
             if (smelter == null || smelter.m_conversion == null) return false;
@@ -966,7 +1087,11 @@ namespace AstvardServerMod
 
                     // Склад считается по каждому блюду отдельно - см. FoodKeep.
                     if (FoodKeep > 0 && conversion.m_to != null
-                        && InStock(conversion.m_to.name) >= FoodKeep) continue;
+                        && InStock(conversion.m_to.name) >= FoodKeep)
+                    {
+                        FoodFull.Add(conversion.m_to.name);
+                        continue;
+                    }
 
                     AcceptScratch.Add(conversion.m_from.gameObject.name);
                 }
@@ -1049,7 +1174,11 @@ namespace AstvardServerMod
                 // положили основу в помеченный сундук - значит хотели брагу. Нужен
                 // только предел, иначе сотня медовухи станет двумя сотнями.
                 if (FoodKeep > 0 && conversion.m_to != null
-                    && InStock(conversion.m_to.name) >= FoodKeep) continue;
+                    && InStock(conversion.m_to.name) >= FoodKeep)
+                {
+                    FoodFull.Add(conversion.m_to.name);
+                    continue;
+                }
 
                 AcceptScratch.Add(conversion.m_from.gameObject.name);
             }

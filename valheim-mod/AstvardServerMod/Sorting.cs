@@ -208,6 +208,12 @@ namespace AstvardServerMod
         private static readonly Dictionary<string, int> Chosen = new Dictionary<string, int>();
 
         /// <summary>Какую категорию выбрали для этого предмета, или -1 - не выбирали.</summary>
+        /// <summary>Сколько предметов расписано с сайта: «мод решил» против «так велели».</summary>
+        public static int ChosenCount
+        {
+            get { return Chosen.Count; }
+        }
+
         public static int ChosenFor(string kind)
         {
             int category;
