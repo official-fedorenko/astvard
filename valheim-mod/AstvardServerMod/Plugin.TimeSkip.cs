@@ -37,6 +37,10 @@ namespace AstvardServerMod
         /// </summary>
         private void CreateTimeSkipWidgets(GUIManager gui)
         {
+            // Разведка камней живёт рядом со сдвигом времени: обе спрашивают сервер и
+            // обе - про мир целиком, а не про то, что под ногами.
+            RuneStonesButton = MakeButton(gui, "Камни с надписями", AskRunes);
+
             TimeSkipButton = MakeButton(gui, "Сдвинуть время", () =>
             {
                 SetFieldText(TimeSkipInput, "2");
@@ -176,6 +180,7 @@ namespace AstvardServerMod
         internal static void RefreshTimeSkip(bool admin)
         {
             SetActive(TimeSkipButton, admin && MenuState == StateCheats);
+            SetActive(RuneStonesButton, admin && MenuState == StateCheats);
 
             var page = admin && MenuState == StateTimeSkip;
             SetActive(TimeSkipHint, page);
