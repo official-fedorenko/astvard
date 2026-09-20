@@ -56,6 +56,9 @@ namespace AstvardServerMod
 
         private static bool _namesSaid;
 
+        /// <summary>Чьё имя мы уже перебили — по адресу, чтобы не говорить это каждый тик.</summary>
+        private static readonly HashSet<string> NamesTold = new HashSet<string>();
+
         internal static void TickServerNames()
         {
             if (GUIManager.IsHeadless() || _serverNames == null) return;
@@ -70,15 +73,24 @@ namespace AstvardServerMod
 
             foreach (var pair in Names)
             {
-                // Что там лежало до нас - говорится один раз, и это единственное
-                // доказательство, что правка вообще что-то изменила.
-                if (!_namesSaid)
-                {
-                    string had;
-                    if (MultiBackendMatchmaking.TryGetServerName(pair.Key, out had) && had != pair.Value)
-                        Log.LogInfo($"[AstvardServerMod] Server name: {pair.Key.Dedicated.m_host}:"
-                                    + $"{pair.Key.Dedicated.m_port} was «{had}», now «{pair.Value}».");
-                }
+                // Что лежало до нас - единственное доказательство, что правка вообще
+                // что-то изменила. Спрашивается на КАЖДОМ тике, а не однажды: на первом
+                // словарь по нашему ключу ещё пуст, потому что список серверов читается
+                // позже, когда игрок откроет «Присоединиться к игре». Закрыть это флагом
+                // значило бы не напечатать строку ни разу - как раз в том случае, ради
+                // которого она написана.
+                //
+                // Спама от этого нет: как только наше имя встало, `had` равно нашему, и
+                // условие само становится ложным. `NamesTold` страхует от единственного
+                // случая, где этого мало, - публичного адреса, которому матчмейкинг
+                // отдаёт своё имя с новым временем на каждый опрос.
+                var where = pair.Key.Dedicated.m_host + ":" + pair.Key.Dedicated.m_port;
+
+                string had;
+                if (MultiBackendMatchmaking.TryGetServerName(pair.Key, out had)
+                    && had != pair.Value && NamesTold.Add(where))
+                    Log.LogInfo($"[AstvardServerMod] Server name: {where} was «{had}», "
+                                + $"now «{pair.Value}».");
 
                 MultiBackendMatchmaking.SetServerName(pair.Key,
                     new ServerNameAtTimePoint(pair.Value, DateTime.UtcNow));
@@ -106,6 +118,7 @@ namespace AstvardServerMod
 
             _namesRead = text;
             _namesSaid = false;
+            NamesTold.Clear();
             Names.Clear();
 
             foreach (var record in text.Split(';'))
