@@ -1187,19 +1187,61 @@ namespace AstvardServerMod
         /// user expects. Wiring the tick into m_enterSfxPrefab would give the panel
         /// vanilla's hover sound as well, and is a separate decision.
         /// </summary>
+        /// <summary>
+        /// Подпись, которая укладывается в кнопку, какой бы длинной ни была.
+        ///
+        /// Длину подписей мы не выбираем: «Уголь на складе: без предела» и имя полки,
+        /// которое админ вписал на сайте, приходят какими пришли, а подпись, вылезшая за
+        /// край, читается как поломка. Поэтому кнопка сперва **переносит** строку, а если
+        /// и так не влезло - уменьшает шрифт, но не ниже одиннадцати: подпись, которую
+        /// надо разглядывать, не лучше обрезанной.
+        ///
+        /// Потолок берётся тот, что стоит сейчас, и **до** включения подбора: Unity, начав
+        /// подбирать, пишет в то же поле своё значение, и прочитанное после было бы уже
+        /// не наше. Короткие подписи от этого не меняются ни на точку.
+        /// </summary>
+        private static void FitLabel(GameObject button)
+        {
+            var label = button != null ? button.GetComponentInChildren<Text>(true) : null;
+            if (label == null) return;
+
+            var was = label.fontSize;
+
+            label.alignment = TextAnchor.MiddleCenter;
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.verticalOverflow = VerticalWrapMode.Truncate;
+
+            label.resizeTextForBestFit = true;
+            label.resizeTextMaxSize = was > 0 ? was : 16;
+            label.resizeTextMinSize = 11;
+        }
+
         private static void Silence(GameObject button)
         {
             var sfx = button != null ? button.GetComponent<ButtonSfx>() : null;
             if (sfx != null) sfx.m_selectSfxPrefab = null;
         }
 
+        /// <summary>
+        /// Ширина кнопки. Была 180 при панели в 260 - восемьдесят точек с каждой кнопки
+        /// не использовались вовсе.
+        ///
+        /// Ширину панели это не меняет: у неё `ContentSizeFitter`, и меряется она по
+        /// самому широкому ребёнку, а им и так была подсказка в 260. То есть кнопки
+        /// просто заняли место, которое панель под них уже держала.
+        /// </summary>
+        private const float ButtonWidth = 260f;
+
+        private const float ButtonHeight = 40f;
+
         private GameObject MakeButton(GUIManager gui, string text, UnityEngine.Events.UnityAction onClick)
         {
             var go = gui.CreateButton(
                 text, Panel.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
-                180f, 40f);
-            AddFixedSize(go, 180f, 40f);
+                ButtonWidth, ButtonHeight);
+            AddFixedSize(go, ButtonWidth, ButtonHeight);
+            FitLabel(go);
             Silence(go);
             go.GetComponent<Button>().onClick.AddListener(onClick);
             go.SetActive(false);

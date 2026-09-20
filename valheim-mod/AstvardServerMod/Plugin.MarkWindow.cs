@@ -81,6 +81,9 @@ namespace AstvardServerMod
                     "", MarkGrid.transform,
                     new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f),
                     170f, 38f);
+                // Имена полок пишет админ на сайте, до 24 знаков, - в клетку 170 на 38
+                // такое влезает не всегда.
+                FitLabel(go);
                 Silence(go);
                 go.GetComponent<Button>().onClick.AddListener(() => PickMark(slot));
                 go.SetActive(false);
