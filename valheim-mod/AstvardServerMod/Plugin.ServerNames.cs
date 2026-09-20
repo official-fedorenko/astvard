@@ -28,7 +28,8 @@ namespace AstvardServerMod
         internal static void BindServerNames(BepInEx.Configuration.ConfigFile config)
         {
             _serverNames = config.Bind("Серверы", "Names",
-                "72.61.139.115:2456=Аствард;127.0.0.1:2456=Аствард (отладка)",
+                "72.61.139.115:2456=Аствард;127.0.0.1:2456=Аствард (отладка);"
+                + "localhost:2456=Аствард (отладка)",
                 "Как звать наши серверы в списке игры: «адрес=имя» через ';'. Адрес - тот "
                 + "же, по которому заходишь; без порта подразумевается 2456. Имя ставится "
                 + "у тебя на клиенте и никуда не уходит: игра его с сервера не спрашивает.");
@@ -56,9 +57,6 @@ namespace AstvardServerMod
 
         private static bool _namesSaid;
 
-        /// <summary>Чьё имя мы уже перебили — по адресу, чтобы не говорить это каждый тик.</summary>
-        private static readonly HashSet<string> NamesTold = new HashSet<string>();
-
         internal static void TickServerNames()
         {
             if (GUIManager.IsHeadless() || _serverNames == null) return;
@@ -71,35 +69,37 @@ namespace AstvardServerMod
 
             ReadNames();
 
+            // Спросить у игры, чьё имя лежало тут до нас, **нельзя** - и это не недосмотр,
+            // а следствие того, как всё устроено. Мы ставим своё раньше, чем игра читает
+            // список (он читается, только когда игрок откроет «Присоединиться к игре»), а
+            // `SetServerName` уступает лишь более новому - значит загрузка со временем
+            // файла отвергается, и чужое имя в словарь не попадает уже никогда. Сколько
+            // тиков ни спрашивай, ответом всегда будет наше собственное. Строка «было
+            // такое-то» здесь жила два коммита и не напечаталась ни разу.
+            //
+            // Доказывать это в логе и не нужно: прежнее имя лежит в самом файле, и
+            // читает его `tools/serverlist/read.py`. Тащить разбор двоичного формата в
+            // мод ради строчки - это код, который сломается на следующей версии формата,
+            // взамен на то, что и так видно снаружи.
             foreach (var pair in Names)
-            {
-                // Что лежало до нас - единственное доказательство, что правка вообще
-                // что-то изменила. Спрашивается на КАЖДОМ тике, а не однажды: на первом
-                // словарь по нашему ключу ещё пуст, потому что список серверов читается
-                // позже, когда игрок откроет «Присоединиться к игре». Закрыть это флагом
-                // значило бы не напечатать строку ни разу - как раз в том случае, ради
-                // которого она написана.
-                //
-                // Спама от этого нет: как только наше имя встало, `had` равно нашему, и
-                // условие само становится ложным. `NamesTold` страхует от единственного
-                // случая, где этого мало, - публичного адреса, которому матчмейкинг
-                // отдаёт своё имя с новым временем на каждый опрос.
-                var where = pair.Key.Dedicated.m_host + ":" + pair.Key.Dedicated.m_port;
-
-                string had;
-                if (MultiBackendMatchmaking.TryGetServerName(pair.Key, out had)
-                    && had != pair.Value && NamesTold.Add(where))
-                    Log.LogInfo($"[AstvardServerMod] Server name: {where} was «{had}», "
-                                + $"now «{pair.Value}».");
-
                 MultiBackendMatchmaking.SetServerName(pair.Key,
                     new ServerNameAtTimePoint(pair.Value, DateTime.UtcNow));
-            }
 
             if (_namesSaid || Names.Count == 0) return;
 
             _namesSaid = true;
-            Log.LogInfo($"[AstvardServerMod] Server names: {Names.Count} set from the config.");
+
+            // Что именно поставили, а не только сколько: «два имени» не отличает верный
+            // адрес от опечатки в нём, а опечатка здесь - самая вероятная беда.
+            var said = new System.Text.StringBuilder();
+            foreach (var pair in Names)
+            {
+                if (said.Length > 0) said.Append(", ");
+                said.Append(pair.Key.Dedicated.m_host).Append(':')
+                    .Append(pair.Key.Dedicated.m_port).Append(" → «").Append(pair.Value).Append('»');
+            }
+
+            Log.LogInfo($"[AstvardServerMod] Server names: {said}.");
         }
 
         /// <summary>
@@ -118,7 +118,6 @@ namespace AstvardServerMod
 
             _namesRead = text;
             _namesSaid = false;
-            NamesTold.Clear();
             Names.Clear();
 
             foreach (var record in text.Split(';'))
