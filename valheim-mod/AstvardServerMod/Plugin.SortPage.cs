@@ -687,8 +687,8 @@ namespace AstvardServerMod
             {
                 SetCropKeep(Mathf.RoundToInt(ParseField(SortCropInput, CropKeep)));
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center, CropKeep > 0
-                    ? $"Собираем, пока культуры на складе меньше {CropKeep}"
-                    : "Собираем весь урожай");
+                    ? $"Засеваем, пока культуры на складе меньше {CropKeep}"
+                    : "Засеваем без оглядки на склад");
                 MenuState = StateSetupGarden;
                 RefreshMenu();
             });
@@ -892,16 +892,16 @@ namespace AstvardServerMod
                             + $"зоны.{NEWLINE}0 — без предела.";
 
             SetLabel(SortCropButton, CropKeep > 0
-                ? $"Урожая на складе: {CropKeep}"
-                : "Урожая на складе: без предела");
+                ? $"Засевать до: {CropKeep}"
+                : "Засевать до: без предела");
 
             var crop = SortCropHint != null ? SortCropHint.GetComponentInChildren<Text>(true) : null;
             if (crop != null)
-                crop.text = $"Сколько держать урожая,{NEWLINE}по каждой культуре свой{NEWLINE}"
-                            + $"счёт. Набралось столько{NEWLINE}моркови — морковь оставляем{NEWLINE}"
-                            + $"расти, репу и лук собираем{NEWLINE}дальше.{NEWLINE}{NEWLINE}"
-                            + $"Грядка — лучший склад:{NEWLINE}там урожай никому не{NEWLINE}"
-                            + $"мешает и не пропадёт.{NEWLINE}0 — без предела.";
+                crop.text = $"До какого запаса засевать{NEWLINE}пустые грядки, по каждой{NEWLINE}"
+                            + $"культуре свой счёт.{NEWLINE}Моркови столько — новую{NEWLINE}"
+                            + $"морковь не сажаем, лук и{NEWLINE}ячмень сажаем дальше.{NEWLINE}{NEWLINE}"
+                            + $"Созревшее собирается{NEWLINE}всегда: раз посажено —{NEWLINE}"
+                            + $"значит нужно.{NEWLINE}0 — без предела.";
 
             SetLabel(SortSlotsButton, OwnChestSlots > 0
                 ? $"Свой сундук: от {OwnChestSlots} ячеек"
