@@ -45,6 +45,26 @@ public class LootTests
         Assert.Equal(Sorting.Meads, Sorting.KnownFor("$item_barleywinebase"));
         Assert.Equal("Медовухи", Sorting.Title(Sorting.Meads));
 
+        // Дырки, найденные разбором «Материалов» 20.09.2026. Дуб и картофэйтр сажают
+        // так же, как шишки, а с туши снимают не только шкуру.
+        Assert.Equal(Sorting.Seeds, Sorting.KnownFor("$item_oakseeds"));
+        Assert.Equal(Sorting.Seeds, Sorting.KnownFor("$item_poteitrseeds"));
+        Assert.Equal(Sorting.Loot, Sorting.KnownFor("$item_wolfclaw"));
+        Assert.Equal(Sorting.Loot, Sorting.KnownFor("$item_asksvincarrionskull"));
+
+        // Шкура того же зверя остаётся в «Шкурах» - её шьют, а жилу нет.
+        Assert.Equal(Sorting.Hides, Sorting.KnownFor("$item_moosehide"));
+        Assert.Equal(Sorting.Loot, Sorting.KnownFor("$item_moosesinew"));
+
+        // Готовая еда и приправы: мимо кухни, оттого игра и звала их материалом.
+        Assert.Equal(Sorting.Food, Sorting.KnownFor("$item_feastmeadows"));
+        Assert.Equal(Sorting.Food, Sorting.KnownFor("$item_spiceashlands"));
+        Assert.Equal(Sorting.Food, Sorting.KnownFor("$item_barleyflour"));
+        Assert.Equal(Sorting.Food, Sorting.KnownFor("$item_turnip"));
+
+        // Снаряд катапульты - боеприпас, хоть игра и дала ему тип материала.
+        Assert.Equal(Sorting.Weapons, Sorting.KnownFor("$item_catapult_ammo"));
+
         // Слиток - не руда: его возят из плавильни, а не в неё, и полка у него своя.
         // Золото здесь ловушка: `$item_gold` - это слиток «Кровавое золото», а руда к
         // нему называется `$item_goldore`, «Окаменевшие ткани».

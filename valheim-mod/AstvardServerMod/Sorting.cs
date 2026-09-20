@@ -123,6 +123,54 @@ namespace AstvardServerMod
             "$item_wolfhairbundle", "$item_bloodbag", "$item_eyescream", "$item_dragontear",
             "$item_morgenheart", "$item_bonemawtooth", "$item_royaljelly", "$item_feathers",
             "$item_tar", "$item_bonemawscale", "$item_seekerqueen_drop",
+
+            // Досыпано 20.09.2026 по разбору «Материалов»: всё это снимают с туши, и у
+            // каждого в списке уже лежал сосед с того же зверя - клык Фенриса при когте,
+            // шерсть элакинга при шерсти Фенриса, обугленная кость при черепе, сердце
+            // моргена при сухожилии, панцирь королевы при мандибуле. Шкуры при этом
+            // остаются в «Шкурах»: их шьют, а остальное с той же туши - нет.
+            "$item_wolfclaw", "$item_elakinghairbundle", "$item_charredskull",
+            "$item_celestialfeather", "$item_morgensinew", "$item_mandible", "$item_needle",
+            "$item_bjornpaw", "$item_moosesinew", "$item_askbladder", "$item_moleclaws",
+            "$item_bilebag", "$item_bloodclot", "$item_ooze", "$item_ooze_mork",
+            "$item_ectoplasm", "$item_writhanroots", "$item_root", "$item_UndeadBjornRibcage",
+            "$item_asksvincarrionribcage", "$item_asksvincarrionpelvic",
+            "$item_asksvincarrionskull", "$item_asksvincarrionneck",
+
+            // Боссовое и то, что игра считает `Misc`, оттого и лежавшее в «Разном»:
+            // тип предмета тут не при чём, добыча - она и есть добыча.
+            "$item_frozenking_drop", "$item_fader_drop", "$item_yagluththing",
+            "$item_hatefulblood",
+        };
+
+        /// <summary>
+        /// Еда, которую игра считает материалом.
+        ///
+        /// Сырое мод узнаёт у самих кухонь (`IsRawFood`), и список тут был бы лишним -
+        /// но это всё мимо кухни: пиры и приправы уже готовы, мука смолота, а репа с
+        /// ячменём для игры «материал», потому что сырыми их не едят. За ними всеми ходят
+        /// к котлу, и лежать им у котла.
+        /// </summary>
+        private static readonly string[] FoodKeys =
+        {
+            "$item_turnip", "$item_barley", "$item_barleyflour", "$item_oatflour",
+            "$item_thistle",
+
+            "$item_feastmeadows", "$item_feastblackforest", "$item_feastswamps",
+            "$item_feastmountains", "$item_feastplains", "$item_feastoceans",
+            "$item_feastmistlands", "$item_feastashlands", "$item_feastdeepnorth",
+
+            "$item_spiceforests", "$item_spicemountains", "$item_spiceplains",
+            "$item_spiceoceans", "$item_spicemistlands", "$item_spiceashlands",
+            "$item_spicedeepnorth",
+        };
+
+        // Снаряды катапульты. Стрелы и снаряд баллисты игра зовёт `Ammo` и кладёт к
+        // оружию сама, а этим трём достался тип `Material` - и они уезжали к камню.
+        private static readonly string[] AmmoKeys =
+        {
+            "$item_catapult_ammo", "$item_catapult_bloodgold_ammo",
+            "$item_catapult_training_ammo",
         };
 
         // Руда и лом - то, что возят в плавильню. Слитки к ним не относятся: их возят
@@ -147,6 +195,11 @@ namespace AstvardServerMod
             "$item_oatseeds", "$item_vineberryseeds", "$item_vinegreenseeds",
             "$item_beechseeds", "$item_birchseeds", "$item_fircone", "$item_fircone_big",
             "$item_pinecone",
+
+            // Дуб и картофэйтр: сажаются ровно как шишки выше, а в списке их не было.
+            // Дырка, а не вкусовщина - из шести деревьев пять здесь лежали, дуб один
+            // остался в «Материалах».
+            "$item_oakseeds", "$item_poteitrseeds",
         };
 
         // Шкуры, кожа и нити - всё, из чего шьют. Чешуя и панцирь остаются добычей: их
@@ -198,6 +251,8 @@ namespace AstvardServerMod
             Fill(known, Hides, HideKeys);
             Fill(known, Valuables, ValuableKeys);
             Fill(known, Ingots, IngotKeys);
+            Fill(known, Food, FoodKeys);
+            Fill(known, Weapons, AmmoKeys);
 
             return known;
         }
