@@ -226,15 +226,11 @@ namespace AstvardServerMod
             }
             Player.m_debugMode = false;
 
-            var env = EnvMan.instance;
-            if (env != null)
-            {
-                // Called directly rather than through ResetWeather and ResetWind: both of
-                // those put a message up, and nothing may have been forced at all. The game
-                // ignores an empty environment that is already empty.
-                env.SetForceEnvironment("");
-                if (env.m_debugWind) env.ResetDebugWind();
-            }
+            // Погоду и ветер эта кнопка больше не трогает. Она снимает **своё**:
+            // бессмертие, полёт, стройку даром, проекции в руках, - а небо с 20.09.2026
+            // общее и живёт на сервере, рядом со ставкой ресурсов и зонами, которых она
+            // тоже не касается. Гасить чужую грозу тем, что один из админов вышел из
+            // режима, значит менять мир всем за одного.
 
             if (IsPlacing) CancelPlacement();
             ClearBuildAsk();

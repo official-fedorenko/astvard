@@ -79,6 +79,7 @@ namespace AstvardServerMod
             RegisterPlayerRuleRpcs(rpc);
             RegisterCurrencyRpcs(rpc);
             RegisterTimeSkipRpcs(rpc);
+            RegisterSkyRpcs(rpc);
             RegisterWorldRateRpcs(rpc);
             RegisterSharedZoneRpcs(rpc);
             RegisterSiteSortingRpcs(rpc);

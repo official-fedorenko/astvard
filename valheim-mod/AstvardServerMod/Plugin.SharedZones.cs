@@ -187,6 +187,7 @@ namespace AstvardServerMod
                 here.Add(peer.m_uid);
                 SendSortKinds(peer);
                 SendSortCats(peer);
+                SendSky(peer);
 
                 var theirs = new List<Sorting.Zone>();
                 foreach (var zone in ServerZones)
@@ -220,6 +221,7 @@ namespace AstvardServerMod
             {
                 ZonesSent.Remove(uid);
                 SortKindsSent.Remove(uid);
+                SkySent.Remove(uid);
             }
         }
 

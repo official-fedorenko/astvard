@@ -142,37 +142,32 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Pins the weather, the way the console's "env" command does. Only this client
-        /// sees it: m_forceEnv is an ordinary local field, and everyone else goes on
-        /// deriving the weather from world time as usual.
+        /// Просит сервер назначить погоду всем. Сам не назначает ничего.
+        ///
+        /// Раньше кнопка писала в `m_forceEnv` у себя, и гроза случалась над одним
+        /// человеком: поле обычное, локальное, а остальные продолжали выводить погоду из
+        /// мирового времени. Теперь решает сервер, и небо приезжает обратно той же
+        /// рассылкой, что и всем (`Plugin.Sky.cs`), - в том числе тому, кто нажал.
+        /// Поэтому здесь и сказано «прошу», а не «сделано»: сделано будет через секунду,
+        /// и скажет об этом ответ сервера.
         /// </summary>
         private static void ApplyWeather(WeatherOption option)
         {
-            var env = EnvMan.instance;
-            if (env == null)
-            {
-                Log.LogWarning("[AstvardServerMod] EnvMan not ready.");
-                return;
-            }
+            AskWeather(option.Env);
 
-            env.SetForceEnvironment(option.Env);
-
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Погода: {option.Label}");
-            Log.LogInfo($"[AstvardServerMod] Forced environment {option.Env}.");
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                $"Прошу сервер: погода — {option.Label}");
         }
 
-        /// <summary>Hands the weather back to the world clock.</summary>
+        /// <summary>Просит сервер вернуть всем обычную погоду.</summary>
         private static void ResetWeather()
         {
-            var env = EnvMan.instance;
-            if (env == null) return;
+            // Пустая строка - это то, чем поле у игры и начинается, и то, что она читает
+            // как «ничего не назначено»; отдельного вызова для снятия у неё нет.
+            AskWeather("");
 
-            // Empty is what the field starts as and what the game reads as "no
-            // override"; there is no separate call for clearing it.
-            env.SetForceEnvironment("");
-
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Погода снова обычная");
-            Log.LogInfo("[AstvardServerMod] Environment override cleared.");
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                "Прошу сервер вернуть обычную погоду");
         }
 
         /// <summary>
@@ -180,7 +175,8 @@ namespace AstvardServerMod
         /// (sin, 0, cos), which makes it an ordinary compass bearing pointing the way
         /// the wind blows: 0 north, 90 east. Strength is 1-10 here to match the
         /// time-of-day field next door — the game itself wants 0-1 and clamps to it.
-        /// Local like the weather: m_debugWind never leaves this client.
+        /// Как и погода, ветер уезжает на сервер и возвращается всем: `m_debugWind` -
+        /// поле этого клиента и никуда само не уходит.
         /// </summary>
         private static void ApplyWind()
         {
@@ -231,31 +227,21 @@ namespace AstvardServerMod
         /// </summary>
         private static void SetWind(float angle, float power)
         {
-            var env = EnvMan.instance;
-            if (env == null)
-            {
-                Log.LogWarning("[AstvardServerMod] EnvMan not ready.");
-                return;
-            }
-
             power = Mathf.Clamp(power, 0f, 10f);
-            env.SetDebugWind(angle, power / 10f);
+            AskWind(true, angle, power / 10f);
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                $"Ветер на {CompassNames[(int)Mathf.Repeat(Mathf.Round(angle / 45f), 8f)]}, сила {power:F0}");
-            Log.LogInfo($"[AstvardServerMod] Wind set to {angle:F0} deg, {power / 10f:F2}.");
+                $"Прошу сервер: ветер на "
+                + $"{CompassNames[(int)Mathf.Repeat(Mathf.Round(angle / 45f), 8f)]}, сила {power:F0}");
         }
 
-        /// <summary>Hands the wind back to the weather that should be driving it.</summary>
+        /// <summary>Просит сервер вернуть всем обычный ветер.</summary>
         private static void ResetWind()
         {
-            var env = EnvMan.instance;
-            if (env == null) return;
+            AskWind(false, 0f, 0f);
 
-            env.ResetDebugWind();
-
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center, "Ветер снова обычный");
-            Log.LogInfo("[AstvardServerMod] Debug wind cleared.");
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                "Прошу сервер вернуть обычный ветер");
         }
 
         // CookingStation and Smelter keep their fuel setter private, unlike
