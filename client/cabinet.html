@@ -676,9 +676,7 @@
               <div id="avatarPreview" style="flex:0 0 64px; width:64px; height:64px; border-radius:50%; background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); display:flex; align-items:center; justify-content:center; overflow:hidden; border:2px solid var(--border-color);">
                 <!-- image or letter will be set in JS -->
               </div>
-              <button type="button" id="chooseAvatarBtn" style="padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Выбрать</button>
-              <button type="button" id="uploadAvatarBtn" style="padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Загрузить фото</button>
-              <button type="button" id="steamAvatarBtn" style="display:none; padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Взять из Steam</button>
+              <button type="button" id="avatarSettingsBtn" style="padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Настройки</button>
               <input type="file" id="avatarFileInput" accept="image/*" style="display:none;">
             </div>
           </div>
@@ -687,9 +685,15 @@
           <div id="avatarPickerOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
             <div style="background:var(--bg-card, #17171f); border:1px solid var(--border-color); border-radius:16px; width:min(560px, 92vw); max-height:82vh; overflow:hidden; display:flex; flex-direction:column;">
               <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border-color);">
-                <div style="font-weight:600; color:var(--text-primary);">Выбор аватара</div>
+                <div style="font-weight:600; color:var(--text-primary);">Аватарка</div>
                 <button type="button" id="avatarPickerClose" style="background:none; border:none; color:var(--text-muted); font-size:22px; cursor:pointer; line-height:1;">&times;</button>
               </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; padding:16px 20px 0;">
+                <button type="button" id="uploadAvatarBtn" style="padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Загрузить фото</button>
+                <button type="button" id="steamAvatarBtn" style="display:none; padding:6px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:13px;">Взять из Steam</button>
+              </div>
+              <div style="padding:14px 20px 0; color:var(--text-muted); font-size:12px;">Или выбери готовую:</div>
+
               <div style="display:flex; gap:8px; padding:12px 20px 0;">
                 <button type="button" class="avatar-tab" data-tab="standard" style="padding:6px 14px; border-radius:8px; border:1px solid var(--border-color); background:rgba(255,255,255,0.06); color:var(--text-primary); cursor:pointer; font-size:13px;">Стандартные</button>
                 <button type="button" class="avatar-tab" data-tab="uploaded" style="padding:6px 14px; border-radius:8px; border:1px solid var(--border-color); background:none; color:var(--text-secondary); cursor:pointer; font-size:13px;">Мои загруженные</button>
@@ -1240,6 +1244,7 @@
                 });
                 if (updateRes.ok) {
                   showToast('Аватарка обновлена', 'success');
+                  document.getElementById('avatarPickerOverlay').style.display = 'none';
                   await loadProfile(); // refresh UI
                 }
               }
@@ -1272,6 +1277,7 @@
           const data = await res.json().catch(() => ({}));
           if (res.ok) {
             showToast('Аватарка взята из Steam', 'success');
+            document.getElementById('avatarPickerOverlay').style.display = 'none';
             await loadProfile();
           } else {
             showToast(data.message || 'Не получилось', 'error');
@@ -1288,7 +1294,7 @@
     // --- Avatar picker (standard + uploaded) ---
     const avatarPickerOverlay = document.getElementById('avatarPickerOverlay');
     const avatarPickerGrid = document.getElementById('avatarPickerGrid');
-    const chooseAvatarBtn = document.getElementById('chooseAvatarBtn');
+    const avatarSettingsBtn = document.getElementById('avatarSettingsBtn');
 
     async function applyAvatarUrl(url) {
       try {
@@ -1348,8 +1354,8 @@
       }
     }
 
-    if (chooseAvatarBtn) {
-      chooseAvatarBtn.onclick = () => {
+    if (avatarSettingsBtn) {
+      avatarSettingsBtn.onclick = () => {
         avatarPickerOverlay.style.display = 'flex';
         loadAvatarTab('standard');
       };
