@@ -210,7 +210,10 @@ namespace AstvardServerMod
                 : "Медовухи: выкл");
             SetLabel(BrewToggleButton, BrewEnabled ? "Варка: вкл" : "Варка: выкл");
 
-            SetActive(BrewButton, mine && MenuState == StateChestWork);
+            // Просьба хозяина: варка стоит рядом с остальным, что настраивают однажды,
+            // - в «Настройках» сортировки, а не в «Работе с сундуками». Сундуки там про
+            // то, куда класть, а медовухи про то, что делать.
+            SetActive(BrewButton, mine && MenuState == StateSortSetup);
 
             var list = mine && MenuState == StateBrews;
             SetActive(BrewHint, list);

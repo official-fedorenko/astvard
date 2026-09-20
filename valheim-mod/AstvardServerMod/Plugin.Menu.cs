@@ -1102,6 +1102,10 @@ namespace AstvardServerMod
                 else if (MenuState == StateSetupSort || MenuState == StateSetupWork
                          || MenuState == StateSetupGarden
                          || MenuState == StateSetupLabels) MenuState = StateSortSetup;
+                // У этих двух возврата не было вовсе, и «Назад» с них проваливалось в
+                // общий else - то есть в админ-меню, которого игрок и не открывал.
+                else if (MenuState == StateBrewOne) MenuState = StateBrews;
+                else if (MenuState == StateBrews) MenuState = StateSortSetup;
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;
                 else if (MenuState == StateSortCrew) MenuState = StateSortZone;
                 else if (MenuState == StateSortInvite) MenuState = StateSortCrew;
