@@ -42,6 +42,7 @@ namespace AstvardServerMod
             _sowGarden = config.Bind("Сортировка", "Sow", true,
                 "Подсаживать ли на освободившееся место. Саженец берётся тот, что вырастает "
                 + "в эту культуру, и платится семенами из помеченных сундуков — как у игрока. "
+                + "Пределы «Урожая на складе» и «Грядок в зоне» её держат так же, как засев. "
                 + "«Настройки» → «Огород» → «Пересаживать».");
 
             _sowEmpty = config.Bind("Сортировка", "SowEmpty", true,
@@ -56,15 +57,17 @@ namespace AstvardServerMod
                 + "грядки. «Настройки» → «Огород» → «Деревья».");
 
             _cropKeep = config.Bind("Сортировка", "CropKeep", 100,
-                "До какого запаса засевать пустые грядки, по каждой культуре свой счёт. "
-                + "Моркови на складе столько — новую морковь не сажаем, лук и ячмень сажаем "
-                + "дальше. Созревшее собирается в любом случае. 0 — без предела. "
+                "До какого запаса сажать — и засевать пустое, и пересаживать, — по каждой "
+                + "культуре свой счёт. Моркови на складе столько — новую морковь не сажаем, "
+                + "лук и ячмень сажаем дальше. Созревшее собирается в любом случае. 0 — без "
+                + "предела. "
                 + "«Настройки» → «Огород» → «Урожая на складе».");
 
             _bedCap = config.Bind("Сортировка", "BedsInZone", 100,
-                "Сколько грядок держать в зоне: больше этого числа мод не сажает. "
-                + "Считаются все занятые места — растущие, созревшие и посаженные руками. "
-                + "0 — без предела. «Настройки» → «Огород» → «Грядок в зоне».");
+                "Сколько грядок держать в зоне: больше этого числа мод не сажает и не "
+                + "пересаживает. Считаются все занятые места — растущие, созревшие и "
+                + "посаженные руками. Сбор идёт мимо предела. 0 — без предела. "
+                + "«Настройки» → «Огород» → «Грядок в зоне».");
         }
 
         /// <summary>
@@ -78,8 +81,14 @@ namespace AstvardServerMod
         /// Считаются все занятые грядки, а не только наши. Предел про то, сколько огорода
         /// нужно, а огороду всё равно, чьи руки его сажали.
         ///
-        /// Пересадки на своё место он не касается: она возвращает сорванное, то есть
-        /// держит число на месте, а не растит его. Предел - у «Засаживать».
+        /// Пересадку он держит наравне с засевом. Она возвращает сорванное, но начинает
+        /// этим **новую** работу, а не доделывает старую, и семя, потраченное на грядку
+        /// сверх просимого, потрачено зря. Мимо пределов идёт только сбор - по решению
+        /// хозяина, и там оно верно: созревшая грядка это уже сделанная работа.
+        ///
+        /// Оттого предел и умеет огород **уменьшать**: поставил меньше, чем стоит, - и
+        /// лишние грядки не возвращаются по мере сбора. Выкапывать мод не выкапывает
+        /// ничего.
         /// </summary>
         internal static int BedCap
         {
@@ -202,6 +211,9 @@ namespace AstvardServerMod
 
         private static int _noSapling;
 
+        /// <summary>Сколько пересадок отложено: этого добра уже довольно.</summary>
+        private static int _keptBack;
+
         private static int _growing;
 
         private static int _outside;
@@ -235,6 +247,11 @@ namespace AstvardServerMod
         {
             if (Time.realtimeSinceStartup < _gardenAt) return;
             _gardenAt = Time.realtimeSinceStartup + GardenTick;
+
+            // Про предел грядок отвечают оба сеятеля, а спрашивают его в разное время,
+            // так что обнуляется он здесь, до них обоих: в засеве он стирал бы ответ,
+            // который дала пересадка десятью строками выше.
+            BedsFull = false;
 
             // Сначала подсадка на места прошлого прохода, потом сбор: иначе собранное в
             // этом проходе засеялось бы тут же, по живому.
@@ -276,6 +293,7 @@ namespace AstvardServerMod
                   + (_outside > 0 ? $",{NEWLINE}рядом вне зоны {_outside}" : "")
                   + (_noRoom > 0 ? $",{NEWLINE}некуда сложить {_noRoom}" : "")
                   + (_noSeeds > 0 ? $",{NEWLINE}нет семян на {_noSeeds}" : "")
+                  + (_keptBack > 0 ? $",{NEWLINE}не пересажено {_keptBack} — хватает" : "")
                   + (_empty > 0 ? $",{NEWLINE}пустых грядок {_empty}" : "")
                   + (_emptySown > 0 ? $",{NEWLINE}засеяно {_emptySown}" : "")
                   + (_sowingWhat != null ? $" ({_sowingWhat}," : "")
@@ -294,6 +312,7 @@ namespace AstvardServerMod
                   + (_extras > 0 ? $", {_extras} left alone (extra drops)" : "")
                   + (_noSeeds > 0 ? $", {_noSeeds} unsown for want of seeds" : "")
                   + (_noSapling > 0 ? $", {_noSapling} with no sapling to put back" : "")
+                  + (_keptBack > 0 ? $", {_keptBack} not put back, enough already" : "")
                   + (_sowingWhat != null ? $", sowing {_sowingWhat} every {_sowingStep:0.00} m"
                                         : ", nothing to sow with")
                   + (_empty > 0 ? $", {_empty} empty beds, {_emptySown} filled" : "")
@@ -427,6 +446,7 @@ namespace AstvardServerMod
             // занимались весь вечер.
             _noSeeds = 0;
             _noSapling = 0;
+            _keptBack = 0;
 
             if (!SowOn || Beds.Count == 0) return 0;
 
@@ -437,12 +457,33 @@ namespace AstvardServerMod
             var platform = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
             var sown = 0;
 
+            // Сколько грядок занято **сейчас**: счёт прошлого прохода вёлся до того, как
+            // он сорвал эти самые места, и они в нём ещё считаются занятыми. Вычесть их
+            // обязательно - огород, стоящий ровно в предел, иначе перестал бы
+            // пересаживаться вовсе и высох бы за вечер.
+            var kept = Mathf.Max(0, BedsInZone - Beds.Count);
+
             foreach (var bed in Beds)
             {
                 var sapling = SaplingFor(bed.Crop);
                 if (sapling == null)
                 {
                     _noSapling++;
+                    continue;
+                }
+
+                // Пределы спрашиваются до семян и по тем же правилам, что у засева:
+                // пересадка возвращает сорванное, но тратит на это новое семя.
+                if (CropFull(sapling))
+                {
+                    _keptBack++;
+                    continue;
+                }
+
+                if (BedCap > 0 && kept >= BedCap)
+                {
+                    BedsFull = true;
+                    _keptBack++;
                     continue;
                 }
 
@@ -458,6 +499,7 @@ namespace AstvardServerMod
                 PlacePiece(sapling, bed.At, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f),
                            creator, platform, SownScratch);
                 sown++;
+                kept++;
             }
 
             Beds.Clear();
@@ -550,8 +592,6 @@ namespace AstvardServerMod
             _emptyNoSeeds = 0;
             _sowingWhat = null;
             _sowingGrow = null;
-
-            BedsFull = false;
 
             if (!SowEmptyOn || zone == null) return 0;
 
@@ -680,8 +720,7 @@ namespace AstvardServerMod
                 if (piece == null || piece.m_resources == null || piece.m_resources.Length == 0) continue;
 
                 // Урожай этого саженца: если его на складе уже довольно, сажать незачем.
-                var crop = CropOf(sapling);
-                if (crop != null && CropKeep > 0 && InStock(crop) >= CropKeep)
+                if (CropFull(sapling))
                 {
                     CropsFull++;
                     continue;
@@ -734,6 +773,21 @@ namespace AstvardServerMod
 
             Trees[sapling.name] = tree;
             return tree;
+        }
+
+        /// <summary>
+        /// Довольно ли уже этой культуры на складе, чтобы не сажать её снова.
+        ///
+        /// Один вопрос на оба сеятеля: засев выбирает этим, чем засеять пустое, а
+        /// пересадка - стоит ли возвращать сорванное. Разойтись им нельзя, иначе одна
+        /// половина огорода живёт по пределу, а вторая его не знает.
+        /// </summary>
+        private static bool CropFull(GameObject sapling)
+        {
+            if (CropKeep <= 0) return false;
+
+            var crop = CropOf(sapling);
+            return crop != null && InStock(crop) >= CropKeep;
         }
 
         /// <summary>Что вырастет из этого саженца — имя предмета, которым это ляжет в сундук.</summary>

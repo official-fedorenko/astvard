@@ -934,9 +934,9 @@ namespace AstvardServerMod
 
             var crop = SortCropHint != null ? SortCropHint.GetComponentInChildren<Text>(true) : null;
             if (crop != null)
-                crop.text = $"До какого запаса засевать{NEWLINE}пустые грядки, по каждой{NEWLINE}"
-                            + $"культуре свой счёт.{NEWLINE}Моркови столько — новую{NEWLINE}"
-                            + $"морковь не сажаем, лук и{NEWLINE}ячмень сажаем дальше.{NEWLINE}{NEWLINE}"
+                crop.text = $"До какого запаса сажать —{NEWLINE}и засевать, и пересаживать.{NEWLINE}"
+                            + $"По каждой культуре свой{NEWLINE}счёт: моркови столько —{NEWLINE}"
+                            + $"новую не сажаем, лук и{NEWLINE}ячмень сажаем дальше.{NEWLINE}{NEWLINE}"
                             + $"Созревшее собирается{NEWLINE}всегда: раз посажено —{NEWLINE}"
                             + $"значит нужно.{NEWLINE}0 — без предела.";
 
@@ -949,7 +949,7 @@ namespace AstvardServerMod
                 beds.text = $"Сколько грядок держать{NEWLINE}в зоне. Набралось столько —{NEWLINE}"
                             + $"новых не сажаем.{NEWLINE}{NEWLINE}"
                             + $"Считаются все: растущие,{NEWLINE}созревшие и посаженные{NEWLINE}"
-                            + $"руками. Пересадка на своё{NEWLINE}место идёт всегда.{NEWLINE}"
+                            + $"руками. Пересадку он тоже{NEWLINE}держит, сбор — нет.{NEWLINE}"
                             + $"0 — без предела.";
 
             SetLabel(SortSlotsButton, OwnChestSlots > 0
