@@ -49,6 +49,8 @@ namespace AstvardServerMod
 
         private static readonly List<PiecePlacement> FillPlanned = new List<PiecePlacement>();
 
+        // Игрок держит в руках плиту, которую прикладывает к стене, и пол, который из
+        // этого выйдет, уже показан.
         private static bool _fillSeeding;
 
         private static bool _fillLaying;
@@ -94,12 +96,6 @@ namespace AstvardServerMod
             AreaFloorButton = MakeButton(gui, "Пол", StartFloorSeed);
 
             CreateWallWidgets(gui);
-        }
-
-        /// <summary>A floor plate is being put to a wall, and the floor it would make is shown.</summary>
-        internal static bool IsFillSeeding
-        {
-            get { return _fillSeeding; }
         }
 
         /// <summary>

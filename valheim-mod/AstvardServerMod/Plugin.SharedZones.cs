@@ -221,6 +221,7 @@ namespace AstvardServerMod
             {
                 ZonesSent.Remove(uid);
                 SortKindsSent.Remove(uid);
+                SortCatsSent.Remove(uid);
                 SkySent.Remove(uid);
             }
         }

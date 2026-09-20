@@ -276,7 +276,7 @@ namespace AstvardServerMod
             foreach (var line in (body ?? "").Split('\n'))
             {
                 var trimmed = line.Trim();
-                if (trimmed.Split(';').Length == 8) lines.Add(trimmed);
+                if (Fields(trimmed) == 8) lines.Add(trimmed);
             }
 
             if (lines.Count == 0) return;
@@ -548,12 +548,6 @@ namespace AstvardServerMod
             RefreshMenu();
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center, $"Забрано: {name}");
-        }
-
-        internal static void RequestSharedList()
-        {
-            SharedTemplates.Clear();
-            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcTplQuery);
         }
 
         /// <summary>A player's «Поделиться»: their template, as it is in their folder, to the admins.</summary>

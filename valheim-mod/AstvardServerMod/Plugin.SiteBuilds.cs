@@ -74,12 +74,15 @@ namespace AstvardServerMod
             var net = ZNet.instance;
             if (net == null || !net.IsServer() || _siteBuildsBusy) return;
 
+            // Часы - первыми: они стоят одно сравнение, а адрес при пустом
+            // «BuildsUrl» выводится из «ListsUrl» подстрокой со склейкой, то есть
+            // строит две строки. Каждый кадр, чтобы тут же выяснить, что рано.
+            var now = Time.realtimeSinceStartup;
+            if (now < _siteBuildsNextAt) return;
+
             var url = SiteBuildsUrl();
             var token = SiteToken();
             if (url.Length == 0 || token.Length == 0) return;
-
-            var now = Time.realtimeSinceStartup;
-            if (now < _siteBuildsNextAt) return;
 
             var seconds = Mathf.Clamp(_siteBuildsSeconds != null ? _siteBuildsSeconds.Value : DefaultSiteBuildsSeconds,
                                       MinSiteBuildsSeconds, MaxSiteBuildsSeconds);

@@ -70,12 +70,14 @@ namespace AstvardServerMod
             var net = ZNet.instance;
             if (net == null || !net.IsServer() || _siteSortingBusy) return;
 
+            // Часы - первыми, по той же причине, что у построек: адрес выводится из
+            // соседнего, а это две строки на кадр ради ответа «ещё рано».
+            var now = Time.realtimeSinceStartup;
+            if (now < _siteSortingNextAt) return;
+
             var url = SiteSortingUrl();
             var token = SiteToken();
             if (url.Length == 0 || token.Length == 0) return;
-
-            var now = Time.realtimeSinceStartup;
-            if (now < _siteSortingNextAt) return;
 
             var seconds = Mathf.Clamp(
                 _siteSortingSeconds != null ? _siteSortingSeconds.Value : DefaultSiteSortingSeconds,

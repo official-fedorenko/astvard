@@ -12,9 +12,6 @@ namespace AstvardServerMod
 
         private static bool _sortInfoShown;
 
-        /// <summary>Строка про станции зоны по-русски — та же, что уходит в лог.</summary>
-        internal static string ZoneStationsRu = "";
-
         /// <summary>
         /// «Сортировка» → «Информация»: всё, что мод сейчас делает, одним окном.
         ///

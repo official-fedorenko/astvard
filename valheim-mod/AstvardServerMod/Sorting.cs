@@ -252,14 +252,6 @@ namespace AstvardServerMod
             return KnownFor(kind) == Loot;
         }
 
-        /// <summary>Имена, которые мод знает сам - сайту, чтобы было что показывать.</summary>
-        public static List<string> KnownLoot()
-        {
-            var kinds = new List<string>(LootKeys);
-            kinds.Sort(System.StringComparer.Ordinal);
-            return kinds;
-        }
-
         /// <summary>Сколько предметов мод знает по имени — для строки в логе.</summary>
         public static int KnownCount
         {
@@ -341,7 +333,9 @@ namespace AstvardServerMod
             // место. Так решил хозяин, и так оно надёжнее: по этим восьми мод раскладывает
             // сам, когда о предмете ничего не сказано, и «Разное», переименованное с сайта
             // в «Хлам», осталось бы ответом для всего, чему не нашлось места, но перестало
-            // бы им читаться. Снаружи добавляют своё, начиная с восьмого номера.
+            // бы им читаться. Свои полки заводятся со следующего свободного номера, и
+            // выдаёт его сайт (`addCategory`: наибольший плюс один), а не человек - числа
+            // здесь не писать, они устаревают с каждой новой встроенной.
             for (var i = 0; i < CategoryTitles.Length; i++)
             {
                 while (Titles.Count <= i) Titles.Add("");

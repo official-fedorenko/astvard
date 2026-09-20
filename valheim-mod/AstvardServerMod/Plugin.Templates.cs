@@ -443,7 +443,7 @@ namespace AstvardServerMod
 
                     // Anything that is not eight fields is a comment as far as the
                     // loader is concerned, which is what lets headers cost nothing.
-                    if (trimmed.Split(';').Length == 8) body.Add(trimmed);
+                    if (Fields(trimmed) == 8) body.Add(trimmed);
                 }
 
                 if (body.Count == 0) return null;
@@ -457,6 +457,23 @@ namespace AstvardServerMod
                 Log.LogWarning($"[AstvardServerMod] Skipped {System.IO.Path.GetFileName(path)}: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Сколько полей в строке детали.
+        ///
+        /// Считаем разделители, а не режем строку: `Split(';')` на каждую строку тела -
+        /// это восемь строк и массив под них, ровно чтобы посмотреть на длину и всё
+        /// выбросить. У «Плавильни» в пятнадцать килобайт это тысячи объектов на один
+        /// разбор, а разбирается она заново на каждый запрос панели.
+        /// </summary>
+        internal static int Fields(string line)
+        {
+            var fields = 1;
+            for (var i = 0; i < line.Length; i++)
+                if (line[i] == ';') fields++;
+
+            return fields;
         }
 
         private static void ReadHeader(string line, BlueprintTemplate template)

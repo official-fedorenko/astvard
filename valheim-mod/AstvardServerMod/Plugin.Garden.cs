@@ -17,9 +17,15 @@ namespace AstvardServerMod
         /// вырастает в эту культуру, и платится он тем же, чем платит игрок, - семенами
         /// из сундука.
         ///
-        /// Сажаем **только туда, откуда сейчас сорвали**. На той земле только что росло,
-        /// значит она вскопана, биом верный, солнце есть и место свободно - всё то, что
-        /// саженец проверяет сам и о чём у нас нет способа спросить, не переписав пол-игры.
+        /// Сеятелей два, и они разные. **Пересадка** (`SowBeds`) возвращает саженец
+        /// только туда, откуда мод сам сорвал: морковь при сборе уничтожается, и от
+        /// грядки, сорванной руками, не остаётся объекта, у которого можно спросить
+        /// место. **Засев** (`SowEmpty`) идёт по всей вскопанной пустой земле зоны, по
+        /// шахматной решётке, и условия спрашивает у самой игры - вскопано ли, тот ли
+        /// биом, свободно ли, - теми же вызовами, которыми растение решает, живо ли оно.
+        ///
+        /// Оба держат пределы «Урожая на складе» и «Грядок в зоне»; мимо них идёт только
+        /// сбор, по решению хозяина.
         /// </summary>
         private static BepInEx.Configuration.ConfigEntry<bool> _reapGarden;
 
@@ -657,6 +663,11 @@ namespace AstvardServerMod
             var firstRow = Mathf.FloorToInt((zone.Z - reach) / rowStep);
             var lastRow = Mathf.CeilToInt((zone.Z + reach) / rowStep);
 
+            // Карта высот помнится между точками: решётка идёт рядами, соседние точки
+            // почти всегда лежат в одной и той же, а `FindHeightmap` перебирает все
+            // загруженные подряд.
+            Heightmap ground = null;
+
             for (var row = firstRow; row <= lastRow; row++)
             {
                 var z = row * rowStep;
@@ -679,15 +690,24 @@ namespace AstvardServerMod
                     var x = col * spacing + shift;
                     if (!Sorting.Inside(zone, x, z)) continue;
 
-                    float y;
-                    if (!zones.GetGroundHeight(new Vector3(x, 0f, z), out y)) continue;
+                    // Дешёвое - вперёд. Земля спрашивается лучом с шести километров на
+                    // десять (`ZoneSystem.GetGroundHeight`), а «вскопано ли» и биом
+                    // читают только x и z: `IsPointInside`, `WorldToVertexMask` и
+                    // `GetBiome` высоту не смотрят вовсе - сверено по декомпиляту 1.0.15.
+                    // Пока луч стоял первым, за каждую точку луга платили полным лучом, а
+                    // решётка большого огорода обходится целиком и в одном кадре.
+                    var flat = new Vector3(x, 0f, z);
 
-                    var at = new Vector3(x, y, z);
-                    var ground = Heightmap.FindHeightmap(at);
+                    if (ground == null || !ground.IsPointInside(flat)) ground = Heightmap.FindHeightmap(flat);
                     if (ground == null) continue;
 
-                    if (plant.m_needCultivatedGround && !ground.IsCultivated(at)) continue;
-                    if ((ground.GetBiome(at) & plant.m_biome) == 0) continue;
+                    if (plant.m_needCultivatedGround && !ground.IsCultivated(flat)) continue;
+                    if ((ground.GetBiome(flat) & plant.m_biome) == 0) continue;
+
+                    float y;
+                    if (!zones.GetGroundHeight(flat, out y)) continue;
+
+                    var at = new Vector3(x, y, z);
 
                     if (tree && Built(at)) continue;
 

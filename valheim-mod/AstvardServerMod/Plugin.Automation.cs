@@ -199,12 +199,6 @@ namespace AstvardServerMod
                 kinds.Append(pair.Key).Append(": ").Append(pair.Value);
             }
 
-            ZoneStationsRu = $"Станции зоны: плавилен {smelters} (наших {mine}), "
-                             + $"огней {fires}, голодных зверей {tames}."
-                             + (smelters > mine
-                                 ? " Остальные считает другой клиент — он их и кормит."
-                                 : "");
-
             var said = $"smelters {smelters} (mine {mine}), fires {fires}, "
                        + $"hungry beasts {tames}{kinds}";
             if (said == _zoneStationsSaid) return;
@@ -303,6 +297,15 @@ namespace AstvardServerMod
         /// drawn by hand around the base it belongs to, so it is the honest limit; making
         /// it smaller is a thing to do on the ground, not in a second number.
         /// </summary>
+        /// <summary>
+        /// Буферы поиска сундука. Заводились заново на **каждый** складываемый предмет, а
+        /// складывается их за проход много: у каждого поиска свой, потому что
+        /// `TryStoreNearby` зовёт обоих подряд.
+        /// </summary>
+        private static readonly List<Piece> ZoneChestScratch = new List<Piece>();
+
+        private static readonly List<Piece> ChestScratch = new List<Piece>();
+
         private static Container FindZoneChest(Vector3 origin, GameObject prefab, int amount)
         {
             var zone = ZoneAround(origin);
@@ -315,7 +318,8 @@ namespace AstvardServerMod
 
             // Вокруг середины зоны, а не вокруг станции: сундук на дальнем её краю - такой
             // же сундук этой зоны, и он теперь тоже считается.
-            var pieces = new List<Piece>();
+            var pieces = ZoneChestScratch;
+            pieces.Clear();
             Piece.GetAllPiecesInRadius(new Vector3(zone.X, origin.y, zone.Z),
                 Sorting.ScanRadius(zone), pieces);
 
@@ -381,7 +385,8 @@ namespace AstvardServerMod
         private static Container FindChest(Vector3 origin, float radius, GameObject product,
                                            int stack, bool assignedOnly, bool square)
         {
-            var pieces = new List<Piece>();
+            var pieces = ChestScratch;
+            pieces.Clear();
             // Квадрат достаёт до угла дальше, чем до стороны: смотрим шире, а отбираем
             // ниже, самой зоной.
             Piece.GetAllPiecesInRadius(origin, square ? radius * 1.415f : radius, pieces);
@@ -490,6 +495,15 @@ namespace AstvardServerMod
 
                     var player = Player.m_localPlayer;
                     if (player == null) continue;
+
+                    // Счётчики зверей гасятся здесь, а не там, где их заполняют: заполняет
+                    // их только `FeedTames`, а её зовут лишь при включённом кормлении и
+                    // живой подаче. Выключил админ кормление - и окно «Что происходит»
+                    // продолжало печатать числа прошлого прохода. Застывшая строка в окне,
+                    // которое заводилось объяснять «почему ничего не делается», хуже
+                    // отсутствующей: она отвечает неправдой.
+                    TamesSeen = 0;
+                    TamesHungry = 0;
 
                     pieces.Clear();
                     Piece.GetAllPiecesInRadius(player.transform.position, HarvestScanRadius, pieces);
@@ -602,7 +616,11 @@ namespace AstvardServerMod
                         var inZone = zone != null && Sorting.Inside(zone, place.x, place.z);
                         var food = inZone ? ZoneSupply : supplyChests;
 
-                        var cooking = piece.GetComponentInChildren<CookingStation>();
+                        // Все пять частей детали - одним вопросом и один раз за её жизнь.
+                        var parts = PartsOf(piece);
+                        if (parts == null) continue;
+
+                        var cooking = parts.Cooking;
                         if (cooking != null)
                         {
                             if (inZone) zoneCook++;
@@ -614,12 +632,12 @@ namespace AstvardServerMod
                             if (feeding && FeedCookingOn) FillCooking(cooking, food);
                         }
 
-                        var beehive = piece.GetComponentInChildren<Beehive>();
+                        var beehive = parts.Hive;
                         if (beehive != null && inZone) zoneHives++;
                         if (beehive != null && harvesting && MayHarvest(beehive, collectSpots, inZone))
                             beehive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
 
-                        var fermenter = piece.GetComponentInChildren<Fermenter>();
+                        var fermenter = parts.Barrel;
                         if (fermenter != null)
                         {
                             if (inZone) zoneBarrels++;
@@ -633,7 +651,7 @@ namespace AstvardServerMod
                             BrewSweepSaw(fermenter);
                         }
 
-                        var smelter = piece.GetComponentInChildren<Smelter>();
+                        var smelter = parts.Smelter;
                         if (smelter != null)
                         {
                             // Считаем плавильни зоны и те из них, что слушаются именно
@@ -656,7 +674,7 @@ namespace AstvardServerMod
                             if (harvesting && MayHarvest(smelter, collectSpots, inZone)) FlushSmelter(smelter);
                         }
 
-                        var fireplace = piece.GetComponentInChildren<Fireplace>();
+                        var fireplace = parts.Fire;
                         if (fireplace != null)
                         {
                             // Факел - это тот же Fireplace, что и костёр: одна ветка на
@@ -691,7 +709,7 @@ namespace AstvardServerMod
                     // берётся из помеченных сундуков, и по тому же правилу зоны.
                     var tames = feeding && FeedTamesOn ? FeedTames(player, zone, supplyChests) : 0;
 
-                    SayZoneHas(zone, zoneSmelters, zoneKilns, zoneCook, zoneFires,
+                    SayZoneHas(zone, zoneSmelters, zoneMine, zoneKilns, zoneCook, zoneFires,
                                zoneBarrels, zoneHives);
                     SayZoneLimits();
 
@@ -737,8 +755,8 @@ namespace AstvardServerMod
         /// не окупится, а эти числа всё равно уже посчитаны по дороге. Пустые виды не
         /// перечисляются - «ульев 0» в списке из семи строк читать некому.
         /// </summary>
-        private static void SayZoneHas(Sorting.Zone zone, int smelters, int kilns, int cooking,
-                                       int fires, int barrels, int hives)
+        private static void SayZoneHas(Sorting.Zone zone, int smelters, int mine, int kilns,
+                                       int cooking, int fires, int barrels, int hives)
         {
             if (zone == null)
             {
@@ -757,6 +775,14 @@ namespace AstvardServerMod
             ZoneHasRu = said.Length > 0
                 ? "В зоне: " + said + "."
                 : "В зоне нет ни одной станции.";
+
+            // Плавильня в общей зоне, доставшаяся другому клиенту, стоит молча: считает её
+            // он, и кормит тоже он. Это ровно та порода вопросов, ради которых окно и
+            // заводилось, и единственный факт, которого в остальных строках нет. Когда
+            // наши все - не пишем ничего: в списке из десяти строк норме места нет.
+            if (smelters > mine)
+                ZoneHasRu += NEWLINE + $"Из них наших {mine} — остальные считает "
+                             + "другой клиент, он их и кормит.";
 
             var fireLines = new System.Text.StringBuilder();
             foreach (var pair in ZoneFiresSeen)
@@ -857,9 +883,22 @@ namespace AstvardServerMod
         /// </summary>
         private static readonly Dictionary<string, int> Stock = new Dictionary<string, int>();
 
+        /// <summary>
+        /// Сундуки, уже посчитанные в этом проходе.
+        ///
+        /// Списка два, и они **пересекаются**: сундук сбора внутри зоны с пометкой
+        /// сортировщика попадает и в `CollectChests`, и в `ZoneBins` - обе роли на одном
+        /// сундуке разрешены нарочно. Сложение двух списков читало его содержимое дважды,
+        /// и на этом стояли все три предела разом: сотня угля в таком сундуке считалась
+        /// двумя, печи вставали вдвое раньше срока, а окно «Что происходит» уверенно
+        /// называло неверное число. Заводится один раз - проход идёт каждую секунду.
+        /// </summary>
+        private static readonly HashSet<Container> Counted = new HashSet<Container>();
+
         private static void CountStock()
         {
             Stock.Clear();
+            Counted.Clear();
             CountStock(CollectChests);
             CountStock(ZoneBins);
         }
@@ -868,7 +907,7 @@ namespace AstvardServerMod
         {
             foreach (var container in chests)
             {
-                if (container == null) continue;
+                if (container == null || !Counted.Add(container)) continue;
 
                 var inventory = container.GetInventory();
                 if (inventory == null) continue;

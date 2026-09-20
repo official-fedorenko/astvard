@@ -523,7 +523,7 @@ namespace AstvardServerMod
                 RefreshMenu();
             });
 
-            WindHint = MakeText(gui, "Куда дует, в градусах:\n0 — север, 90 — восток,\n180 — юг, 270 — запад.\nСила 1-10.\n«По направлению» — куда смотришь.\nВидно только тебе.");
+            WindHint = MakeText(gui, "Куда дует, в градусах:\n0 — север, 90 — восток,\n180 — юг, 270 — запад.\nСила 1-10.\n«По направлению» — куда смотришь.\nВетер общий: его почувствуют все.");
 
             WindAngleInput = gui.CreateInputField(
                 Panel.transform,
@@ -543,7 +543,7 @@ namespace AstvardServerMod
 
             WindResetButton = MakeButton(gui, "Вернуть обычный", ResetWind);
 
-            EnvHint = MakeText(gui, "Держит выбранную погоду,\nпока не вернёшь обычную.\nВидно только тебе.");
+            EnvHint = MakeText(gui, "Держит выбранную погоду,\nпока не вернёшь обычную.\nПогода общая: её увидят все,\nи зашедшие потом.\nСбрасывается перезапуском\nсервера.");
 
             // Built once, like every other list here: a button created inside a click
             // handler breeds a new one on every press.

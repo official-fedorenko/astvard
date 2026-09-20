@@ -937,41 +937,6 @@ namespace AstvardServerMod
             return ((long)(x & 0x1FFFFF) << 42) | ((long)(y & 0x1FFFFF) << 21) | (long)(z & 0x1FFFFF);
         }
 
-        private static string SaveBlueprint(float radius)
-        {
-            try
-            {
-                var dir = System.IO.Path.Combine(Paths.ConfigPath, "astvard-blueprints");
-                System.IO.Directory.CreateDirectory(dir);
-                var path = System.IO.Path.Combine(dir,
-                    $"blueprint_{System.DateTime.Now:yyyyMMdd_HHmmss}.txt");
-
-                var lines = new List<string>
-                {
-                    "# astvard blueprint",
-                    $"# pieces={Clipboard.Count} radius={radius}",
-                    "# prefab;posX;posY;posZ;rotX;rotY;rotZ;rotW",
-                };
-
-                var culture = System.Globalization.CultureInfo.InvariantCulture;
-                foreach (var p in Clipboard)
-                {
-                    lines.Add(string.Format(culture, "{0};{1};{2};{3};{4};{5};{6};{7}",
-                        p.Prefab,
-                        p.LocalPos.x, p.LocalPos.y, p.LocalPos.z,
-                        p.LocalRot.x, p.LocalRot.y, p.LocalRot.z, p.LocalRot.w));
-                }
-
-                System.IO.File.WriteAllLines(path, lines);
-                return path;
-            }
-            catch (System.Exception ex)
-            {
-                Log.LogError($"[AstvardServerMod] Could not write blueprint: {ex.Message}");
-                return "(not saved)";
-            }
-        }
-
         /// <summary>
         /// Puts the build down where its ghost stands, clearing each ghost as its real
         /// piece lands. Up to InstantBuildLimit pieces it all goes up in one frame; a

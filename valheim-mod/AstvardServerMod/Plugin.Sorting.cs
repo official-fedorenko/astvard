@@ -668,43 +668,83 @@ namespace AstvardServerMod
             return view != null && view.IsValid() && view.GetZDO().GetBool(HoldChestKey);
         }
 
-        // Поиск Container внутри детали - рекурсивный обход всего префаба, а сундук в
-        // детали не заводится и не пропадает. Обходов этих на большой базе выходят
-        // тысячи в секунду: автоматика, сортировщик и подписи ходят по деталям каждый
-        // сам, а деталей полторы тысячи. Ответ держится - в том числе ответ «нет
-        // контейнера», а таких деталей почти все.
-        private static readonly Dictionary<Piece, Container> ContainerByPiece =
-            new Dictionary<Piece, Container>();
+        /// <summary>
+        /// Что у этой детали внутри - спрошено один раз и запомнено.
+        ///
+        /// Каждый `GetComponentInChildren&lt;T&gt;()` - рекурсивный обход всего префаба, а
+        /// деталь своих частей не наживает и не теряет: что в ней есть, решено в тот миг,
+        /// когда её поставили. Посекундный проход автоматики спрашивал **пять** подряд у
+        /// каждой детали, и у стены, пола или балки все пять обходили дерево впустую,
+        /// чтобы дойти до ряда проверок, способных ответить только «нет». На полутора
+        /// тысячах деталей это тысячи обходов в секунду; сортировщик и подписи ходят по
+        /// тем же деталям своим счётом.
+        ///
+        /// Держится и ответ «ничего нет» - таких деталей почти все, и второй раз их
+        /// обходить тем более незачем.
+        /// </summary>
+        internal sealed class Parts
+        {
+            internal Container Chest;
 
-        private const int ContainerCacheMax = 4096;
+            internal CookingStation Cooking;
 
-        /// <summary>Сундук этой детали, найденный один раз за её жизнь.</summary>
-        internal static Container ContainerOf(Piece piece)
+            internal Beehive Hive;
+
+            internal Fermenter Barrel;
+
+            internal Smelter Smelter;
+
+            internal Fireplace Fire;
+        }
+
+        private static readonly Dictionary<Piece, Parts> PartsByPiece = new Dictionary<Piece, Parts>();
+
+        private const int PartsCacheMax = 4096;
+
+        internal static Parts PartsOf(Piece piece)
         {
             if (piece == null) return null;
 
-            Container found;
-            if (ContainerByPiece.TryGetValue(piece, out found)) return found != null ? found : null;
+            Parts found;
+            if (PartsByPiece.TryGetValue(piece, out found)) return found;
 
-            found = piece.GetComponentInChildren<Container>();
-            ContainerByPiece[piece] = found;
+            found = new Parts
+            {
+                Chest = piece.GetComponentInChildren<Container>(),
+                Cooking = piece.GetComponentInChildren<CookingStation>(),
+                Hive = piece.GetComponentInChildren<Beehive>(),
+                Barrel = piece.GetComponentInChildren<Fermenter>(),
+                Smelter = piece.GetComponentInChildren<Smelter>(),
+                Fire = piece.GetComponentInChildren<Fireplace>(),
+            };
+            PartsByPiece[piece] = found;
 
             // Ключ здесь - сама деталь, и снесённая остаётся в словаре мёртвым объектом
             // Unity. Зоны грузятся и выгружаются весь вечер, так что чистить надо; но
             // разом и редко - перебрать словарь дешевле, чем помнить о каждой детали.
-            if (ContainerByPiece.Count > ContainerCacheMax) ForgetDeadPieces();
+            if (PartsByPiece.Count > PartsCacheMax) ForgetDeadPieces();
             return found;
+        }
+
+        /// <summary>Сундук этой детали, найденный один раз за её жизнь.</summary>
+        internal static Container ContainerOf(Piece piece)
+        {
+            var parts = PartsOf(piece);
+
+            // Снесённая деталь остаётся в словаре, и её сундук - мёртвым объектом Unity.
+            // Сравнение с null у Unity это и ловит, а вернуть такой наружу нельзя.
+            return parts != null && parts.Chest != null ? parts.Chest : null;
         }
 
         private static void ForgetDeadPieces()
         {
             var dead = new List<Piece>();
-            foreach (var pair in ContainerByPiece)
+            foreach (var pair in PartsByPiece)
                 if (pair.Key == null) dead.Add(pair.Key);
 
-            foreach (var piece in dead) ContainerByPiece.Remove(piece);
-            Log.LogInfo($"[AstvardServerMod] Chest lookup: forgot {dead.Count} pieces that are gone, "
-                        + $"{ContainerByPiece.Count} kept.");
+            foreach (var piece in dead) PartsByPiece.Remove(piece);
+            Log.LogInfo($"[AstvardServerMod] Piece lookup: forgot {dead.Count} pieces that are gone, "
+                        + $"{PartsByPiece.Count} kept.");
         }
 
         /// <summary>The category this chest takes, or -1 when it is a source.</summary>
