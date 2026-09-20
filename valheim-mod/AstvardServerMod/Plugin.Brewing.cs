@@ -394,17 +394,47 @@ namespace AstvardServerMod
         /// и тем же словом было бы враньём. Уровень спрашиваем у самой станции — она
         /// считает его по пристройкам вокруг котла, и повторять этот счёт незачем.
         /// </summary>
+        /// <summary>
+        /// Есть ли рядом станция, которую просит рецепт.
+        ///
+        /// «Рядом» здесь значит то же, что у сундуков (просьба хозяина, 20.09.2026): что в
+        /// одной зоне сортировки, то работает вместе, на каком бы её краю ни стояло. До
+        /// этого котёл искался в «Зоне станций» вокруг бочки - восемь метров, - и бочки с
+        /// котлом приходилось держать в обнимку, хотя сундуки для той же варки брались со
+        /// всей зоны. Два разных расстояния на одну работу никто не держит в голове.
+        ///
+        /// Ближний котёл **за** краем зоны при этом остался рабочим: правило расширено, а
+        /// не подменено. Поэтому проходов два, и оба нужны - зона не обязана накрывать всё,
+        /// что стоит у бочки.
+        ///
+        /// `FindStationsInRange` список не чистит, а дополняет, и меряет расстояние **в
+        /// трёх измерениях** - отсюда и `Sorting.ScanRadius`, у которого запас по высоте
+        /// уже заложен: иначе котёл этажом ниже выпал бы из своей же зоны.
+        /// </summary>
         private static bool StationReady(Recipe recipe, Vector3 spot)
         {
             if (recipe == null) return false;
             if (recipe.m_craftingStation == null) return true;
 
+            var zone = ZoneAround(spot);
+
             BrewStations.Clear();
+            if (zone != null)
+                CraftingStation.FindStationsInRange(recipe.m_craftingStation.m_name,
+                                                   new Vector3(zone.X, spot.y, zone.Z),
+                                                   Sorting.ScanRadius(zone), BrewStations);
+
             CraftingStation.FindStationsInRange(recipe.m_craftingStation.m_name, spot,
                                                 AssignedChestRadius, BrewStations);
 
             foreach (var station in BrewStations)
-                if (station != null && station.GetLevel() >= recipe.m_minStationLevel) return true;
+            {
+                if (station == null || station.GetLevel() < recipe.m_minStationLevel) continue;
+
+                var at = station.transform.position;
+                if (zone != null && Sorting.Inside(zone, at.x, at.z)) return true;
+                if (InChestZone(spot, at)) return true;
+            }
 
             return false;
         }
