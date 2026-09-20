@@ -95,6 +95,7 @@ namespace AstvardServerMod
         private const int StateSortCrop = 77;   // сколько урожая держать на складе
         private const int StateBrews = 78;      // что варить и сколько держать
         private const int StateBrewOne = 79;    // один напиток: заказ и его цена
+        private const int StateTimeSkip = 80;   // на сколько игровых часов сдвинуть мир
 
         internal static GameObject Panel;
 
@@ -821,6 +822,8 @@ namespace AstvardServerMod
 
             CreateBrewChestWidget(gui);
 
+            CreateTimeSkipWidgets(gui);
+
             // «Постройки» → «Настройки»: the button first on the build page, and behind it, in
             // this order, the hint and the switches made just below.
             CreateBuildSettingsWidgets(gui);
@@ -1108,6 +1111,7 @@ namespace AstvardServerMod
                          || MenuState == StateSetupLabels) MenuState = StateSortSetup;
                 // У этих двух возврата не было вовсе, и «Назад» с них проваливалось в
                 // общий else - то есть в админ-меню, которого игрок и не открывал.
+                else if (MenuState == StateTimeSkip) MenuState = StateCheats;
                 else if (MenuState == StateBrewOne) MenuState = StateBrews;
                 else if (MenuState == StateBrews) MenuState = StateSortSetup;
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;
@@ -1410,6 +1414,7 @@ namespace AstvardServerMod
             // про тварей, то есть ровно то, чем «Читы» и заняты.
             SetActive(TestChestButton, admin && MenuState == StateCheats);
             SetActive(BrewChestButton, admin && MenuState == StateCheats);
+            RefreshTimeSkip(admin);
 
             RefreshCheatLabels();
             SetActive(GodButton, admin && MenuState == StateCheats);
