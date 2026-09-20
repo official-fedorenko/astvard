@@ -514,6 +514,21 @@ namespace AstvardServerMod
 
         private static int _spaceMask;
 
+        /// <summary>
+        /// Сколько метров саженец дерева держит до ближайшей постройки.
+        ///
+        /// Грядке хватает собственного `m_growRadius` - она маленькая и никуда не
+        /// вырастет. Дерево вырастает в ствол с кроной, роняет ветки и однажды падает,
+        /// а «место свободно» игра проверяет по **саженцу**, то есть по полуметровому
+        /// прутику. Четыре метра - просьба хозяина, и она про то же: сажать можно рядом
+        /// с домом, но не в дом.
+        /// </summary>
+        private const float TreeClearance = 4f;
+
+        private static readonly Collider[] BuildScratch = new Collider[32];
+
+        private static int _buildMask;
+
         private static float _sowingStep;
 
         private static string _sowingGrow;
@@ -627,6 +642,8 @@ namespace AstvardServerMod
             var spacing = Spacing(sapling, plant);
             _sowingStep = spacing;
 
+            var tree = IsTree(sapling);
+
             // Шахматная укладка, а не клетка. У клетки соседи по диагонали стоят в 1.41
             // шага, то есть между четырьмя растениями остаётся место, которого хватило бы
             // ещё на одно; в шахматной у каждого шесть соседей и все ровно на шаге -
@@ -671,6 +688,8 @@ namespace AstvardServerMod
 
                     if (plant.m_needCultivatedGround && !ground.IsCultivated(at)) continue;
                     if ((ground.GetBiome(at) & plant.m_biome) == 0) continue;
+
+                    if (tree && Built(at)) continue;
 
                     // Занято - значит занято: тут уже растёт, лежит или стоит. Игра
                     // смотрит те же слои, только прощает соседнее больное растение;
@@ -743,6 +762,44 @@ namespace AstvardServerMod
             }
 
             return best;
+        }
+
+        /// <summary>
+        /// Стоит ли в четырёх метрах отсюда постройка.
+        ///
+        /// Спрашивается физикой, а не обходом деталей: `GetAllPiecesInRadius` проходит
+        /// **все** детали мира на каждый вопрос, а вопросов здесь - по одному на каждое
+        /// место решётки. Слои те же, на которых лежат постройки.
+        ///
+        /// Грядки и кусты из ответа выбрасываются: они тоже `Piece`, и без этого дерево
+        /// не встало бы рядом с собственным огородом - то есть ровно там, где его и
+        /// сажают. Признак - `Plant` или `Pickable` на той же детали.
+        ///
+        /// Если ответ не поместился в буфер, место считается занятым. Правило просили
+        /// «на всякий случай», и случай, в котором мы не досмотрели, - как раз такой.
+        /// </summary>
+        private static bool Built(Vector3 at)
+        {
+            if (_buildMask == 0) _buildMask = LayerMask.GetMask("piece", "piece_nonsolid");
+
+            var found = Physics.OverlapSphereNonAlloc(at, TreeClearance, BuildScratch, _buildMask);
+            if (found >= BuildScratch.Length) return true;
+
+            for (var i = 0; i < found; i++)
+            {
+                var hit = BuildScratch[i];
+                if (hit == null) continue;
+
+                var piece = hit.GetComponentInParent<Piece>();
+                if (piece == null) continue;
+
+                if (piece.GetComponent<Plant>() != null || piece.GetComponent<Pickable>() != null)
+                    continue;
+
+                return true;
+            }
+
+            return false;
         }
 
         private static readonly Dictionary<string, bool> Trees = new Dictionary<string, bool>();
