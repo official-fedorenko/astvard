@@ -102,7 +102,13 @@ async function checkSession() {
     // Update sidebar profile
     document.getElementById('userDisplay').textContent = currentUser.username;
     document.getElementById('roleDisplay').textContent = currentUser.role === 'Superadmin' ? 'Суперадмин' : (currentUser.role === 'Admin' ? 'Администратор' : 'Игрок');
-    document.getElementById('avatarLetter').textContent = currentUser.username.charAt(0).toUpperCase();
+    // Своё лицо в шапке панели — по тем же правилам, что и в таблицах ниже.
+    const myFace = document.getElementById('avatarLetter');
+    if (currentUser.avatar_url) {
+      myFace.innerHTML = `<img src="${escapeHtml(currentUser.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;">`;
+    } else {
+      myFace.textContent = currentUser.username.charAt(0).toUpperCase();
+    }
 
     // Show Superadmin-only sections
     if (currentUser.role === 'Superadmin') {

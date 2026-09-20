@@ -41,7 +41,9 @@ function getSessionUser(req) {
 
 function loadUser(id) {
   return new Promise((resolve, reject) => {
-    db.get('SELECT id, username, role FROM users WHERE id = ?', [id], (err, row) => {
+    // Аватар здесь же: шапка кабинета, шапка панели и меню профиля на публичных
+    // страницах рисуют лицо вошедшего, а строку пользователя они берут отсюда.
+    db.get('SELECT id, username, role, avatar_url FROM users WHERE id = ?', [id], (err, row) => {
       if (err) reject(err);
       else resolve(row || null);
     });

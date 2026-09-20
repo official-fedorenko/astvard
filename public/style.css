@@ -235,6 +235,10 @@ aside.sidebar {
   width: 38px;
   height: 38px;
   border-radius: 50%;
+  /* Внутри бывает не буква, а картинка из Steam: без этого она легла бы
+     квадратом поверх круглой рамки. */
+  overflow: hidden;
+  flex-shrink: 0;
   background-color: hsl(var(--accent-purple));
   color: white;
   display: flex;
