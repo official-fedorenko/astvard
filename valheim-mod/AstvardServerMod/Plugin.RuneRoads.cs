@@ -39,15 +39,25 @@ namespace AstvardServerMod
         internal static GameObject RuneStonesStopButton;
 
         /// <summary>
-        /// Круг вокруг камня и шаг факелов по нему.
+        /// Круг вокруг каждой метки. Каждой свой, даже если метки стоят кучкой и круги
+        /// налезут друг на друга: так просил хозяин, и это честнее - один круг на двоих
+        /// выглядел бы как промах укладки, а не как замысел.
         ///
-        /// Восемь метров - просьба хозяина. Каждому камню свой круг, даже если камни
-        /// стоят кучкой и круги налезут друг на друга: так он и просил, и это честнее -
-        /// один круг на двоих выглядел бы как промах укладки, а не как замысел.
+        /// Размер круга выбирает сервер, и выбирает не сам: спрашивает у локации её
+        /// `m_exteriorRadius` - то, насколько широко генератор расчищал под неё землю,
+        /// то есть её собственный размер. Три своих числа - камню, спавну, алтарю -
+        /// разъехались бы с игрой на первом же её обновлении. Границы наши: меньше
+        /// восьми метров круг не читается как площадь, а тридцать два - потолок ручного
+        /// мощения, и у круга ему быть тем же.
         /// </summary>
-        private const float StoneRing = 8f;
+        private const float RingMin = 8f;
 
-        private const float StoneTorchStep = 4f;
+        private const float RingMax = 32f;
+
+        private static float RingFor(float own)
+        {
+            return Mathf.Clamp(own, RingMin, RingMax);
+        }
 
         internal static void RegisterRuneRoadRpcs(ZRoutedRpc rpc)
         {
@@ -158,13 +168,55 @@ namespace AstvardServerMod
         /// </summary>
         private const int LandCellsMax = 200000;
 
-        /// <summary>Что считаем камнем с надписью. Отбор по имени локации, не по префабу.</summary>
-        private static bool IsRuneStone(string name)
+        /// <summary>Что обносим кругом и связываем дорогами.</summary>
+        private enum MarkKind { None, Stone, Spawn, Boss }
+
+        /// <summary>Место на карте: где оно, какого рода и каким кругом его обносить.</summary>
+        private sealed class Mark
         {
-            if (string.IsNullOrEmpty(name)) return false;
+            public Vector3 At;
+            public float Radius;
+            public MarkKind Kind;
+            public string Name;
+        }
+
+        /// <summary>
+        /// Алтари боссов - списком имён локаций, снятым с самой игры.
+        ///
+        /// `StreamingAssets/SoftRef/manifest` перечисляет все 212 локаций сборки путями
+        /// вида `Assets/world/Locations/<биом>/<имя>.prefab`; восемь имён ниже - оттуда,
+        /// а не по памяти. Лишнее имя не стоит ничего: мира, где есть все восемь, у нас
+        /// и не бывает. Недостающее стоило бы молчания - алтарь просто не попал бы в сеть.
+        /// </summary>
+        private static readonly HashSet<string> BossSpots = new HashSet<string>
+        {
+            "eikthyrnir", "gdking", "bonemass", "dragonqueen", "goblinking",
+            "mistlands_dvergrbossentrance1", "faderlocation", "dn_bossroom",
+        };
+
+        private const string SpawnSpot = "starttemple";
+
+        private static MarkKind KindOf(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return MarkKind.None;
 
             var lower = name.ToLowerInvariant();
-            return lower.Contains("runestone") || lower.Contains("vegvisir");
+            if (lower == SpawnSpot) return MarkKind.Spawn;
+            if (BossSpots.Contains(lower)) return MarkKind.Boss;
+
+            // `DrakeLorestone` в горах - такой же читаемый камень, как `Runestone_*`,
+            // только назван иначе; без «lorestone» он выпадал из сети молча. Vegvisir
+            // отдельной локацией не кладётся вовсе, но имя оставлено: оно даром.
+            return lower.Contains("runestone") || lower.Contains("lorestone")
+                   || lower.Contains("vegvisir")
+                ? MarkKind.Stone
+                : MarkKind.None;
+        }
+
+        /// <summary>Круги ставятся в этом порядке: спавн, алтари, камни.</summary>
+        private static int Rank(MarkKind kind)
+        {
+            return kind == MarkKind.Spawn ? 0 : kind == MarkKind.Boss ? 1 : 2;
         }
 
         private static void OnRunesAsk(long sender, float x, float z)
@@ -179,57 +231,110 @@ namespace AstvardServerMod
                 return;
             }
 
-            var land = Continent(world, zones.m_waterLevel, x, z);
-            if (land.Count == 0)
+            int cells;
+            var census = new Dictionary<string, int>();
+            var marks = MarksOn(zones, world, x, z, out cells, census);
+
+            if (cells == 0)
             {
                 SayAboutZone(sender, "Ты стоишь не на суше — с воды материк не обвести.");
                 return;
             }
 
-            // Породы считаем отдельно от штук: «камней 40» не отличает сорок лорных от
-            // сорока меток боссов, а дорожки между ними нужны разные.
-            var kinds = new Dictionary<string, int>();
-            var spots = new List<Vector3>();
-
-            foreach (var pair in zones.m_locationInstances)
-            {
-                var where = pair.Value;
-                var name = where.m_location != null ? where.m_location.m_name : null;
-                if (!IsRuneStone(name)) continue;
-
-                if (!OnLand(land, where.m_position.x, where.m_position.z)) continue;
-
-                int had;
-                kinds[name] = (kinds.TryGetValue(name, out had) ? had : 0) + 1;
-                spots.Add(where.m_position);
-            }
-
             var said = new System.Text.StringBuilder();
-            said.Append($"Материк: {land.Count * LandStep * LandStep / 1000000f:0.0} км². ");
+            said.Append($"Материк: {cells * LandStep * LandStep / 1000000f:0.0} км². ");
 
-            if (spots.Count == 0)
+            if (marks.Count == 0)
             {
-                said.Append("Камней с надписями на нём не нашлось ни одного. Это не обязательно "
-                            + "пусто: если генератор кладёт их растительностью, а не локациями, "
-                            + "списка таких камней в игре нет вовсе.");
-                Say(sender, said.ToString(), kinds, 0f);
+                said.Append("Ни камней с надписями, ни алтарей на нём не нашлось. Это не "
+                            + "обязательно пусто: если генератор кладёт их растительностью, а не "
+                            + "локациями, списка таких камней в игре нет вовсе.");
+                Say(sender, said.ToString(), census, marks);
                 return;
             }
 
-            var road = TreeLength(spots);
-            said.Append($"Камней: {spots.Count}. Кратчайшая сеть между ними — {road / 1000f:0.0} км.");
+            int stones = 0, bosses = 0;
+            var home = false;
+            foreach (var mark in marks)
+            {
+                if (mark.Kind == MarkKind.Stone) stones++;
+                else if (mark.Kind == MarkKind.Boss) bosses++;
+                else if (mark.Kind == MarkKind.Spawn) home = true;
+            }
 
-            Say(sender, said.ToString(), kinds, road);
+            var road = 0f;
+            foreach (var edge in NetworkEdges(marks)) road += Flat(edge.Key, edge.Value);
+
+            said.Append($"Камней: {stones}, алтарей: {bosses}, спавн: ");
+            said.Append(home ? "нашёлся" : "не нашёлся");
+            said.Append($". Сеть — {road / 1000f:0.0} км. Кругов {marks.Count}: {Rings(marks)}.");
+
+            Say(sender, said.ToString(), census, marks);
         }
 
-        private static void Say(long sender, string text, Dictionary<string, int> kinds, float road)
+        private static void Say(long sender, string text, Dictionary<string, int> census,
+                                List<Mark> marks)
         {
             SayAboutZone(sender, text);
 
+            // Породы считаем отдельно от штук: «камней 40» не отличает сорок лорных от
+            // сорока алтарей, а круги у них разные - потому рядом и стоит их размер.
+            var mine = new Dictionary<string, int>();
+            var rings = new Dictionary<string, float>();
+            foreach (var mark in marks)
+            {
+                int had;
+                mine[mark.Name] = (mine.TryGetValue(mark.Name, out had) ? had : 0) + 1;
+                rings[mark.Name] = mark.Radius;
+            }
+
             var said = new System.Text.StringBuilder(text);
-            foreach (var pair in kinds) said.Append($" | {pair.Key}: {pair.Value}");
+            foreach (var pair in mine)
+                said.Append($" | {pair.Key}: {pair.Value}, круг {rings[pair.Key]:0.#} м");
 
             Log.LogInfo($"[AstvardServerMod] Runes: {said}");
+
+            if (census.Count == 0) return;
+
+            // Перепись всего материка - в лог и только в лог. Имя, которого нет в нашем
+            // отборе, иначе не увидеть ниоткуда: сеть промолчит о том, чего не взяла.
+            var all = new System.Text.StringBuilder();
+            foreach (var pair in census)
+            {
+                if (all.Length > 0) all.Append(", ");
+                all.Append(pair.Key).Append(' ').Append(pair.Value);
+            }
+
+            Log.LogInfo($"[AstvardServerMod] Runes: this land holds — {all}");
+        }
+
+        /// <summary>
+        /// Какие круги выбрал сервер - словами и до того, как их станет не вернуть.
+        /// Число в отчёте здесь важнее прочего: радиус больше никто не задаёт руками.
+        /// </summary>
+        private static string Rings(List<Mark> marks)
+        {
+            var said = new System.Text.StringBuilder();
+
+            for (var rank = 0; rank <= 2; rank++)
+            {
+                float low = float.MaxValue, high = 0f;
+                foreach (var mark in marks)
+                {
+                    if (Rank(mark.Kind) != rank) continue;
+
+                    low = Mathf.Min(low, mark.Radius);
+                    high = Mathf.Max(high, mark.Radius);
+                }
+
+                if (high <= 0f) continue;
+
+                if (said.Length > 0) said.Append(", ");
+                said.Append(rank == 0 ? "спавн " : rank == 1 ? "алтари " : "камни ");
+                said.Append(low < high ? $"{low:0.#}–{high:0.#} м" : $"{low:0.#} м");
+            }
+
+            return said.ToString();
         }
 
         /// <summary>
@@ -314,24 +419,32 @@ namespace AstvardServerMod
             var world = WorldGenerator.instance;
             if (zones == null || world == null) return;
 
-            var spots = StonesOn(zones, world, x, z);
-            if (spots.Count == 0)
+            var marks = MarksOn(zones, world, x, z, out _, null);
+            if (marks.Count == 0)
             {
-                SayAboutZone(sender, "Камней на этом материке не нашлось — класть не к чему.");
+                SayAboutZone(sender, "Ни камней, ни алтарей на этом материке — класть не к чему.");
                 return;
             }
 
-            var job = new RuneJob { Sender = sender, Stones = spots.Count };
+            var job = new RuneJob { Sender = sender, Stones = marks.Count };
 
-            // Круги вперёд дорог: если укладку остановят на полпути, у камней уже будет
+            // Круги вперёд дорог: если укладку остановят на полпути, у меток уже будет
             // то, ради чего всё затевалось, а недостающая дорога - это просто дорога.
-            foreach (var stone in spots)
-                job.Queue.Add(CircleJob(stone, radius, width, paved, smooth, clear,
-                                        torch, creator, platform));
+            // А среди кругов спавн и алтари вперёд камней, по той же причине.
+            marks.Sort((a, b) => Rank(a.Kind).CompareTo(Rank(b.Kind)));
 
-            foreach (var edge in TreeEdges(spots))
+            foreach (var mark in marks)
+                job.Queue.Add(CircleJob(mark, paved, smooth, clear, torch, spacing,
+                                        creator, platform));
+
+            var edges = NetworkEdges(marks);
+            var home = SpawnAt(marks);
+            if (home.HasValue)
+                edges.Sort((a, b) => Touches(b, home.Value).CompareTo(Touches(a, home.Value)));
+
+            foreach (var edge in edges)
             {
-                job.Metres += Vector3.Distance(edge.Key, edge.Value);
+                job.Metres += Flat(edge.Key, edge.Value);
                 job.Queue.Add(RoadBetween(edge.Key, edge.Value, radius, width, paved, smooth,
                                           clear, torch, spacing, creator, platform));
             }
@@ -339,7 +452,7 @@ namespace AstvardServerMod
             _runeJob = job;
             Instance.StartCoroutine(RunRuneJob(job));
 
-            var said = $"Камней {job.Stones}, дорог {job.Metres / 1000f:0.0} км, "
+            var said = $"Кругов {job.Stones}, дорог {job.Metres / 1000f:0.0} км, "
                        + $"заданий {job.Queue.Count}. Начал.";
             SayAboutZone(sender, said);
             Log.LogInfo($"[AstvardServerMod] Runes: {said} Asked by {SenderName(sender)}.");
@@ -393,34 +506,31 @@ namespace AstvardServerMod
             _runeJob = null;
         }
 
-        /// <summary>Мощёный круг вокруг камня и кольцо факелов по нему.</summary>
-        private static RoadJob CircleJob(Vector3 stone, float radius, float width, bool paved,
-                                         bool smooth, bool clear, int torch, long creator,
-                                         string platform)
+        /// <summary>Мощёный круг вокруг метки и кольцо факелов по нему.</summary>
+        private static RoadJob CircleJob(Mark mark, bool paved, bool smooth, bool clear,
+                                         int torch, float spacing, long creator, string platform)
         {
             // Путь из двух точек в полуметре: укладка идёт по отрезкам, и одной точки ей
-            // мало - цикл по парам не сделал бы ни шага. Радиус при этом наш, восьмиметровый,
-            // и он же задаёт круг.
-            var job = new RoadJob
+            // мало - цикл по парам не сделал бы ни шага. Круг задаёт не путь, а радиус,
+            // и он у каждой метки свой.
+            return new RoadJob
             {
                 Id = Random.Range(1, int.MaxValue),
-                Path = new List<Vector3> { stone, stone + new Vector3(0.5f, 0f, 0f) },
-                Radius = StoneRing,
-                Width = StoneRing * 2f,
+                Path = new List<Vector3> { mark.At, mark.At + new Vector3(0.5f, 0f, 0f) },
+                Radius = mark.Radius,
+                Width = mark.Radius * 2f,
                 Paint = paved ? Heightmap.m_paintMaskPaved : Heightmap.m_paintMaskDirt,
                 Smooth = smooth,
                 Clear = clear,
-                // Факелы вдоль полуметрового пути встали бы кучкой у камня; кольцо ставим
+                // Факелы вдоль полуметрового пути встали бы кучкой у метки; кольцо ставим
                 // сами, ниже.
                 Torch = 0,
-                Spacing = StoneTorchStep,
+                Spacing = spacing,
                 Creator = creator,
                 Platform = platform,
                 Ring = torch > 0 ? torch : 0,
-                Centre = stone,
+                Centre = mark.At,
             };
-
-            return job;
         }
 
         private static RoadJob RoadBetween(Vector3 from, Vector3 to, float radius, float width,
@@ -454,8 +564,11 @@ namespace AstvardServerMod
         /// </summary>
         private static void RingTorches(RoadJob piece)
         {
+            // По ободу и с теми же полями, с какими их ставит ручное мощение
+            // (`LineWithTorches`): одни и те же настройки не должны давать два разных
+            // кольца, а шаг у факелов один на весь мод.
             var posts = Geometry.RingPosts(new Vec2(piece.Centre.x, piece.Centre.z),
-                                           StoneRing, StoneTorchStep);
+                                           piece.Radius + TorchMargin, piece.Spacing);
             if (posts.Count == 0) return;
 
             var was = piece.Torch;
@@ -470,24 +583,47 @@ namespace AstvardServerMod
                             + $"{piece.Centre.z:F0} — {placed} torches, {skipped} skipped.");
         }
 
-        /// <summary>Камни этого материка — тот же отбор, что и у отчёта.</summary>
-        private static List<Vector3> StonesOn(ZoneSystem zones, WorldGenerator world, float x, float z)
+        /// <summary>
+        /// Метки этого материка - один проход и один отбор на отчёт и на укладку.
+        ///
+        /// Две копии отбора разошлись бы, и первым это заметил бы тот, кто уже нажал
+        /// «класть»: отчёт обещал одно, сервер положил другое. `census` заодно считает
+        /// **все** локации материка, и нужен он только отчёту.
+        /// </summary>
+        private static List<Mark> MarksOn(ZoneSystem zones, WorldGenerator world, float x, float z,
+                                          out int cells, Dictionary<string, int> census)
         {
             var land = Continent(world, zones.m_waterLevel, x, z);
-            var spots = new List<Vector3>();
-            if (land.Count == 0) return spots;
+            var marks = new List<Mark>();
+            cells = land.Count;
+            if (land.Count == 0) return marks;
 
             foreach (var pair in zones.m_locationInstances)
             {
                 var where = pair.Value;
                 var name = where.m_location != null ? where.m_location.m_name : null;
-                if (!IsRuneStone(name)) continue;
+                if (string.IsNullOrEmpty(name)) continue;
                 if (!OnLand(land, where.m_position.x, where.m_position.z)) continue;
 
-                spots.Add(where.m_position);
+                if (census != null)
+                {
+                    int had;
+                    census[name] = (census.TryGetValue(name, out had) ? had : 0) + 1;
+                }
+
+                var kind = KindOf(name);
+                if (kind == MarkKind.None) continue;
+
+                marks.Add(new Mark
+                {
+                    At = where.m_position,
+                    Kind = kind,
+                    Name = name,
+                    Radius = RingFor(where.m_location.m_exteriorRadius),
+                });
             }
 
-            return spots;
+            return marks;
         }
 
         /// <summary>
@@ -521,9 +657,7 @@ namespace AstvardServerMod
                 {
                     if (inTree[i]) continue;
 
-                    var a = spots[pick];
-                    var b = spots[i];
-                    var flat = new Vector2(a.x - b.x, a.z - b.z).magnitude;
+                    var flat = Flat(spots[pick], spots[i]);
                     if (flat < best[i]) { best[i] = flat; from[i] = pick; }
                 }
             }
@@ -589,45 +723,87 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Длина кратчайшей сети, связывающей все камни, - остовное дерево по Приму.
+        /// Вся сеть: кратчайшее дерево по всем меткам плюс отдельные дороги от спавна.
         ///
-        /// Квадрат от числа камней: их десятки, а не тысячи, и городить что-то умнее
-        /// значит платить сложностью за время, которого и так нет.
+        /// Одна функция и на отчёт, и на укладку - чтобы обещанные километры были теми
+        /// самыми, которые лягут.
         /// </summary>
-        private static float TreeLength(List<Vector3> spots)
+        private static List<KeyValuePair<Vector3, Vector3>> NetworkEdges(List<Mark> marks)
         {
-            var inTree = new bool[spots.Count];
-            var best = new float[spots.Count];
-            for (var i = 0; i < spots.Count; i++) best[i] = float.MaxValue;
+            var points = new List<Vector3>(marks.Count);
+            foreach (var mark in marks) points.Add(mark.At);
 
-            best[0] = 0f;
-            var total = 0f;
+            var edges = TreeEdges(points);
+            AddSpawnRoads(marks, edges);
+            return edges;
+        }
 
-            for (var step = 0; step < spots.Count; step++)
+        /// <summary>
+        /// Сколько дорог выходит из спавна.
+        ///
+        /// В кратчайшей сети у него ровно одно ребро - к ближайшему соседу. Для сети это
+        /// верно, для места, откуда выходят каждый вечер, - нет, и хозяин просил дороги
+        /// «к ближайшим камням», во множественном числе.
+        /// </summary>
+        private const int SpawnRoads = 3;
+
+        private static void AddSpawnRoads(List<Mark> marks,
+                                          List<KeyValuePair<Vector3, Vector3>> edges)
+        {
+            var home = SpawnAt(marks);
+            if (!home.HasValue) return;
+
+            var at = home.Value;
+
+            // Считаем те, что дерево уже дало: спавн, оказавшийся посреди камней, иначе
+            // получил бы четыре дороги там, где просили три.
+            var had = 0;
+            foreach (var edge in edges) had += Touches(edge, at);
+
+            var stones = new List<Mark>();
+            foreach (var mark in marks)
+                if (mark.Kind == MarkKind.Stone) stones.Add(mark);
+
+            stones.Sort((a, b) => Flat(at, a.At).CompareTo(Flat(at, b.At)));
+
+            foreach (var stone in stones)
             {
-                var pick = -1;
-                for (var i = 0; i < spots.Count; i++)
-                    if (!inTree[i] && (pick < 0 || best[i] < best[pick])) pick = i;
+                if (had >= SpawnRoads) break;
 
-                if (pick < 0 || best[pick] == float.MaxValue) break;
-
-                inTree[pick] = true;
-                total += best[pick];
-
-                for (var i = 0; i < spots.Count; i++)
+                var twice = false;
+                foreach (var edge in edges)
                 {
-                    if (inTree[i]) continue;
-
-                    // По земле, а не по прямой в пространстве: подъём на гору дорожку
-                    // не удлиняет, её кладут по карте.
-                    var a = spots[pick];
-                    var b = spots[i];
-                    var flat = new Vector2(a.x - b.x, a.z - b.z).magnitude;
-                    if (flat < best[i]) best[i] = flat;
+                    if ((edge.Key == at && edge.Value == stone.At)
+                        || (edge.Value == at && edge.Key == stone.At)) { twice = true; break; }
                 }
-            }
 
-            return total;
+                if (twice) continue;
+
+                edges.Add(new KeyValuePair<Vector3, Vector3>(at, stone.At));
+                had++;
+            }
+        }
+
+        private static Vector3? SpawnAt(List<Mark> marks)
+        {
+            foreach (var mark in marks)
+                if (mark.Kind == MarkKind.Spawn) return mark.At;
+
+            return null;
+        }
+
+        private static int Touches(KeyValuePair<Vector3, Vector3> edge, Vector3 at)
+        {
+            return edge.Key == at || edge.Value == at ? 1 : 0;
+        }
+
+        /// <summary>
+        /// Расстояние по карте, а не по прямой в пространстве: подъём на гору дорожку не
+        /// удлиняет, её кладут по земле.
+        /// </summary>
+        private static float Flat(Vector3 a, Vector3 b)
+        {
+            return new Vector2(a.x - b.x, a.z - b.z).magnitude;
         }
     }
 }
