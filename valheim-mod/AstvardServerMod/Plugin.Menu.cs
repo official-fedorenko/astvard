@@ -817,6 +817,8 @@ namespace AstvardServerMod
             CreateHelperWidgets(gui);
             CreateTestChestWidget(gui);
 
+            CreateBrewChestWidget(gui);
+
             // «Постройки» → «Настройки»: the button first on the build page, and behind it, in
             // this order, the hint and the switches made just below.
             CreateBuildSettingsWidgets(gui);
@@ -1405,6 +1407,7 @@ namespace AstvardServerMod
             // странице «Построек» остаётся то, что строят, а эти двое - про пробу и
             // про тварей, то есть ровно то, чем «Читы» и заняты.
             SetActive(TestChestButton, admin && MenuState == StateCheats);
+            SetActive(BrewChestButton, admin && MenuState == StateCheats);
 
             RefreshCheatLabels();
             SetActive(GodButton, admin && MenuState == StateCheats);

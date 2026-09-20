@@ -143,6 +143,31 @@ namespace AstvardServerMod
             return drop != null ? ItemTitle(drop.m_itemData) : prefab;
         }
 
+        /// <summary>
+        /// Какая станция нужна этому рецепту и какого уровня.
+        ///
+        /// Числом, а не словами «нужного уровня»: уровень станции в игре - это
+        /// `1 + число приставок рядом` (`CraftingStation.GetLevel`), то есть голый котёл
+        /// это единица, а выше он становится от полок и столов вокруг него. Сколько
+        /// требует конкретная медовуха, лежит в данных рецепта, и прочитать это можно
+        /// только у живой игры - написать число в коде значило бы выдумать его.
+        /// </summary>
+        private static string StationNeed(Brew brew)
+        {
+            var station = brew.Recipe != null ? brew.Recipe.m_craftingStation : null;
+            if (station == null) return "не нужна";
+
+            var name = station.name;
+            if (!string.IsNullOrEmpty(station.m_name) && Localization.instance != null)
+            {
+                var said = Localization.instance.Localize(station.m_name);
+                if (!string.IsNullOrEmpty(said) && !said.StartsWith("$")) name = said;
+            }
+
+            var level = brew.Recipe.m_minStationLevel;
+            return level > 1 ? $"{name}, уровень {level}" : name;
+        }
+
         private static void RebuildBrewViews()
         {
             var brews = KnownBrews();
@@ -194,6 +219,7 @@ namespace AstvardServerMod
                                + $"С бочки выходит {brew.PerBrew}.{NEWLINE}"
                                + $"На складе {InStock(brew.Drink)}, в{NEWLINE}бочках {BrewingCount(brew.Base)}.{NEWLINE}{NEWLINE}"
                                + $"На одну бочку нужно:{NEWLINE}{BrewCost(brew)}.{NEWLINE}{NEWLINE}"
+                               + $"Станция: {StationNeed(brew)}.{NEWLINE}{NEWLINE}"
                                + (keep > 0 ? $"Сейчас держим {keep}." : "Сейчас не варим.");
                 }
             }
