@@ -42,6 +42,13 @@ namespace AstvardServerMod
 
         private static bool _gridDrawn;
 
+        // Чем нарисовано последнее кольцо радиуса и когда. Смотри UpdateZonePreview.
+        private static Vector3 _ringDrawnAt = new Vector3(float.MinValue, 0f, 0f);
+
+        private static float _ringDrawnRadius = float.MinValue;
+
+        private static float _ringDrawnWhen = float.MinValue;
+
         // A point every so many metres along a grid line, so it follows the ground instead
         // of hanging over the dips.
         private const float GridStep = 16f;
@@ -188,7 +195,21 @@ namespace AstvardServerMod
             _zonePreview.SetActive(true);
 
             // What was asked for, faint, under what will actually be kept.
-            DrawGroundRing(_zoneRing, centre, radius);
+            //
+            // Кольцо - чистая функция от середины и радиуса, а каждая его точка это луч к
+            // земле: семьдесят две на кадр, пока проекция поднята. Сетка клеток рядом
+            // такую защиту имеет с самого начала (она перерисовывается только при переходе
+            // через край клетки), а кольцо её не получило. Полсекунды сверху - как у
+            // кольца мощения: под неподвижной закреплённой проекцией земля догружается
+            // позже.
+            if ((centre - _ringDrawnAt).sqrMagnitude >= 0.0025f || radius != _ringDrawnRadius
+                || Time.realtimeSinceStartup - _ringDrawnWhen >= 0.5f)
+            {
+                _ringDrawnAt = centre;
+                _ringDrawnRadius = radius;
+                _ringDrawnWhen = Time.realtimeSinceStartup;
+                DrawGroundRing(_zoneRing, centre, radius);
+            }
 
             // The same arithmetic the server uses, called rather than copied: a preview that
             // worked it out for itself would be right until one of the two was changed.
@@ -272,6 +293,21 @@ namespace AstvardServerMod
         private static bool CreateZonePreview()
         {
             if (PreviewMaterial() == null) return false;
+
+            // Сюда приходят дважды: в первый раз и после того, как главное меню унесло
+            // сцену вместе с корнем. Во втором случае линии сетки в списке остались, но
+            // самих их уже нет, и `GridLine` возвращала бы снесённую - исключение в
+            // `Update` на каждом перестроении сетки. Новый корень означает, что прежних
+            // детей нет: список пуст, и метка «нарисовано» снимается вместе с ним, иначе
+            // совпадение клеток с прошлым миром выводило бы из `DrawZoneGrid` по ранней
+            // проверке, и сетка не рисовалась бы вовсе - молча.
+            ZoneGridLines.Clear();
+            _gridDrawn = false;
+
+            // И память о кольце - по той же причине: линия заводится пустой.
+            _ringDrawnAt = new Vector3(float.MinValue, 0f, 0f);
+            _ringDrawnRadius = float.MinValue;
+            _ringDrawnWhen = float.MinValue;
 
             _zonePreview = new GameObject("AstvardZonePreview");
             _zoneRing = MakeGroundLine(_zonePreview.transform, "Radius", true);

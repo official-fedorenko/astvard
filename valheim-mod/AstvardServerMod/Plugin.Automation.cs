@@ -171,7 +171,13 @@ namespace AstvardServerMod
             if (targetView == null || !targetView.IsValid()) return false;
             if (!targetView.IsOwner()) targetView.ClaimOwnership();
 
-            return target.GetInventory().AddItem(prefab, amount);
+            if (!target.GetInventory().AddItem(prefab, amount)) return false;
+
+            // Сундук, в который только что положили, может быть и сундуком подачи: печь
+            // сдаёт уголь в тот же помеченный сундук, из которого его берут кухни. Смотри
+            // `HoldsOf`: множество имеет право быть шире правды, но не уже.
+            NoteChestGot(target, prefab);
+            return true;
         }
 
         // Жалуемся раз в минуту и по предмету: станций много, а беда одна, и шестьдесят
@@ -306,6 +312,9 @@ namespace AstvardServerMod
 
         private static readonly List<Piece> ChestScratch = new List<Piece>();
 
+        /// <summary>Сундуки зоны, отобранные обходом, когда готового списка нет.</summary>
+        private static readonly List<Container> ZoneChestPicked = new List<Container>();
+
         private static Container FindZoneChest(Vector3 origin, GameObject prefab, int amount)
         {
             var zone = ZoneAround(origin);
@@ -316,31 +325,71 @@ namespace AstvardServerMod
 
             var want = CategoryOf(drop.m_itemData);
 
-            // Вокруг середины зоны, а не вокруг станции: сундук на дальнем её краю - такой
-            // же сундук этой зоны, и он теперь тоже считается.
-            var pieces = ZoneChestScratch;
-            pieces.Clear();
-            Piece.GetAllPiecesInRadius(new Vector3(zone.X, origin.y, zone.Z),
-                Sorting.ScanRadius(zone), pieces);
+            // Сундуки этой зоны проход автоматики уже собрал - в `ZoneBins`, тем же
+            // обходом и с теми же отсечками (категория есть, не личный, не подача, внутри
+            // зоны). Отличается этот поиск только вопросами про сам предмет, так что при
+            // совпадении зоны обход не нужен вовсе, а он тут дорогой: `GetAllPiecesInRadius`
+            // проходит по ВСЕМ загруженным деталям мира, и делается это на каждый
+            // складываемый предмет - двадцать сорванных грядок в одном кадре это двадцать
+            // проходов по базе.
+            //
+            // Условий два, и оба обязательны. Кадр: проход идёт целиком в одном кадре,
+            // единственный `yield` стоит в его начале, так что внутри кадра список точен
+            // до сундука; снаружи (перехваты выдачи станций, выделенный сервер, где
+            // прохода нет вовсе) он либо устарел, либо не заполнялся никогда. И та же
+            // зона: список собран для зоны, в которой стоит ИГРОК, а станция может стоять
+            // в другой.
+            //
+            // Остаётся одна разница, и её стоит знать: свой обход центрируется по высоте
+            // станции, а проход - по высоте игрока. `Sorting.ScanRadius` даёт 32 м запаса
+            // вверх и вниз, так что на обычной базе наборы совпадают, а на башне выше
+            // тридцати метров сундук может попасть в один и не попасть в другой.
+            List<Container> candidates;
+            if (_binsFrame == Time.frameCount && _binsZoneId == zone.Id)
+            {
+                candidates = ZoneBins;
+            }
+            else
+            {
+                // Вокруг середины зоны, а не вокруг станции: сундук на дальнем её краю -
+                // такой же сундук этой зоны, и он теперь тоже считается.
+                var pieces = ZoneChestScratch;
+                pieces.Clear();
+                Piece.GetAllPiecesInRadius(new Vector3(zone.X, origin.y, zone.Z),
+                    Sorting.ScanRadius(zone), pieces);
+
+                candidates = ZoneChestPicked;
+                candidates.Clear();
+
+                foreach (var piece in pieces)
+                {
+                    if (piece == null) continue;
+
+                    var found = ContainerOf(piece);
+                    if (found == null) continue;
+                    if (ChestCategory(found) < 0) continue;
+                    if (IsPrivateChest(found) || IsSupplyChest(found)) continue;
+
+                    var where = found.transform.position;
+                    if (!Sorting.Inside(zone, where.x, where.z)) continue;
+
+                    candidates.Add(found);
+                }
+            }
 
             Container best = null;
             var bestRank = int.MaxValue;
             var bestSqr = float.MaxValue;
 
-            foreach (var piece in pieces)
+            foreach (var container in candidates)
             {
-                if (piece == null) continue;
-
-                var container = ContainerOf(piece);
                 if (container == null) continue;
 
                 var category = ChestCategory(container);
                 if (category < 0) continue;
                 if (category != want && category != Sorting.Misc) continue;
-                if (IsPrivateChest(container) || IsSupplyChest(container)) continue;
 
                 var spot = container.transform.position;
-                if (!Sorting.Inside(zone, spot.x, spot.z)) continue;
 
                 // Писать в сундук, который кто-то держит открытым, - верный рассинхрон.
                 if (container.IsInUse()) continue;
@@ -436,7 +485,14 @@ namespace AstvardServerMod
         private static readonly System.Reflection.MethodInfo MCookingFreeSlot =
             AccessTools.Method(typeof(CookingStation), "GetFreeSlot");
 
-        private static readonly List<string> AcceptScratch = new List<string>();
+        /// <summary>
+        /// Что эта станция принимает. Множество, а не список: `TakeFrom` спрашивает его о
+        /// каждой стопке в каждом сундуке подачи, а у кухни принимаемого под шесть
+        /// десятков - перебор списка на каждый вопрос складывался в десятки тысяч сравнений
+        /// в секунду. Ответ тот же: повторы в множестве не хранятся, а спрашивают его
+        /// только про принадлежность.
+        /// </summary>
+        private static readonly HashSet<string> AcceptScratch = new HashSet<string>();
 
         /// <summary>
         /// One sweep a second drives both halves: producers that only hand their goods
@@ -446,6 +502,17 @@ namespace AstvardServerMod
         // Помеченные сундуки зоны, их места и общий список подачи для станции, которая в
         // этой зоне стоит. Заводятся один раз: проход идёт каждую секунду.
         private static readonly List<Container> ZoneBins = new List<Container>();
+
+        /// <summary>
+        /// В каком кадре и для какой зоны собран `ZoneBins`.
+        ///
+        /// Список годится другим только внутри того же кадра и только для той же зоны -
+        /// почему именно так, написано у `FindZoneChest`, который им и пользуется. Кадр, а
+        /// не время: проход идёт целиком в одном кадре, и это точнее любых долей секунды.
+        /// </summary>
+        private static int _binsFrame = int.MinValue;
+
+        private static int _binsZoneId = int.MinValue;
 
         /// <summary>Детали зоны: свой обход, потому что зона бывает шире, чем видно.</summary>
         private static readonly List<Piece> ZonePieces = new List<Piece>();
@@ -570,6 +637,12 @@ namespace AstvardServerMod
                             ZoneBins.Add(container);
                         }
                     }
+
+                    // Отмечаем, чем этот список годится другим: смотри `FindZoneChest`.
+                    // Ставится и при пустой зоне - тогда совпасть с чьей-то зоной он не
+                    // может, и обход остаётся за тем, кто спросил.
+                    _binsFrame = Time.frameCount;
+                    _binsZoneId = zone != null ? zone.Id : int.MinValue;
 
                     if (ZoneBins.Count > 0)
                     {
@@ -1026,15 +1099,102 @@ namespace AstvardServerMod
         /// helped itself to the nearest one emptied whatever stood beside it.
         /// </summary>
         private static string TakeSupply(Vector3 origin, List<Container> supplyChests,
-                                         List<string> accepted)
+                                         HashSet<string> accepted)
         {
             if (accepted.Count == 0) return null;
 
             return TakeFrom(origin, supplyChests, AssignedChestRadius, accepted, ChestZoneSquare);
         }
 
+        /// <summary>
+        /// Что известно про сундук подачи в этом кадре.
+        ///
+        /// Один и тот же сундук за проход спрашивают все станции подряд: печь про руду,
+        /// она же про топливо, кухня про еду и топливо, бочка, факелы, голодные звери.
+        /// Каждая делала это с нуля - два подъёма вверх по объекту (`IsHoldChest` и
+        /// `ViewOf`, оба `GetComponentInParent`) и полный обход инвентаря, - и всё это по
+        /// сорока с лишним сундукам, каждую секунду. Сундуки за этот кадр не меняются, и
+        /// спросить их достаточно один раз.
+        ///
+        /// Кадр, а не время: проход идёт целиком в одном кадре (единственный `yield` стоит
+        /// в его начале), а перехваты выдачи станций приходят сюда из других кадров и
+        /// получают свежий ответ.
+        /// </summary>
+        private sealed class SupplyFacts
+        {
+            internal bool Hold;
+
+            internal ZNetView View;
+
+            /// <summary>Имена того, что лежало, когда заглядывали. null - ещё не заглядывали.</summary>
+            internal HashSet<string> Holds;
+        }
+
+        private static readonly Dictionary<Container, SupplyFacts> SupplyKnown =
+            new Dictionary<Container, SupplyFacts>();
+
+        private static int _factsFrame = int.MinValue;
+
+        private static SupplyFacts FactsOf(Container container)
+        {
+            if (_factsFrame != Time.frameCount)
+            {
+                SupplyKnown.Clear();
+                _factsFrame = Time.frameCount;
+            }
+
+            SupplyFacts facts;
+            if (SupplyKnown.TryGetValue(container, out facts)) return facts;
+
+            facts = new SupplyFacts
+            {
+                Hold = IsHoldChest(container),
+                View = ViewOf(container),
+            };
+            SupplyKnown[container] = facts;
+            return facts;
+        }
+
+        /// <summary>
+        /// Что в сундуке лежит - один раз за кадр на сундук.
+        ///
+        /// Ответ годится только чтобы ОТКАЗАТЬ: «этого имени тут нет» значит, что заходить
+        /// незачем, а «есть» по-прежнему проверяется живым обходом инвентаря. Поэтому
+        /// вынутое отмечать не надо - от изъятия множество лишь становится шире правды, и
+        /// лишний заход ничего не стоит, - а вот положенное отмечать обязательно, иначе
+        /// станция пройдёт мимо того, что ей только что принесли.
+        /// </summary>
+        private static HashSet<string> HoldsOf(Container container, SupplyFacts facts)
+        {
+            if (facts.Holds != null) return facts.Holds;
+
+            var names = new HashSet<string>();
+            foreach (var item in container.GetInventory().GetAllItems())
+            {
+                if (item == null || item.m_dropPrefab == null) continue;
+                names.Add(PrefabName(item.m_dropPrefab));
+            }
+
+            facts.Holds = names;
+            return names;
+        }
+
+        /// <summary>
+        /// В сундук положили - значит то, что в нём лежит, изменилось. Промах здесь стоит
+        /// одного прохода: следующий кадр читает сундук заново.
+        /// </summary>
+        private static void NoteChestGot(Container container, GameObject prefab)
+        {
+            if (container == null || prefab == null) return;
+            if (_factsFrame != Time.frameCount) return;
+
+            SupplyFacts facts;
+            if (SupplyKnown.TryGetValue(container, out facts) && facts.Holds != null)
+                facts.Holds.Add(PrefabName(prefab));
+        }
+
         private static string TakeFrom(Vector3 origin, List<Container> chests,
-                                       float radius, List<string> accepted, bool square)
+                                       float radius, HashSet<string> accepted, bool square)
         {
             // Станция в зоне сортировки берёт из её сундуков на любом расстоянии - то же
             // правило, по которому она в них и сдаёт. Снаружи зоны всё как было: назначенный
@@ -1062,11 +1222,31 @@ namespace AstvardServerMod
                 // ставят позже и ради этого самого. Спрашивается он после дешёвых
                 // отсечек: это подъём вверх по объекту и чтение ZDO по строковому ключу,
                 // а ответ от порядка не зависит - такой сундук пропускается в любом
-                // случае, и `bestSqr` до этой строки не двигают.
-                if (IsHoldChest(container)) continue;
+                // случае, и `bestSqr` до этой строки не двигают. Дороже всего он в
+                // сундуке, до которого дело так и не дошло, поэтому и спрашивается он
+                // здесь, и помнится на кадр - смотри `FactsOf`.
+                var facts = FactsOf(container);
+                if (facts.Hold) continue;
 
-                var view = ViewOf(container);
+                var view = facts.View;
                 if (view == null || !view.IsValid()) continue;
+
+                // Сундук, в котором принимаемого нет вовсе, - обычное дело: пустая бочка
+                // без основы, факел без смолы, печь без руды спрашивают каждую секунду и
+                // не находят ничего. Раньше такой сундук стоил полного обхода инвентаря
+                // КАЖДОЙ станции, потому что ненайденное не даёт ни одной отсечки: цена
+                // была наибольшей ровно тогда, когда работы нет. Теперь сундук читается
+                // один раз за кадр, а дальше отвечает множество.
+                var holds = HoldsOf(container, facts);
+                var any = false;
+                foreach (var kind in holds)
+                {
+                    if (!accepted.Contains(kind)) continue;
+                    any = true;
+                    break;
+                }
+
+                if (!any) continue;
 
                 foreach (var item in container.GetInventory().GetAllItems())
                 {
@@ -1277,7 +1457,7 @@ namespace AstvardServerMod
             if (view.GetZDO().GetFloat(ZDOVars.s_fuel) > fireplace.m_maxFuel - 1f) return;
 
             AcceptScratch.Clear();
-            AcceptScratch.Add(fireplace.m_fuelItem.gameObject.name);
+            AcceptScratch.Add(PrefabName(fireplace.m_fuelItem.gameObject));
             if (TakeSupply(fireplace.transform.position, supply, AcceptScratch) != null)
                 view.InvokeRPC("RPC_AddFuel");
         }
@@ -1287,7 +1467,7 @@ namespace AstvardServerMod
             foreach (var conversion in smelter.m_conversion)
             {
                 if (conversion == null || conversion.m_from == null) continue;
-                if (conversion.m_from.gameObject.name != ore) continue;
+                if (PrefabName(conversion.m_from.gameObject) != ore) continue;
                 return conversion.m_to != null ? conversion.m_to.gameObject : null;
             }
             return null;

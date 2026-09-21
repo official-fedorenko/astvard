@@ -316,6 +316,20 @@ namespace AstvardServerMod
                 ChestLabelPool.Add(made);
             }
 
+            // A label goes with its scene, and the main menu takes the whole world away.
+            // The pool is left full of labels Unity has destroyed, and the only thing that
+            // empties it runs when the game itself closes - so the caller read the first
+            // dead entry as null, stopped, and the labels never came back until a restart.
+            // Nothing said so: no error, and the one line in the log («0 over marked
+            // chests») reads like the marks are gone. A fresh one takes its place, the
+            // same way GhostPool.Show replaces a ghost that went with its scene.
+            if (ChestLabelPool[index] == null)
+            {
+                var again = MakeChestLabel();
+                if (again == null) return null;
+                ChestLabelPool[index] = again;
+            }
+
             return ChestLabelPool[index];
         }
 

@@ -1341,6 +1341,10 @@ namespace AstvardServerMod
         {
             if (_areaPreview != null) Destroy(_areaPreview);
             if (_torchMarkRoot != null) Destroy(_torchMarkRoot);
+
+            // Та же яма с другого конца: снести корень и оставить список полным значит
+            // оставить его с мёртвыми колышками.
+            TorchMarks.Clear();
         }
 
         // ---------------- preview ----------------
@@ -1542,7 +1546,18 @@ namespace AstvardServerMod
         private static void ShowTorchMarks(string owner, IList<Post> posts)
         {
             if (PreviewMaterial() == null) return;
-            if (_torchMarkRoot == null) _torchMarkRoot = new GameObject("AstvardTorchMarks");
+
+            // Корня нет - значит либо мы здесь впервые, либо главное меню унесло сцену
+            // вместе с ним и со всеми колышками. Во втором случае список остаётся полным
+            // и держит снесённые объекты: новых он заводить не станет («список-то
+            // полный»), а тронуть старый - исключение прямо из `Update`, то есть весь его
+            // хвост, включая Esc и ЛКМ, перестаёт выполняться в этом кадре. Новый корень
+            // означает, что прежних детей нет.
+            if (_torchMarkRoot == null)
+            {
+                TorchMarks.Clear();
+                _torchMarkRoot = new GameObject("AstvardTorchMarks");
+            }
 
             _torchMarksFor = owner;
             _torchMarkRoot.SetActive(true);

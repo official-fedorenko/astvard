@@ -99,7 +99,7 @@ namespace AstvardServerMod
 
                 AcceptScratch.Clear();
                 foreach (var item in ai.m_consumeItems)
-                    if (item != null) AcceptScratch.Add(item.gameObject.name);
+                    if (item != null) AcceptScratch.Add(PrefabName(item.gameObject));
 
                 if (AcceptScratch.Count == 0) continue;
 

@@ -591,6 +591,10 @@ namespace AstvardServerMod
                     {
                         if (!inventory.AddItem(prefab, 1)) break;
                         left--;
+
+                        // Возвращаем в сундук подачи, а из него же в этом кадре берут
+                        // станции: смотри `HoldsOf` в Plugin.Automation.cs.
+                        NoteChestGot(container, prefab);
                     }
                 }
 

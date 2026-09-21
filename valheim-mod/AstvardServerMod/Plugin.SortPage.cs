@@ -525,13 +525,51 @@ namespace AstvardServerMod
             var reach = SortZoneRadius();
 
             _sortPreview.SetActive(true);
-            if (_sortSquare) DrawGroundBox(_sortLine, centre, reach, _sortAngle);
+
+            // Контур - чистая функция от середины, размера, формы и угла, а каждая его
+            // точка это луч к земле: шесть десятков на квадрат, восемь - на круг, и ещё
+            // дюжина на метку середины. Пока ничего из этого не двигалось, рисовать
+            // нечего - та же защита, что у кольца мощения (UpdateAreaPreview) и у круга
+            // «Зоны станций» (UpdateChestZone), которым её поставили раньше.
+            //
+            // Порог здесь теснее, чем у них: у метки середины радиус всего метр, и треть
+            // метра на ней - треть радиуса, то есть видно глазом. Выигрыш от этого не
+            // теряется, потому что он весь в двух случаях, где середина стоит на месте:
+            // проекция закреплена на P, и игрок стоит, подбирая размер в поле.
+            //
+            // Полсекунды сверху - как у соседей: под неподвижной проекцией земля
+            // догружается позже, и контур по непрогруженной иначе так и висел бы.
+            var square = _sortSquare;
+            var angle = _sortAngle;
+            if ((centre - _sortDrawnAt).sqrMagnitude < 0.0025f && reach == _sortDrawnReach
+                && square == _sortDrawnSquare && angle == _sortDrawnAngle
+                && Time.realtimeSinceStartup - _sortDrawnWhen < 0.5f) return;
+
+            _sortDrawnAt = centre;
+            _sortDrawnReach = reach;
+            _sortDrawnSquare = square;
+            _sortDrawnAngle = angle;
+            _sortDrawnWhen = Time.realtimeSinceStartup;
+
+            if (square) DrawGroundBox(_sortLine, centre, reach, angle);
             else DrawGroundRing(_sortLine, centre, reach);
 
             // Середина - то, что двигают стрелки, и без метки её не видно вовсе: контур
             // зоны в двадцать метров уходит за спину, и понять, куда уехал центр, нечем.
             if (_sortCentreLine != null) DrawGroundRing(_sortCentreLine, centre, CentreMark, 12);
         }
+
+        // Чем нарисован последний контур зоны сортировки и когда. Смотри
+        // UpdateSortZonePreview: пока это не изменилось, следующий кадр рисует то же самое.
+        private static Vector3 _sortDrawnAt = new Vector3(float.MinValue, 0f, 0f);
+
+        private static float _sortDrawnReach = float.MinValue;
+
+        private static bool _sortDrawnSquare;
+
+        private static float _sortDrawnAngle = float.MinValue;
+
+        private static float _sortDrawnWhen = float.MinValue;
 
         /// <summary>
         /// The same outline as the paving ring, with corners. Sampled along each side rather
@@ -577,6 +615,15 @@ namespace AstvardServerMod
         private static bool CreateSortZonePreview()
         {
             if (PreviewMaterial() == null) return false;
+
+            // Линии заводятся заново - значит нарисованного на них нет, и память о том,
+            // чем нарисован последний контур, обязана сняться вместе с ними. Иначе
+            // проекция, поднятая на том же месте с теми же числами, вышла бы из
+            // UpdateSortZonePreview по ранней проверке и осталась бы пустой.
+            _sortDrawnAt = new Vector3(float.MinValue, 0f, 0f);
+            _sortDrawnReach = float.MinValue;
+            _sortDrawnAngle = float.MinValue;
+            _sortDrawnWhen = float.MinValue;
 
             _sortPreview = new GameObject("AstvardSortZonePreview");
             _sortLine = MakeGroundLine(_sortPreview.transform, "Outline", true);
