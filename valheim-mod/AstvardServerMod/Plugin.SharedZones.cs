@@ -66,6 +66,36 @@ namespace AstvardServerMod
         // What each peer was last sent, so the tick sends only what changed.
         private static readonly Dictionary<long, string> ZonesSent = new Dictionary<long, string>();
 
+        /// <summary>
+        /// Номер состояния зон: всё, из чего собирается строка для игрока.
+        ///
+        /// Строка собиралась каждому готовому игроку каждую секунду - список зон, копия
+        /// каждой видимой, имена из кошельков, `Pack` - только затем, чтобы сравниться с
+        /// прошлой и почти всегда быть выброшенной. Теперь она собирается, когда сменилось
+        /// хоть что-то из трёх: содержимое зон, имена в кошельках и кто какую зону ведёт.
+        ///
+        /// Первые два поднимают этот номер: зоны - там, где пишутся на диск, то есть на
+        /// каждой правке разом, а не пятью вызовами в пяти обработчиках; имя - только
+        /// когда оно и правда сменилось, иначе тик рун поднимал бы номер каждые десять
+        /// секунд на каждого. Третье меняется от одного шага игрока и номером не
+        /// описывается, поэтому считается каждый тик - но подписью из чисел, без единой
+        /// аллокации.
+        ///
+        /// Пропущенный подъём даёт не мусор, а устаревший список зон у клиента - ровно ту
+        /// беду, ради которой рассылка и писалась. Отсюда и одно место подъёма, и то, что
+        /// прямой запрос клиента (`OnZonesQuery`) стирает память о посланном ему.
+        /// </summary>
+        private static int _zonesRev;
+
+        internal static void ZonesChanged()
+        {
+            _zonesRev++;
+        }
+
+        private static readonly Dictionary<long, int> ZonesRevSent = new Dictionary<long, int>();
+
+        private static readonly Dictionary<long, int> ZonesSignSent = new Dictionary<long, int>();
+
         private static string ZonesPath
         {
             get { return Path.Combine(Paths.ConfigPath, ZonesFile); }
@@ -90,6 +120,8 @@ namespace AstvardServerMod
                     if (read[0].Id > _nextZoneId) _nextZoneId = read[0].Id;
                 }
 
+                ZonesChanged();
+
                 Log.LogInfo($"[AstvardServerMod] Sorting zones: {ServerZones.Count} read.");
             }
             catch (System.Exception bad)
@@ -100,6 +132,10 @@ namespace AstvardServerMod
 
         private static void SaveServerZones()
         {
+            // Единственное место, через которое проходит всякая правка зон, - потому номер
+            // и поднимается здесь, а не в каждом обработчике по отдельности.
+            ZonesChanged();
+
             try
             {
                 var lines = new List<string>();
@@ -189,6 +225,27 @@ namespace AstvardServerMod
                 SendSortCats(peer);
                 SendSky(peer);
 
+                // Сперва подпись - какие зоны этот игрок видит и какие ведёт, - и
+                // только если она или номер состояния сменились, собираются копии и
+                // строки. Подпись из чисел: ни списка, ни строки, ни байта мусора.
+                var sign = 17;
+                foreach (var zone in ServerZones)
+                {
+                    if (!Sorting.Sees(zone, id)) continue;
+
+                    string drives;
+                    var mine = driver.TryGetValue(zone.Id, out drives) && drives == id;
+                    sign = sign * 31 + zone.Id * 2 + (mine ? 1 : 0);
+                }
+
+                int lastRev, lastSign;
+                if (ZonesRevSent.TryGetValue(peer.m_uid, out lastRev) && lastRev == _zonesRev
+                    && ZonesSignSent.TryGetValue(peer.m_uid, out lastSign) && lastSign == sign)
+                    continue;
+
+                ZonesRevSent[peer.m_uid] = _zonesRev;
+                ZonesSignSent[peer.m_uid] = sign;
+
                 var theirs = new List<Sorting.Zone>();
                 foreach (var zone in ServerZones)
                 {
@@ -209,7 +266,7 @@ namespace AstvardServerMod
                 ZRoutedRpc.instance?.InvokeRoutedRPC(peer.m_uid, RpcZones, packed);
             }
 
-            if (ZonesSent.Count <= here.Count) return;
+            if (ZonesSent.Count <= here.Count && ZonesRevSent.Count <= here.Count) return;
 
             // Somebody left: their entry would otherwise keep a stale answer waiting for
             // whoever is given that id next.
@@ -220,6 +277,8 @@ namespace AstvardServerMod
             foreach (var uid in gone)
             {
                 ZonesSent.Remove(uid);
+                ZonesRevSent.Remove(uid);
+                ZonesSignSent.Remove(uid);
                 SortKindsSent.Remove(uid);
                 SortCatsSent.Remove(uid);
                 SkySent.Remove(uid);
@@ -280,7 +339,12 @@ namespace AstvardServerMod
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
 
-            ZonesSent.Remove(ReplyTarget(sender));
+            // Забыть посланное - и заодно то, по чему решают, собирать ли строку: иначе
+            // прямой запрос клиента остался бы без ответа до следующей настоящей правки.
+            var asked = ReplyTarget(sender);
+            ZonesSent.Remove(asked);
+            ZonesRevSent.Remove(asked);
+            ZonesSignSent.Remove(asked);
         }
 
         /// <summary>

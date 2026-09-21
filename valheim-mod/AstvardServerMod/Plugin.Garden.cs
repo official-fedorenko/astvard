@@ -342,6 +342,44 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] Garden: {said}.");
         }
 
+        /// <summary>
+        /// Сходится ли счёт грядок по деталям зоны с обходом всей сцены. Один раз за
+        /// сессию, и только затем, чтобы это перестало быть предположением.
+        ///
+        /// Счёт по `ZonePieces` верен, только если у каждого саженца есть `Piece`. В игре
+        /// это так - грядку ставят культиватором из таблицы деталей, - но в
+        /// декомпилированном `Plant` этого не закреплено ничем, а «наверное» здесь стоит
+        /// дорого: разойдись счёт, и предел грядок молча начнёт врать. Поэтому первый
+        /// проход считает обоими способами и говорит в лог, сошлись ли они.
+        /// </summary>
+        private static bool _bedsChecked;
+
+        private static void CheckBedCount(Sorting.Zone zone)
+        {
+            if (_bedsChecked) return;
+            _bedsChecked = true;
+
+            var inScene = 0;
+            foreach (var plant in Object.FindObjectsByType<Plant>(FindObjectsSortMode.None))
+            {
+                if (plant == null) continue;
+
+                var bed = plant.transform.position;
+                if (Sorting.Inside(zone, bed.x, bed.z)) inScene++;
+            }
+
+            if (inScene == BedsInZone)
+            {
+                Log.LogInfo($"[AstvardServerMod] Garden: beds by pieces {BedsInZone} "
+                            + "— same as the whole-scene walk, so pieces it is.");
+                return;
+            }
+
+            Log.LogWarning($"[AstvardServerMod] Garden: beds by pieces {BedsInZone}, by scene "
+                           + $"{inScene} — a plant without a Piece exists; the bed cap is "
+                           + "counting low.");
+        }
+
         /// <summary>Собирает созревшее внутри зоны. Возвращает, сколько грядок сорвано.</summary>
         private static int ReapBeds(Player player, Sorting.Zone zone)
         {
@@ -357,17 +395,27 @@ namespace AstvardServerMod
             // Грядки, которым ещё расти, считаются отдельно и не ради красоты: «созрело 0»
             // само по себе не отличает пустой огород от посаженного час назад, а это
             // первое, что спрашивает человек, у которого «ничего не происходит».
+            // Растущие грядки берутся из деталей зоны, а не обходом всей сцены:
+            // `ZonePieces` собран тем же проходом автоматики строкой выше, и обойдётся он
+            // сотнями деталей вместо десятков тысяч компонентов. Обход по `Pickable` ниже
+            // так заменить нельзя - дикая малина и созревшее не все `Piece`, и на этом
+            // стоит правило «в зоне собирается всё `Pickable`».
             _growing = 0;
-            foreach (var plant in Object.FindObjectsByType<Plant>(FindObjectsSortMode.None))
+            foreach (var piece in ZonePieces)
             {
-                if (plant == null) continue;
+                if (piece == null) continue;
 
-                var bed = plant.transform.position;
+                var parts = PartsOf(piece);
+                if (parts == null || parts.Plant == null) continue;
+
+                var bed = piece.transform.position;
                 if (!Sorting.Inside(zone, bed.x, bed.z)) continue;
 
                 _growing++;
                 BedsInZone++;
             }
+
+            CheckBedCount(zone);
 
             var where = player.transform.position;
             var reaped = 0;
@@ -680,8 +728,30 @@ namespace AstvardServerMod
             // загруженные подряд.
             Heightmap ground = null;
 
-            for (var row = firstRow; row <= lastRow; row++)
+            var rows = lastRow - firstRow + 1;
+            if (rows <= 0) return _emptySown;
+
+            // Решётка считается по габаритам ЗОНЫ, а не огорода: зона в 64 м с грядкой в
+            // углу стоит столько же, сколько засаженная целиком, - под восемьдесят тысяч
+            // точек в одном кадре. А сажать за проход всё равно нельзя больше `SowPerPass`,
+            // так что дорог тут ровно тот случай, когда сажать негде: полный обход ради
+            // нуля, каждые пять секунд. Поэтому у обхода есть курсор: проход берёт свой
+            // кусок решётки и запоминает, где встал. Решётка привязана к началу мира, так
+            // что продолжать с той же точки можно точно, ничего не сдвигая; меняется лишь
+            // то, в каком порядке находятся свободные места, а не сколько их засеяно.
+            if (_sowZone != zone.Id || _sowRow < firstRow || _sowRow > lastRow)
             {
+                _sowZone = zone.Id;
+                _sowRow = firstRow;
+                _sowCol = int.MinValue;
+            }
+
+            var budget = SowPointsPerPass;
+            var from = _sowRow;
+
+            for (var step = 0; step < rows; step++)
+            {
+                var row = firstRow + ((from - firstRow) + step) % rows;
                 var z = row * rowStep;
 
                 // Нечётный ряд сдвинут на полшага - от этого и получается шахматка.
@@ -689,13 +759,28 @@ namespace AstvardServerMod
                 var firstCol = Mathf.FloorToInt((zone.X - reach - shift) / spacing);
                 var lastCol = Mathf.CeilToInt((zone.X + reach - shift) / spacing);
 
-                for (var col = firstCol; col <= lastCol; col++)
+                var startCol = step == 0 && _sowCol > firstCol && _sowCol <= lastCol
+                    ? _sowCol
+                    : firstCol;
+
+                for (var col = startCol; col <= lastCol; col++)
                 {
-                    if (_emptySown >= SowPerPass) return _emptySown;
+                    if (_emptySown >= SowPerPass)
+                    {
+                        Resume(row, col);
+                        return _emptySown;
+                    }
 
                     if (BedCap > 0 && BedsInZone + _emptySown >= BedCap)
                     {
                         BedsFull = true;
+                        Resume(row, col);
+                        return _emptySown;
+                    }
+
+                    if (--budget < 0)
+                    {
+                        Resume(row, col);
                         return _emptySown;
                     }
 
@@ -734,6 +819,7 @@ namespace AstvardServerMod
                     if (!PaySeeds(sapling, at, supply))
                     {
                         _emptyNoSeeds++;
+                        Resume(row, col + 1);
                         return _emptySown;
                     }
 
@@ -744,7 +830,25 @@ namespace AstvardServerMod
                 }
             }
 
+            // Круг пройден целиком - следующий проход начинает сначала.
+            _sowRow = firstRow;
+            _sowCol = int.MinValue;
             return _emptySown;
+        }
+
+        /// <summary>Сколько точек решётки тратить за проход и где остановились.</summary>
+        private const int SowPointsPerPass = 8000;
+
+        private static int _sowZone = int.MinValue;
+
+        private static int _sowRow = int.MinValue;
+
+        private static int _sowCol = int.MinValue;
+
+        private static void Resume(int row, int col)
+        {
+            _sowRow = row;
+            _sowCol = col;
         }
 
         /// <summary>

@@ -224,8 +224,9 @@ namespace AstvardServerMod
                 return;
             }
 
-            CancelAreaPreview();
-            CancelWallPreview();
+            // One projection at a time, or one click would answer two of them.
+            CancelOtherPreviews(Projection.Fence);
+
             _fencePreviewing = true;
             _fencePinned = false;
             _fenceGhostKey = null;

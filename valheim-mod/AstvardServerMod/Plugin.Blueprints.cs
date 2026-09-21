@@ -143,14 +143,54 @@ namespace AstvardServerMod
             _toolMarkedAt = Time.time;
         }
 
-        internal static bool PlacementHoldsInput
+        /// <summary>Что у нас бывает в руках. Один список на всех, кто их считает и гасит.</summary>
+        internal enum Projection
+        {
+            Piece,
+            Fence,
+            Area,
+            Wall,
+            SortZone,
+            ZoneCells,
+        }
+
+        /// <summary>Поднята ли хоть одна проекция.</summary>
+        internal static bool AnyPreviewUp
         {
             get
             {
                 return IsPlacing || IsFencePreviewing || IsAreaPreviewing || IsWallPreviewing
-                       || IsSortZonePreviewing || IsZonePreviewing
-                       || Time.time < _inputHeldUntil;
+                       || IsSortZonePreviewing || IsZonePreviewing;
             }
+        }
+
+        /// <summary>
+        /// Погасить все проекции, кроме той, что сейчас поднимается.
+        ///
+        /// Правило «одна проекция за раз» писалось затем, чтобы один щелчок не отвечал
+        /// двум сразу, - и каждый инструмент исполнял его сам, своим списком соседей.
+        /// Списков было пять, и все пять разные: забор не знал ни про зону сортировки, ни
+        /// про клетки зоны автоматики, стена - про них же, зона сортировки - про клетки, а
+        /// установка детали не знала и про забор. То есть две проекции **сегодня**
+        /// поднимаются разом, вопреки комментарию над каждым из этих блоков.
+        ///
+        /// Теперь список один и лежит рядом с теми, кто отвечает «держит ли ввод проекция»
+        /// и «наш ли это Escape»: разойтись им больше негде. Новый режим постройки
+        /// дописывает себя в `Projection` и в `AnyPreviewUp`, а не ведёт свой перечень.
+        /// </summary>
+        internal static void CancelOtherPreviews(Projection starting)
+        {
+            if (starting != Projection.Piece && IsPlacing) CancelPlacement();
+            if (starting != Projection.Fence && IsFencePreviewing) CancelFencePreview();
+            if (starting != Projection.Area && IsAreaPreviewing) CancelAreaPreview();
+            if (starting != Projection.Wall && IsWallPreviewing) CancelWallPreview();
+            if (starting != Projection.SortZone && IsSortZonePreviewing) CancelSortZonePreview();
+            if (starting != Projection.ZoneCells && IsZonePreviewing) CancelZonePreview();
+        }
+
+        internal static bool PlacementHoldsInput
+        {
+            get { return AnyPreviewUp || Time.time < _inputHeldUntil; }
         }
 
         private static int _escapeUsedFrame = -1;
@@ -171,9 +211,7 @@ namespace AstvardServerMod
         {
             get
             {
-                return RoadInProgress || BridgeInProgress || IsPlacing || IsFencePreviewing
-                       || IsAreaPreviewing || IsWallPreviewing || IsSortZonePreviewing
-                       || IsZonePreviewing
+                return RoadInProgress || BridgeInProgress || AnyPreviewUp
                        || _escapeUsedFrame == Time.frameCount;
             }
         }
@@ -462,9 +500,9 @@ namespace AstvardServerMod
         private static void StartPlacement(string label = "постройка")
         {
             _placementLabel = label;
-            CancelAreaPreview();
+
             // Two projections up at once would both want the click.
-            if (_wallPreviewing) CancelWallPreview();
+            CancelOtherPreviews(Projection.Piece);
             // Any placement starts as a plain one: the floor fill and a player's pick from
             // the server each turn themselves on after, and a click still waiting on the
             // server's word belongs to the placement before.

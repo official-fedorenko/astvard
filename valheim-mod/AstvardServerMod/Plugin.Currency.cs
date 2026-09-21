@@ -227,7 +227,18 @@ namespace AstvardServerMod
                 Purses[id] = purse;
             }
 
-            if (!string.IsNullOrEmpty(name)) purse.Name = CleanName(name);
+            if (!string.IsNullOrEmpty(name))
+            {
+                var clean = CleanName(name);
+                if (clean != purse.Name)
+                {
+                    // Имена уезжают клиентам вместе с зонами: сменилось имя - сменилась и
+                    // строка, которую им шлют. Только при настоящей смене: тик рун зовёт
+                    // это каждые десять секунд на каждого.
+                    purse.Name = clean;
+                    ZonesChanged();
+                }
+            }
             return purse;
         }
 

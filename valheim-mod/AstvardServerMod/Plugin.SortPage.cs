@@ -372,10 +372,7 @@ namespace AstvardServerMod
             }
 
             // One projection at a time, or one click would answer two of them.
-            if (IsPlacing) CancelPlacement();
-            if (IsFencePreviewing) CancelFencePreview();
-            if (IsAreaPreviewing) CancelAreaPreview();
-            CancelWallPreview();
+            CancelOtherPreviews(Projection.SortZone);
 
             _sortPreviewing = true;
             _sortPinned = false;

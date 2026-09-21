@@ -695,6 +695,9 @@ namespace AstvardServerMod
             internal Smelter Smelter;
 
             internal Fireplace Fire;
+
+            /// <summary>Растущая грядка. Огород считает их по деталям зоны, а не по сцене.</summary>
+            internal Plant Plant;
         }
 
         private static readonly Dictionary<Piece, Parts> PartsByPiece = new Dictionary<Piece, Parts>();
@@ -716,6 +719,7 @@ namespace AstvardServerMod
                 Barrel = piece.GetComponentInChildren<Fermenter>(),
                 Smelter = piece.GetComponentInChildren<Smelter>(),
                 Fire = piece.GetComponentInChildren<Fireplace>(),
+                Plant = piece.GetComponentInChildren<Plant>(),
             };
             PartsByPiece[piece] = found;
 
