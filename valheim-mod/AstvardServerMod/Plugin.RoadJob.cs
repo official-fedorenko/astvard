@@ -893,7 +893,9 @@ namespace AstvardServerMod
 
                 foreach (var comp in comps)
                 {
-                    var target = MakeTarget(comp);
+                    // Цель здесь живёт до конца этой строки, так что буферы берутся
+                    // взаймы: у клиента цели держатся разом и одалживать нельзя.
+                    var target = MakeTarget(comp, true);
                     if (target != null) PaintStretch(target, piece, 0, piece.Count - 1, job.Radius, job.Paint);
                 }
 

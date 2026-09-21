@@ -530,6 +530,16 @@ namespace AstvardServerMod
         {
             if (string.IsNullOrEmpty(id)) return "";
 
+            // Обычный случай - номер Steam как он пришёл: одни цифры и короче двадцати.
+            // Тогда цикл ниже вернул бы ту же строку посимвольно, а спрашивают это по зоне
+            // на игрока каждую секунду. Условие подобрано под сам цикл: он отбрасывает
+            // только не-цифры и упирается в двадцатый знак.
+            var plain = id.Length <= 20;
+            for (var i = 0; plain && i < id.Length; i++)
+                if (id[i] < '0' || id[i] > '9') plain = false;
+
+            if (plain) return id;
+
             var kept = new StringBuilder();
             foreach (var symbol in id)
             {
@@ -836,12 +846,41 @@ namespace AstvardServerMod
         // No Unity here, and no Mathf with it.
         private const float Deg2Rad = 0.0174532924f;
 
+        /// <summary>
+        /// Синус и косинус последнего спрошенного угла.
+        ///
+        /// Угол у зоны один на всю зону и на весь проход, а спрашивают его помногу: решётка
+        /// засева зовёт `Inside` по разу на точку - десятки тысяч раз за проход, - и каждый
+        /// раз это были `Math.Cos` и `Math.Sin` заново, от одного и того же числа. Ответ
+        /// после правки совпадает до бита: считается то же самое, только один раз.
+        ///
+        /// Одной ячейки хватает: вопросы идут подряд про одну зону, а первый после смены
+        /// угла считает заново. NaN в начале - чтобы первое же сравнение не совпало.
+        /// </summary>
+        private static float _turnedAt = float.NaN;
+
+        private static float _turnedCos;
+
+        private static float _turnedSin;
+
+        private static void Turn(float angle, out float cos, out float sin)
+        {
+            var turn = NormaliseAngle(angle);
+            if (turn != _turnedAt)
+            {
+                _turnedAt = turn;
+                _turnedCos = (float)System.Math.Cos(turn * Deg2Rad);
+                _turnedSin = (float)System.Math.Sin(turn * Deg2Rad);
+            }
+
+            cos = _turnedCos;
+            sin = _turnedSin;
+        }
+
         /// <summary>An offset from the middle of a square, seen the way that square lies.</summary>
         private static void ToLocal(float angle, float dx, float dz, out float alongX, out float alongZ)
         {
-            var radians = NormaliseAngle(angle) * Deg2Rad;
-            var cos = (float)System.Math.Cos(radians);
-            var sin = (float)System.Math.Sin(radians);
+            Turn(angle, out var cos, out var sin);
 
             alongX = dx * cos + dz * sin;
             alongZ = -dx * sin + dz * cos;
@@ -858,9 +897,7 @@ namespace AstvardServerMod
             for (var i = 0; i < 4; i++)
             {
                 var along = (i < 2 ? a.Angle : b.Angle) + (i % 2 == 0 ? 0f : 90f);
-                var radians = NormaliseAngle(along) * Deg2Rad;
-                var axisX = (float)System.Math.Cos(radians);
-                var axisZ = (float)System.Math.Sin(radians);
+                Turn(along, out var axisX, out var axisZ);
 
                 var apart = Abs(dx * axisX + dz * axisZ);
                 if (apart >= Spread(a.Angle, ar, axisX, axisZ) + Spread(b.Angle, br, axisX, axisZ))
@@ -873,9 +910,7 @@ namespace AstvardServerMod
         /// <summary>How far a square of this reach, lying so, stretches along an axis.</summary>
         private static float Spread(float angle, float reach, float axisX, float axisZ)
         {
-            var radians = NormaliseAngle(angle) * Deg2Rad;
-            var cos = (float)System.Math.Cos(radians);
-            var sin = (float)System.Math.Sin(radians);
+            Turn(angle, out var cos, out var sin);
 
             return reach * (Abs(cos * axisX + sin * axisZ) + Abs(-sin * axisX + cos * axisZ));
         }
@@ -1050,7 +1085,9 @@ namespace AstvardServerMod
                 bestHeld = held;
             }
 
-            return best != null ? new List<int>(best) : new List<int>();
+            // Сама группа, а не её копия: `groups` после выбора никому не нужен, и
+            // сортировка выбранной на месте ничего не портит.
+            return best ?? new List<int>();
         }
 
         /// <summary>Everything of one kind the category has to hold - in its chests and on its way there.</summary>
@@ -1166,11 +1203,96 @@ namespace AstvardServerMod
         /// With ownChestSlots at zero nothing is split: every chest of a category takes
         /// everything, which is what this did before there was a plan.
         /// </summary>
+        /// <summary>
+        /// Порядок сундуков под одну кучу: где её уже больше, при равенстве - где меньше
+        /// чужого, при полном равенстве - по порядку сундуков.
+        ///
+        /// Объектом, а не лямбдой: раскладка считается заново каждую секунду, а лямбда с
+        /// захватом - это класс окружения и делегат на каждую кучу, плюс ещё один объект
+        /// внутри самого `List.Sort(Comparison)` в net472. Сравнение то же самое.
+        /// </summary>
+        private sealed class HoldingOrder : IComparer<int>
+        {
+            public IList<BinState> Bins;
+            public string Kind;
+
+            public int Compare(int a, int b)
+            {
+                var mine = Bins[b].Held(Kind).CompareTo(Bins[a].Held(Kind));
+                if (mine != 0) return mine;
+
+                var others = Bins[a].HeldOther(Kind).CompareTo(Bins[b].HeldOther(Kind));
+                return others != 0 ? others : a.CompareTo(b);
+            }
+        }
+
+        /// <summary>Ближе к первому сундуку кучи, а при равном расстоянии - как выше.</summary>
+        private sealed class GapOrder : IComparer<int>
+        {
+            public IList<BinState> Bins;
+            public HoldingOrder Then;
+            public int Anchor;
+
+            public int Compare(int a, int b)
+            {
+                var byGap = Gap(Bins[Anchor], Bins[a]).CompareTo(Gap(Bins[Anchor], Bins[b]));
+                return byGap != 0 ? byGap : Then.Compare(a, b);
+            }
+        }
+
+        /// <summary>Крупные кучи первыми, равные - по имени вида.</summary>
+        private sealed class BiggestFirst : IComparer<Load>
+        {
+            public int Compare(Load a, Load b)
+            {
+                var bySlots = SlotsFor(b.Units, b.StackSize).CompareTo(SlotsFor(a.Units, a.StackSize));
+                return bySlots != 0 ? bySlots : string.CompareOrdinal(a.Kind, b.Kind);
+            }
+        }
+
+        /// <summary>Среди общих сундуков вид предпочитает тот, где его уже больше.</summary>
+        private sealed class PreferOrder : IComparer<int>
+        {
+            public IList<BinState> Bins;
+            public string Kind;
+
+            public int Compare(int a, int b)
+            {
+                var mine = Bins[b].Held(Kind).CompareTo(Bins[a].Held(Kind));
+                return mine != 0 ? mine : a.CompareTo(b);
+            }
+        }
+
+        // Буферы раскладки. Раскладка нигде не хранится и считается заново каждый проход -
+        // это и есть её устройство, - но заводить под неё новые списки каждую секунду
+        // незачем: наружу из них не уходит ничего, всё, что попадает в `Plan`, собирается
+        // отдельными списками ниже. Чистятся на входе, иначе тесты, зовущие `MakePlan`
+        // подряд, увидели бы хвост прошлого вызова.
+        private static readonly List<int> PlanFree = new List<int>();
+
+        private static readonly List<Load> PlanBig = new List<Load>();
+
+        private static readonly HashSet<int> PlanClaimed = new HashSet<int>();
+
+        private static readonly HoldingOrder PlanHolding = new HoldingOrder();
+
+        private static readonly GapOrder PlanGap = new GapOrder();
+
+        private static readonly PreferOrder PlanPrefer = new PreferOrder();
+
+        private static readonly BiggestFirst PlanBiggest = new BiggestFirst();
+
         public static Plan MakePlan(IList<BinState> bins, IList<Load> loads, int ownChestSlots,
                                     float groupSpan = 0f)
         {
             var plan = new Plan();
             if (bins == null) return plan;
+
+            PlanClaimed.Clear();
+            PlanHolding.Bins = bins;
+            PlanGap.Bins = bins;
+            PlanGap.Then = PlanHolding;
+            PlanPrefer.Bins = bins;
 
             // Which chests each category has, in the order they were handed over.
             var byCategory = new Dictionary<int, List<int>>();
@@ -1188,13 +1310,14 @@ namespace AstvardServerMod
                 list.Add(i);
             }
 
-            var claimed = new HashSet<int>();
+            var claimed = PlanClaimed;
 
             if (ownChestSlots > 0 && loads != null)
             {
                 // Biggest piles first: they are the ones a chest of their own actually helps,
                 // and the ones that would otherwise swamp everything else.
-                var big = new List<Load>();
+                var big = PlanBig;
+                big.Clear();
                 foreach (var load in loads)
                 {
                     if (load == null || string.IsNullOrEmpty(load.Kind)) continue;
@@ -1202,18 +1325,15 @@ namespace AstvardServerMod
                     big.Add(load);
                 }
 
-                big.Sort((a, b) =>
-                {
-                    var bySlots = SlotsFor(b.Units, b.StackSize).CompareTo(SlotsFor(a.Units, a.StackSize));
-                    return bySlots != 0 ? bySlots : string.CompareOrdinal(a.Kind, b.Kind);
-                });
+                big.Sort(PlanBiggest);
 
                 foreach (var load in big)
                 {
                     List<int> ofCategory;
                     if (!byCategory.TryGetValue(load.Category, out ofCategory)) continue;
 
-                    var free = new List<int>();
+                    var free = PlanFree;
+                    free.Clear();
                     foreach (var bin in ofCategory)
                         if (!claimed.Contains(bin)) free.Add(bin);
 
@@ -1226,14 +1346,7 @@ namespace AstvardServerMod
                     // holds least of anything else - a chest half full of this is a better
                     // home than an empty one somebody is about to want for something else.
                     var kind = load.Kind;
-                    Comparison<int> byHolding = (a, b) =>
-                    {
-                        var mine = bins[b].Held(kind).CompareTo(bins[a].Held(kind));
-                        if (mine != 0) return mine;
-
-                        var others = bins[a].HeldOther(kind).CompareTo(bins[b].HeldOther(kind));
-                        return others != 0 ? others : a.CompareTo(b);
-                    };
+                    PlanHolding.Kind = kind;
 
                     // One pile, one place. Chests standing together count as a group, so a
                     // pile that outgrows its chest spreads along the wall it is already on
@@ -1243,22 +1356,15 @@ namespace AstvardServerMod
                         ? PickGroup(bins, Groups(bins, free, groupSpan), kind)
                         : free;
 
-                    pool.Sort(byHolding);
+                    pool.Sort(PlanHolding);
 
                     // And past the first chest - the nearest to it, not the next in line.
+                    // Хвост сортируется на месте: прежняя пара «вырезать - сложить обратно»
+                    // заводила два списка на каждую кучу, а порядок выходит тот же.
                     if (pool.Count > 1)
                     {
-                        var anchor = pool[0];
-                        var tail = pool.GetRange(1, pool.Count - 1);
-
-                        tail.Sort((a, b) =>
-                        {
-                            var byGap = Gap(bins[anchor], bins[a]).CompareTo(Gap(bins[anchor], bins[b]));
-                            return byGap != 0 ? byGap : byHolding(a, b);
-                        });
-
-                        pool = new List<int> { anchor };
-                        pool.AddRange(tail);
+                        PlanGap.Anchor = pool[0];
+                        pool.Sort(1, pool.Count - 1, PlanGap);
                     }
 
                     var slots = SlotsFor(load.Units, load.StackSize);
@@ -1298,11 +1404,8 @@ namespace AstvardServerMod
                     if (!plan.Mixed.TryGetValue(load.Category, out mixed) || mixed.Count < 2) continue;
 
                     var order = new List<int>(mixed);
-                    order.Sort((a, b) =>
-                    {
-                        var mine = bins[b].Held(load.Kind).CompareTo(bins[a].Held(load.Kind));
-                        return mine != 0 ? mine : a.CompareTo(b);
-                    });
+                    PlanPrefer.Kind = load.Kind;
+                    order.Sort(PlanPrefer);
 
                     plan.Preferred[load.Kind] = order;
                 }

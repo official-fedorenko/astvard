@@ -918,7 +918,21 @@ namespace AstvardServerMod
             public Vector3 Origin;
         }
 
-        private static PaintTarget MakeTarget(TerrainComp comp)
+        // Буферы покраски, которые можно одолжить.
+        //
+        // Цель весит три массива на вершины зоны - при 65x65 это 89 КБ, - и серверная
+        // укладка заводила их на каждый компилятор каждого куска: у сети по камням это
+        // сотни мегабайт за двенадцать минут. Там цель живёт по одной: сделал, покрасил,
+        // забыл. А у клиента (`LayPaint`) все цели держатся **разом**, по одной на
+        // компилятор, и общие массивы склеили бы зоны в одну - оттого одолжить их можно
+        // только по просьбе, а не всегда.
+        private static float[] _paintBest;
+
+        private static Color[] _paintBase;
+
+        private static bool[] _paintTouched;
+
+        private static PaintTarget MakeTarget(TerrainComp comp, bool borrow = false)
         {
             var hmap = FHmap != null ? FHmap.GetValue(comp) as Heightmap : null;
             var modified = FModifiedPaint != null ? FModifiedPaint.GetValue(comp) as bool[] : null;
@@ -928,15 +942,49 @@ namespace AstvardServerMod
             var size = hmap.m_width + 1;
             if (modified.Length < size * size || mask.Length < size * size) return null;
 
+            var cells = size * size;
+            float[] best;
+            Color[] tint;
+            bool[] touched;
+
+            if (borrow)
+            {
+                if (_paintBest == null || _paintBest.Length < cells)
+                {
+                    _paintBest = new float[cells];
+                    _paintBase = new Color[cells];
+                    _paintTouched = new bool[cells];
+                }
+                else
+                {
+                    // Чистить обязательно: `Base` несёт исходный цвет земли, и куски
+                    // склеивались бы по цвету соседа, а не по тому, что под ними. После
+                    // `Array.Clear` состояние в точности такое же, как у новых массивов.
+                    System.Array.Clear(_paintBest, 0, cells);
+                    System.Array.Clear(_paintBase, 0, cells);
+                    System.Array.Clear(_paintTouched, 0, cells);
+                }
+
+                best = _paintBest;
+                tint = _paintBase;
+                touched = _paintTouched;
+            }
+            else
+            {
+                best = new float[cells];
+                tint = new Color[cells];
+                touched = new bool[cells];
+            }
+
             return new PaintTarget
             {
                 Comp = comp,
                 Hmap = hmap,
                 Modified = modified,
                 Mask = mask,
-                Best = new float[size * size],
-                Base = new Color[size * size],
-                Touched = new bool[size * size],
+                Best = best,
+                Base = tint,
+                Touched = touched,
                 Size = size,
                 Half = size / 2,
                 Scale = hmap.m_scale,
@@ -957,16 +1005,10 @@ namespace AstvardServerMod
             return Geometry.WorldAt(vertex, origin, t.Scale, t.Half);
         }
 
+        // Плоский путь куска: выпрямляется один раз на покраску, а не на каждую
+        // вершину карты высот. Внутри цикла путь не меняется ни разу, а вершин в зоне до
+        // 65x65 - то есть это были сотни тысяч записей в список ради одного и того же.
         private static readonly List<Vec2> FlatPath = new List<Vec2>();
-
-        private static float DistanceToPath(List<Vector3> path, int first, int last, float x, float z)
-        {
-            // The measurement is the whole reason a painted road is continuous, so it
-            // lives with the rest of the tested arithmetic rather than here.
-            FlatPath.Clear();
-            for (var i = 0; i < path.Count; i++) FlatPath.Add(new Vec2(path[i].x, path[i].z));
-            return Geometry.DistanceToPath(FlatPath, first, last, x, z);
-        }
 
         /// <summary>
         /// Paints every vertex within <paramref name="radius"/> of a stretch of the path,
@@ -990,6 +1032,9 @@ namespace AstvardServerMod
                 if (point.z > maxZ) maxZ = point.z;
             }
 
+            FlatPath.Clear();
+            for (var k = 0; k < path.Count; k++) FlatPath.Add(new Vec2(path[k].x, path[k].z));
+
             var j0 = Mathf.Max(0, VertexAt(t, minX - radius, t.Origin.x));
             var j1 = Mathf.Min(t.Size - 1, VertexAt(t, maxX + radius, t.Origin.x));
             var i0 = Mathf.Max(0, VertexAt(t, minZ - radius, t.Origin.z));
@@ -1002,7 +1047,9 @@ namespace AstvardServerMod
                 {
                     var wx = WorldAt(t, j, t.Origin.x);
 
-                    var distance = DistanceToPath(path, first, last, wx, wz);
+                    // Само измерение - в проверенной арифметике, не здесь: на нём
+                    // держится то, что крашеная дорога выходит сплошной.
+                    var distance = Geometry.DistanceToPath(FlatPath, first, last, wx, wz);
                     if (distance > radius) continue;
 
                     var f = Geometry.Falloff(distance, radius);
@@ -1197,11 +1244,32 @@ namespace AstvardServerMod
             var centre = AreaCentre(player);
             var radius = AreaRadius();
             _areaPreview.SetActive(true);
-            DrawGroundRing(_areaLine, centre, radius);
 
             // Smoothing reaches past the paint; the fainter ring is how far, which is also
             // what a ward refusal is judged on.
             var blend = RoadSmoothingActive ? SmoothBlend(radius) : 0f;
+
+            // Кольцо - чистая функция от середины, радиуса и настроек, а каждая его точка
+            // это луч к земле: 72 на круг, столько же на кайму сглаживания и по одному на
+            // факельный пост. Пока ничего из этого не двигалось, рисовать нечего - та же
+            // защита, что у круга «Зоны станций» (UpdateChestZone). Полсекунды сверху
+            // оставлены нарочно: под неподвижной закреплённой проекцией земля догружается
+            // позже, и кольцо, нарисованное по непрогруженной, иначе так и висело бы.
+            var torches = RoadTorchesActive;
+            var spacing = TorchSpacing();
+            if ((centre - _areaDrawnAt).sqrMagnitude < 0.09f && radius == _areaDrawnRadius
+                && blend == _areaDrawnBlend && torches == _areaDrawnTorches
+                && spacing == _areaDrawnSpacing
+                && Time.realtimeSinceStartup - _areaDrawnWhen < 0.5f) return;
+
+            _areaDrawnAt = centre;
+            _areaDrawnRadius = radius;
+            _areaDrawnBlend = blend;
+            _areaDrawnTorches = torches;
+            _areaDrawnSpacing = spacing;
+            _areaDrawnWhen = Time.realtimeSinceStartup;
+
+            DrawGroundRing(_areaLine, centre, radius);
             _areaBlendLine.enabled = blend > 0f;
             if (blend > 0f) DrawGroundRing(_areaBlendLine, centre, radius + blend);
 
@@ -1211,6 +1279,20 @@ namespace AstvardServerMod
             else
                 HideTorchMarks("area");
         }
+
+        // Чем нарисовано последнее кольцо площадки и когда. Смотри UpdateAreaPreview:
+        // пока это не изменилось, следующий кадр рисует ровно то же самое.
+        private static Vector3 _areaDrawnAt = new Vector3(float.MaxValue, 0f, float.MaxValue);
+
+        private static float _areaDrawnRadius = -1f;
+
+        private static float _areaDrawnBlend = -1f;
+
+        private static bool _areaDrawnTorches;
+
+        private static float _areaDrawnSpacing = -1f;
+
+        private static float _areaDrawnWhen = -100f;
 
         private static void DrawGroundRing(LineRenderer line, Vector3 centre, float radius)
         {

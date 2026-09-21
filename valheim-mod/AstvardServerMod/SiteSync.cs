@@ -299,16 +299,6 @@ namespace AstvardServerMod
             return fields.Length > 1 ? fields[0] + Tab + fields[1] : fields[0];
         }
 
-        /// <summary>The revision a push was answered with, or -1.</summary>
-        public static int ParseRevision(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return -1;
-            var first = text.Replace("\r", "").Split('\n')[0].Split(Tab);
-            return first.Length == 2 && first[0] == "revision" && TryInt(first[1], out var revision) && revision >= 0
-                ? revision
-                : -1;
-        }
-
         /// <summary>
         /// Where to talk about builds: the address given for it, or else the one beside the
         /// access lists - «…/api/game/lists» becomes «…/api/game/builds» - so a server that

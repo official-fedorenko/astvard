@@ -109,7 +109,7 @@ namespace AstvardServerMod
                     hello.AddRange(RuleMetaLines());
 
                     var heard = false;
-                    yield return PostSiteBuilds(url, token, hello, (code, text) => heard = true);
+                    yield return PostSiteBuilds(url, token, hello, () => heard = true);
                     if (!heard) yield break;
                     _siteBuildsHelloSent = true;
                 }
@@ -121,7 +121,7 @@ namespace AstvardServerMod
                     change.AddRange(sending);
 
                     var sent = false;
-                    yield return PostSiteBuilds(url, token, change, (code, text) => sent = true);
+                    yield return PostSiteBuilds(url, token, change, () => sent = true);
                     if (!sent) yield break;
 
                     // A 409 is a site that was never seeded: the seed that follows carries these
@@ -162,7 +162,7 @@ namespace AstvardServerMod
                     seed.AddRange(TemplateAccessLines());
 
                     var seeded = false;
-                    yield return PostSiteBuilds(url, token, seed, (code, text) => seeded = true);
+                    yield return PostSiteBuilds(url, token, seed, () => seeded = true);
                     if (seeded)
                     {
                         Log.LogInfo("[AstvardServerMod] Site builds: the site had nothing yet; sent this server's rules and template access.");
@@ -185,8 +185,14 @@ namespace AstvardServerMod
             }
         }
 
+        /// <summary>
+        /// Отправить и сказать, дошло ли. Код ответа и тело раньше уезжали в колбэк, и все
+        /// три вызова их выбрасывали: ревизию сервер берёт из ответа на GET (`ParsePull`),
+        /// а 409 здесь и так считается доставкой. Понадобятся - вернуть их те же три
+        /// строки, а пока это заготовка, которую читает только компилятор.
+        /// </summary>
         private static IEnumerator PostSiteBuilds(string url, string token, List<string> lines,
-                                                  System.Action<long, string> done)
+                                                  System.Action done)
         {
             var bytes = Encoding.UTF8.GetBytes(string.Join("\n", lines) + "\n");
             using (var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
@@ -200,7 +206,7 @@ namespace AstvardServerMod
 
                 if (request.result == UnityWebRequest.Result.Success || request.responseCode == 409)
                 {
-                    done(request.responseCode, request.downloadHandler.text);
+                    done();
                     yield break;
                 }
 

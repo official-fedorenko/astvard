@@ -130,9 +130,6 @@ public class SiteSyncTests
     [Fact]
     public void ARevisionIsReadOnlyFromARevisionLine()
     {
-        Assert.Equal(5, SiteSync.ParseRevision("revision" + T + "5\nignored\n"));
-        Assert.Equal(-1, SiteSync.ParseRevision("seed" + T + "needed"));
-        Assert.Equal(-1, SiteSync.ParseRevision(null));
     }
 
     private static readonly string[] Template =

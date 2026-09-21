@@ -903,6 +903,32 @@ namespace AstvardServerMod
             CountStock(ZoneBins);
         }
 
+        /// <summary>
+        /// Имя префаба предмета - по одному вопросу на префаб за сессию.
+        ///
+        /// `UnityEngine.Object.name` уходит в нативный код и возвращает **новую строку**
+        /// на каждый вызов. Спрашивается оно по стопке в каждом сундуке каждую секунду,
+        /// плюс у каждой станции при подаче: на стене в сорок сундуков это сотни строк в
+        /// секунду ради имени, которое у префаба одно и навсегда.
+        ///
+        /// Чистить словарь не нужно и нечем: ключ - сам префаб из `ObjectDB`, он живёт
+        /// столько же, сколько игра, и число их - число предметов игры.
+        /// </summary>
+        private static readonly Dictionary<GameObject, string> PrefabNames =
+            new Dictionary<GameObject, string>();
+
+        internal static string PrefabName(GameObject prefab)
+        {
+            if (prefab == null) return "";
+
+            string name;
+            if (PrefabNames.TryGetValue(prefab, out name)) return name;
+
+            name = prefab.name;
+            PrefabNames[prefab] = name;
+            return name;
+        }
+
         private static void CountStock(List<Container> chests)
         {
             foreach (var container in chests)
@@ -917,7 +943,7 @@ namespace AstvardServerMod
                     if (item == null || item.m_dropPrefab == null) continue;
 
                     int had;
-                    var name = item.m_dropPrefab.name;
+                    var name = PrefabName(item.m_dropPrefab);
                     Stock[name] = (Stock.TryGetValue(name, out had) ? had : 0) + item.m_stack;
                 }
             }
@@ -1042,7 +1068,7 @@ namespace AstvardServerMod
                 foreach (var item in container.GetInventory().GetAllItems())
                 {
                     if (item == null || item.m_dropPrefab == null) continue;
-                    if (!accepted.Contains(item.m_dropPrefab.name)) continue;
+                    if (!accepted.Contains(PrefabName(item.m_dropPrefab))) continue;
 
                     bestChest = container;
                     bestItem = item;
@@ -1058,7 +1084,7 @@ namespace AstvardServerMod
             if (bestView == null || !bestView.IsValid()) return null;
             if (!bestView.IsOwner()) bestView.ClaimOwnership();
 
-            var name = bestItem.m_dropPrefab.name;
+            var name = PrefabName(bestItem.m_dropPrefab);
             return bestChest.GetInventory().RemoveItem(bestItem, 1) ? name : null;
         }
 

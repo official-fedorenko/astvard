@@ -510,6 +510,25 @@ namespace AstvardServerMod
             return ZonePeople.TryGetValue(id, out name) && name.Length > 0 ? name : "игрок";
         }
 
+        /// <summary>
+        /// Забыть зоны прошлого сервера при выходе из мира.
+        ///
+        /// Всё это ставит ответ модового сервера, и не снимало ничто: поднятый
+        /// `_sortZonesRead` означает «конфиг игрока больше не источник», так что
+        /// следующий мир жил бы с зонами прошлого сервера и не перечитал бы свои, а
+        /// `_zonesFromServer` заставлял бы считать их чужими. Клиент живёт от запуска до
+        /// запуска игры, а мир под ним меняется, - значит снимать это надо там же, где
+        /// снимается админка и конец дорожки.
+        /// </summary>
+        internal static void ForgetServerZones()
+        {
+            _zonesFromServer = false;
+            _sortZonesRead = false;
+            _myZoneId = "";
+            SortZones.Clear();
+            ZonePeople.Clear();
+        }
+
         internal static bool IsMyZone(Sorting.Zone zone)
         {
             return zone != null && (!_zonesFromServer || zone.Owner == _myZoneId || IsAdminUnlocked);

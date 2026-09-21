@@ -722,7 +722,7 @@ namespace AstvardServerMod
             // Ключ здесь - сама деталь, и снесённая остаётся в словаре мёртвым объектом
             // Unity. Зоны грузятся и выгружаются весь вечер, так что чистить надо; но
             // разом и редко - перебрать словарь дешевле, чем помнить о каждой детали.
-            if (PartsByPiece.Count > PartsCacheMax) ForgetDeadPieces();
+            if (PartsByPiece.Count > _partsNext) ForgetDeadPieces();
             return found;
         }
 
@@ -736,6 +736,17 @@ namespace AstvardServerMod
             return parts != null && parts.Chest != null ? parts.Chest : null;
         }
 
+        /// <summary>
+        /// Когда перебирать словарь в следующий раз.
+        ///
+        /// Порог, заведённый от самого размера, на большой базе вырождается: живых деталей
+        /// больше `PartsCacheMax`, чистка удаляет только мёртвые ключи, счётчик обратно не
+        /// опускается - и полный перебор случался на **каждую** новую деталь, каждый раз
+        /// находя ноль и каждый раз говоря об этом в лог. Считаем от того, что осталось:
+        /// перебор вернётся, когда словарь снова заметно вырастет.
+        /// </summary>
+        private static int _partsNext = PartsCacheMax;
+
         private static void ForgetDeadPieces()
         {
             var dead = new List<Piece>();
@@ -743,8 +754,14 @@ namespace AstvardServerMod
                 if (pair.Key == null) dead.Add(pair.Key);
 
             foreach (var piece in dead) PartsByPiece.Remove(piece);
+            _partsNext = Mathf.Max(PartsCacheMax, PartsByPiece.Count * 2);
+
+            // «Забыл ноль» - не новость, а шум, по которому и не видно, что механизм
+            // выродился; сказать есть о чём, только когда что-то действительно ушло.
+            if (dead.Count == 0) return;
+
             Log.LogInfo($"[AstvardServerMod] Piece lookup: forgot {dead.Count} pieces that are gone, "
-                        + $"{PartsByPiece.Count} kept.");
+                        + $"{PartsByPiece.Count} kept, next sweep at {_partsNext}.");
         }
 
         /// <summary>The category this chest takes, or -1 when it is a source.</summary>
@@ -1114,7 +1131,8 @@ namespace AstvardServerMod
         /// </summary>
         private static bool RoomSomewhereElse(List<Container> bins, Sorting.Plan plan, ItemDrop.ItemData item)
         {
-            var allowed = plan.Where(item.m_shared.m_name, CategoryOf(item));
+            plan.WhereInto(item.m_shared.m_name, CategoryOf(item), Elsewhere);
+            var allowed = Elsewhere;
 
             for (var at = 0; at < bins.Count; at++)
             {
@@ -1308,12 +1326,26 @@ namespace AstvardServerMod
         /// Moves one item to the first chest the plan names that has room for it. The chest
         /// it is in is skipped, so a sweep can never be spent moving something to where it is.
         /// </summary>
+        /// <summary>
+        /// Куда этому предмету можно - по одному списку на спрашивающего.
+        ///
+        /// `Plan.Where` заводит новый список на **каждый** предмет, а спрашивают его на
+        /// каждый предмет каждого источника каждую секунду; рядом с ним для того и лежит
+        /// `WhereInto` в готовый список. Списков три, а не один, потому что спрашивают из
+        /// разных мест и вложенно: `TidyBins` держит свой (`Targets`), `Deliver` зовётся из
+        /// него же, а `RoomSomewhereElse` - из разбора источников.
+        /// </summary>
+        private static readonly List<int> Allowed = new List<int>();
+
+        private static readonly List<int> Elsewhere = new List<int>();
+
         private static int Deliver(Container from, List<Container> bins, Sorting.Plan plan,
                                    ItemDrop.ItemData item, int fromBin)
         {
             var any = false;
 
-            foreach (var at in plan.Where(item.m_shared.m_name, CategoryOf(item)))
+            plan.WhereInto(item.m_shared.m_name, CategoryOf(item), Allowed);
+            foreach (var at in Allowed)
             {
                 if (at == fromBin || at < 0 || at >= bins.Count) continue;
 

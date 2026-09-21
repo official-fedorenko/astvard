@@ -386,6 +386,8 @@ namespace AstvardServerMod
             Plugin.ForgetAdmin();
             Plugin.ForgetRoadEnd();
             Plugin.ForgetServerRoad();
+            // Зоны прошлого сервера - такое же чужое состояние, как выданная им админка.
+            Plugin.ForgetServerZones();
             Plugin.StopRoadJobOnShutdown();
             // Its plan is the old world's floor, and its ghosts went with that world's scene.
             Plugin.CancelWallPreview();

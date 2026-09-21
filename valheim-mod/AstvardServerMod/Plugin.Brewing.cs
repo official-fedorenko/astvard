@@ -469,7 +469,7 @@ namespace AstvardServerMod
                 foreach (var item in container.GetInventory().GetAllItems())
                 {
                     if (item == null || item.m_dropPrefab == null) continue;
-                    if (item.m_dropPrefab.name != prefab) continue;
+                    if (PrefabName(item.m_dropPrefab) != prefab) continue;
                     count += item.m_stack;
                 }
             }
@@ -520,7 +520,7 @@ namespace AstvardServerMod
                     {
                         var item = inventory.GetItem(need.Key, -1, true);
                         if (item == null || item.m_dropPrefab == null
-                            || item.m_dropPrefab.name != need.Key) break;
+                            || PrefabName(item.m_dropPrefab) != need.Key) break;
 
                         var step = item.m_stack < left ? item.m_stack : left;
                         if (!inventory.RemoveItem(item, step)) break;
