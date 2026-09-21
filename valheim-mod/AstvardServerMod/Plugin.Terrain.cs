@@ -582,6 +582,14 @@ namespace AstvardServerMod
                 if (thing == null) return;
 
                 // The networked root is the thing that exists in the world. A part with
+                // Прямоугольник первым: обход идёт по всей сцене, а работать надо в
+                // полосе куска, и это самая дешёвая из проверок. Набор судимых не
+                // меняется ни на один - всё, что доживало до неё ниже, стоит на той же
+                // точке: строкой выше отсекается случай, когда сетевой объект не сам
+                // `thing`, а его родитель.
+                var spot = thing.transform.position;
+                if (!_area.Contains(new Vector2(spot.x, spot.z))) return;
+
                 // no view is scenery the zone rebuilds on every load, and removing it
                 // would last until the next one.
                 var view = thing.GetComponentInParent<ZNetView>();
@@ -595,8 +603,8 @@ namespace AstvardServerMod
                 var go = view.gameObject;
                 if (go != thing.gameObject) return;
 
+                // `go == thing.gameObject`, то есть это та же точка, что проверена выше.
                 var at = go.transform.position;
-                if (!_area.Contains(new Vector2(at.x, at.z))) return;
 
                 if (refusal == null)
                 {

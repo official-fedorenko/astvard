@@ -300,6 +300,13 @@ namespace AstvardServerMod
 
             var origin = fermenter.transform.position;
 
+            // Остаток подачи на эту бочку: каждая составляющая считается по разу.
+            // `CanAfford` спрашивает её по проходу подачи на составляющую, а следом то же
+            // самое повторял `Missing` - и всё это на каждой пустой бочке каждую секунду,
+            // по списку в полсотни сундуков. Внутри одного вызова подача не меняется,
+            // так что ответ тот же.
+            BrewStock.Clear();
+
             BrewBases.Clear();
             foreach (var brew in brews)
             {
@@ -344,7 +351,7 @@ namespace AstvardServerMod
                 return false;
             }
 
-            if (!Brewing.CanAfford(BrewNeed, name => CountInSupply(origin, supply, name)))
+            if (!Brewing.CanAfford(BrewNeed, name => InSupply(origin, supply, name)))
             {
                 Why(7, $"не хватает: {Missing(origin, supply)}");
                 return false;
@@ -374,7 +381,7 @@ namespace AstvardServerMod
             var line = new System.Text.StringBuilder();
             foreach (var need in BrewNeed)
             {
-                var have = CountInSupply(origin, supply, need.Key);
+                var have = InSupply(origin, supply, need.Key);
                 if (have >= need.Value) continue;
 
                 if (line.Length > 0) line.Append(", ");
@@ -459,6 +466,24 @@ namespace AstvardServerMod
         }
 
         /// <summary>Сколько такого лежит в сундуках подачи, откуда мы и будем брать.</summary>
+        /// <summary>
+        /// Сколько этого в подаче — с памятью на время одной бочки.
+        ///
+        /// Чистится в начале `TryBrewInto`: внутри одного вызова подача неизменна, а между
+        /// бочками — нет, `TakeForBrew` из неё забирает.
+        /// </summary>
+        private static readonly Dictionary<string, int> BrewStock = new Dictionary<string, int>();
+
+        private static int InSupply(Vector3 origin, List<Container> supply, string prefab)
+        {
+            int had;
+            if (BrewStock.TryGetValue(prefab, out had)) return had;
+
+            had = CountInSupply(origin, supply, prefab);
+            BrewStock[prefab] = had;
+            return had;
+        }
+
         private static int CountInSupply(Vector3 origin, List<Container> supply, string prefab)
         {
             var count = 0;
