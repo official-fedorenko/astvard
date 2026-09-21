@@ -75,7 +75,18 @@ const NO_CACHE_EXTENSIONS = new Set(['.html', '.js', '.css']);
 const STATIC_ASSET_CACHE_CONTROL = 'public, max-age=3600, must-revalidate';
 const NO_CACHE_CONTROL = 'no-cache';
 
-function getStaticCacheControl(ext) {
+// Но запрос с ?v=… — это уже другой адрес: версию в ссылки подставляет сам
+// сервер ниже (injectAssetVersions), и меняется она вместе с файлом. Значит
+// именно такой ответ можно кэшировать надолго, не рискуя устаревшим app.js:
+// страница придёт с новым адресом раньше, чем браузер спросит старый. Голый
+// /app.js без версии по-прежнему отдаётся без кэша — его просят руками или по
+// чужой ссылке, и там гарантии свежести нет.
+const VERSIONED_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+function getStaticCacheControl(ext, versioned) {
+  if (versioned && NO_CACHE_EXTENSIONS.has(ext) && ext !== '.html') {
+    return VERSIONED_ASSET_CACHE_CONTROL;
+  }
   return NO_CACHE_EXTENSIONS.has(ext) ? NO_CACHE_CONTROL : STATIC_ASSET_CACHE_CONTROL;
 }
 
@@ -149,11 +160,21 @@ function buildCsp({ metrika = false } = {}) {
 }
 const CSP = buildCsp();
 
+// HSTS обещает браузеру, что этот адрес всегда по HTTPS, и первый же заход по
+// http перестаёт быть заходом вовсе — браузер сам исправляет адрес, не спрашивая
+// сеть, то есть отнимает у чужого Wi-Fi единственный момент, когда запрос идёт
+// открытым. Обещание запоминается надолго, поэтому даётся только там, где HTTPS
+// и правда есть: TRUST_PROXY=true стоит на VPS, где перед нами nginx с
+// сертификатом, и не стоит на стенде — иначе localhost залип бы на https.
+// Без preload и без includeSubDomains: соседние имена этой машины не наши.
+const HSTS = process.env.TRUST_PROXY === 'true' ? 'max-age=15552000' : null;
+
 function applySecurityHeaders(res) {
   res.setHeader('Content-Security-Policy', CSP);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+  if (HSTS) res.setHeader('Strict-Transport-Security', HSTS);
 }
 
 // A page of the site itself on its way out: the Metrika counter when one is set,
@@ -490,7 +511,7 @@ const server = http.createServer(async (req, res) => {
 
     res.writeHead(200, {
       'Content-Type': contentType,
-      'Cache-Control': getStaticCacheControl(ext)
+      'Cache-Control': getStaticCacheControl(ext, parsedUrl.searchParams.has('v'))
     });
     fs.createReadStream(fullStaticPath).pipe(res);
   });
