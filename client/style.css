@@ -818,8 +818,16 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .server-state--on { color: var(--accent-green); }
 .server-state--off { color: var(--text-muted); }
 
+/* Подпись «В игре:» и ники стоят на одной оси. У чипа внутри лицо 22 px, и на
+   базовой линии текста ник уезжал на 5.5 px выше подписи — замерено на боевом.
+   Строка из flex равняет их серединами, а голая подпись становится таким же
+   элементом, как чипы. Отступ между ними отсюда же, gap, а не margin у чипа. */
 .server-players {
     margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
     color: var(--text-primary);
     font-size: 14px;
     line-height: 1.5;
@@ -918,7 +926,6 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    margin-right: 12px;
 }
 
 .player-chip .player-face {
