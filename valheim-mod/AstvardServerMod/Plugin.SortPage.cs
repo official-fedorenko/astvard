@@ -530,7 +530,7 @@ namespace AstvardServerMod
 
             // Середина - то, что двигают стрелки, и без метки её не видно вовсе: контур
             // зоны в двадцать метров уходит за спину, и понять, куда уехал центр, нечем.
-            if (_sortCentreLine != null) DrawGroundRing(_sortCentreLine, centre, CentreMark);
+            if (_sortCentreLine != null) DrawGroundRing(_sortCentreLine, centre, CentreMark, 12);
         }
 
         /// <summary>

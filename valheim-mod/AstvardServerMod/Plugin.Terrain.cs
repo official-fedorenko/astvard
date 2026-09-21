@@ -1300,13 +1300,19 @@ namespace AstvardServerMod
 
         private static float _areaDrawnWhen = -100f;
 
-        private static void DrawGroundRing(LineRenderer line, Vector3 centre, float radius)
+        /// <summary>
+        /// Кольцо по земле. Точек по умолчанию семьдесят две - столько нужно кругу в
+        /// десятки метров; метке в метр радиусом их хватает дюжины, а каждая точка это
+        /// луч к земле на десять километров.
+        /// </summary>
+        private static void DrawGroundRing(LineRenderer line, Vector3 centre, float radius,
+                                           int points = AreaRingPoints)
         {
             var system = ZoneSystem.instance;
-            line.positionCount = AreaRingPoints;
-            for (var i = 0; i < AreaRingPoints; i++)
+            line.positionCount = points;
+            for (var i = 0; i < points; i++)
             {
-                var angle = i * Mathf.PI * 2f / AreaRingPoints;
+                var angle = i * Mathf.PI * 2f / points;
                 var point = new Vector3(centre.x + Mathf.Cos(angle) * radius, centre.y,
                                         centre.z + Mathf.Sin(angle) * radius);
                 if (system != null && system.GetGroundHeight(point, out var ground)) point.y = ground;

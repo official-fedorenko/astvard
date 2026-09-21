@@ -856,7 +856,7 @@ namespace AstvardServerMod
             foreach (var conversion in smelter.m_conversion)
             {
                 if (conversion == null || conversion.m_to == null) continue;
-                if (conversion.m_to.gameObject.name != CoalPrefab) continue;
+                if (PrefabName(conversion.m_to.gameObject) != CoalPrefab) continue;
 
                 // Названа один раз за сессию: если переключатель «Наполнять печи» вдруг
                 // ничего не делает, первый вопрос - узнал ли мод печь вообще.
@@ -1049,11 +1049,6 @@ namespace AstvardServerMod
             {
                 if (container == null || container.IsInUse()) continue;
 
-                // Одно место на все дороги: сюда сходится всякое изъятие из сундука в
-                // станцию, и назначенная подача тоже. Флажок сильнее назначения - его
-                // ставят позже и ради этого самого.
-                if (IsHoldChest(container)) continue;
-
                 var spot = container.transform.position;
                 var sqr = (spot - origin).sqrMagnitude;
                 if (sqr >= bestSqr) continue;
@@ -1061,6 +1056,14 @@ namespace AstvardServerMod
                 var sameZone = zone != null && Sorting.Inside(zone, spot.x, spot.z);
                 if (!sameZone &&
                     (square ? !InChestZone(origin, spot) : sqr > range)) continue;
+
+                // Одно место на все дороги: сюда сходится всякое изъятие из сундука в
+                // станцию, и назначенная подача тоже. Флажок сильнее назначения - его
+                // ставят позже и ради этого самого. Спрашивается он после дешёвых
+                // отсечек: это подъём вверх по объекту и чтение ZDO по строковому ключу,
+                // а ответ от порядка не зависит - такой сундук пропускается в любом
+                // случае, и `bestSqr` до этой строки не двигают.
+                if (IsHoldChest(container)) continue;
 
                 var view = ViewOf(container);
                 if (view == null || !view.IsValid()) continue;
@@ -1105,7 +1108,7 @@ namespace AstvardServerMod
                 AcceptScratch.Clear();
                 foreach (var conversion in smelter.m_conversion)
                     if (conversion != null && conversion.m_from != null)
-                        AcceptScratch.Add(conversion.m_from.gameObject.name);
+                        AcceptScratch.Add(PrefabName(conversion.m_from.gameObject));
 
                 var ore = TakeSupply(origin, supply, AcceptScratch);
                 // 1.0 added a trailing cheated flag to RPC_AddOre. Sending the old
@@ -1129,7 +1132,7 @@ namespace AstvardServerMod
                 zdo.GetFloat(ZDOVars.s_fuel) <= smelter.m_maxFuel - 1)
             {
                 AcceptScratch.Clear();
-                AcceptScratch.Add(smelter.m_fuelItem.gameObject.name);
+                AcceptScratch.Add(PrefabName(smelter.m_fuelItem.gameObject));
                 if (TakeSupply(origin, supply, AcceptScratch) != null)
                     view.InvokeRPC("RPC_AddFuel");
             }
@@ -1158,13 +1161,13 @@ namespace AstvardServerMod
 
                     // Склад считается по каждому блюду отдельно - см. FoodKeep.
                     if (FoodKeep > 0 && conversion.m_to != null
-                        && InStock(conversion.m_to.name) >= FoodKeep)
+                        && InStock(PrefabName(conversion.m_to.gameObject)) >= FoodKeep)
                     {
-                        FoodFull.Add(conversion.m_to.name);
+                        FoodFull.Add(PrefabName(conversion.m_to.gameObject));
                         continue;
                     }
 
-                    AcceptScratch.Add(conversion.m_from.gameObject.name);
+                    AcceptScratch.Add(PrefabName(conversion.m_from.gameObject));
                 }
 
                 if (AcceptScratch.Count > 0)
@@ -1184,7 +1187,7 @@ namespace AstvardServerMod
             if (zdo.GetFloat(ZDOVars.s_fuel) > cooking.m_maxFuel - 1) return;
 
             AcceptScratch.Clear();
-            AcceptScratch.Add(cooking.m_fuelItem.gameObject.name);
+            AcceptScratch.Add(PrefabName(cooking.m_fuelItem.gameObject));
             if (TakeSupply(origin, supply, AcceptScratch) != null) view.InvokeRPC("RPC_AddFuel");
         }
 
@@ -1217,7 +1220,8 @@ namespace AstvardServerMod
             if (cooking.m_overCookedItem != null && cooking.m_overCookedItem.name == name) return true;
 
             foreach (var conversion in cooking.m_conversion)
-                if (conversion != null && conversion.m_to != null && conversion.m_to.name == name)
+                if (conversion != null && conversion.m_to != null
+                    && PrefabName(conversion.m_to.gameObject) == name)
                     return true;
 
             return false;
@@ -1245,13 +1249,13 @@ namespace AstvardServerMod
                 // положили основу в помеченный сундук - значит хотели брагу. Нужен
                 // только предел, иначе сотня медовухи станет двумя сотнями.
                 if (FoodKeep > 0 && conversion.m_to != null
-                    && InStock(conversion.m_to.name) >= FoodKeep)
+                    && InStock(PrefabName(conversion.m_to.gameObject)) >= FoodKeep)
                 {
-                    FoodFull.Add(conversion.m_to.name);
+                    FoodFull.Add(PrefabName(conversion.m_to.gameObject));
                     continue;
                 }
 
-                AcceptScratch.Add(conversion.m_from.gameObject.name);
+                AcceptScratch.Add(PrefabName(conversion.m_from.gameObject));
             }
 
             if (AcceptScratch.Count == 0) return;
