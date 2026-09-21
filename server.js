@@ -573,28 +573,17 @@ if (require.main === module) {
   setInterval(askSteam, RECHECK_INTERVAL_MS);
 
   server.listen(PORT, () => {
-    console.log(`Админка успешно запущена на http://localhost:${PORT}`);
-    console.log('='.repeat(70));
-    console.log('🚨  BETA RELEASE — SECURITY WARNING');
-    console.log('   Default accounts are EXTREMELY insecure. Change passwords IMMEDIATELY:');
-    console.log('');
-    console.log('     superadmin / 1234qwer   (Superadmin — полный доступ)');
-    console.log('     admin      / 1234qwer   (Admin)');
-    console.log('     user       / 1234qwer   (User)');
-    console.log('');
-    console.log('   Recommended first actions:');
-    console.log('     1. Login as superadmin');
-    console.log('     2. Go to "Пользователи" (Users) and change ALL passwords');
-    console.log('     3. (Optional) Disable registration in Settings');
-    console.log('');
-    console.log('   To completely reset the database:');
-    console.log('     1. Stop the server');
-    console.log('     2. Delete db.sqlite');
-    console.log('     3. Restart (fresh DB with only the 3 default accounts above)');
-    console.log('        Test employees/tools can be added via Settings buttons (Superadmin)');
-    console.log('');
-    console.log('   Never expose this directly to the internet without a reverse proxy + HTTPS.');
-    console.log('='.repeat(70));
+    console.log(`Портал Astvard запущен на http://localhost:${PORT}`);
+
+    // Три пароля из коробки существуют ровно при том условии, при котором их
+    // заводит db.js: пустая таблица пользователей и не заданный
+    // SUPERADMIN_STEAM_ID. На боевом ключ задан и аккаунтов нет — а баннер пугал
+    // ими в журнале при каждом запуске и советовал удалить db.sqlite, которого
+    // нет с переезда на Postgres, и завести «сотрудников» из снесённой панели.
+    if (!process.env.SUPERADMIN_STEAM_ID) {
+      console.log('SUPERADMIN_STEAM_ID не задан: на пустой базе заведутся demo-аккаунты');
+      console.log('superadmin / admin / user с паролем 1234qwer — наружу такое не открывать.');
+    }
   });
 }
 
