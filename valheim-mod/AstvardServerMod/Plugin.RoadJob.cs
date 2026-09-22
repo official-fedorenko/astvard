@@ -40,7 +40,7 @@ namespace AstvardServerMod
         // keep its trees standing and to keep torches out of it. Locations also flatten their
         // ground with modifiers of their own, so without them the heights the smoothing reads
         // would not be the ground anyone sees.
-        private const float RoadJobMargin = 40f;
+        private const float RoadJobMargin = 64f;
 
         // Undo records the server keeps: a few long roads back, whoever laid them.
         private const int RoadJobRecordsKept = 8;

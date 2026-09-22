@@ -43,9 +43,16 @@ namespace AstvardServerMod
         ///
         /// Sixteen stood here until 23.09.2026, and twenty things a lay were refused as
         /// too big to get round: dolmens, whose own radius the road must clear, ask for
-        /// more than that. Хозяин сказал прямо: такие надо обходить.
+        /// more than that. Хозяин сказал прямо: такие надо обходить - сперва до 24 м, а
+        /// увидев, что деревни и лагеря просят по сорок с лишним, и до пятидесяти:
+        /// «если слишком большое пусть тоже обходят, почему нет?».
+        ///
+        /// Ради этого `RoadJobMargin` поднят с 40 до 64 м - иначе краска согнутой дороги
+        /// легла бы за теми зонами, которые задание держит загруженными. Задание от этого
+        /// берёт полосу шире (четыре зоны поперёк вместо трёх), то есть укладка сети идёт
+        /// дольше; цена принята сознательно.
         /// </summary>
-        private const float DetourMaxStep = 24f;
+        private const float DetourMaxStep = 50f;
 
         /// <summary>A piece is never cut shorter than this to make room for a way round.</summary>
         private const float DetourLeastPiece = 24f;
