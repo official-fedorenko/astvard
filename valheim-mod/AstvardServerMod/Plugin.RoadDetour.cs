@@ -33,12 +33,19 @@ namespace AstvardServerMod
         private const float DetourRampPerStep = 3f;
 
         /// <summary>
-        /// How far the road may stray from its line at all. The job holds the zones
-        /// within <see cref="RoadJobMargin"/> of the path it was given, and paint outside
-        /// them would be written to compilers nobody loaded; the widest vein and the
-        /// average ruin both fit well inside this.
+        /// How far the road may stray from its line at all.
+        ///
+        /// The job holds the zones within <see cref="RoadJobMargin"/> = 40 m of the path
+        /// it was given, and paint outside them would be written to compilers nobody
+        /// loaded. The bent road sits at most this far out, and its paint reaches its own
+        /// radius plus the smoothing blend beyond that - about 10 m for a road of two -
+        /// so thirty is the true ceiling and this is kept well inside it.
+        ///
+        /// Sixteen stood here until 23.09.2026, and twenty things a lay were refused as
+        /// too big to get round: dolmens, whose own radius the road must clear, ask for
+        /// more than that. Хозяин сказал прямо: такие надо обходить.
         /// </summary>
-        private const float DetourMaxStep = 16f;
+        private const float DetourMaxStep = 24f;
 
         /// <summary>A piece is never cut shorter than this to make room for a way round.</summary>
         private const float DetourLeastPiece = 24f;
@@ -248,7 +255,11 @@ namespace AstvardServerMod
 
             foreach (var bend in plan.Bends)
             {
-                if (bend.Refused == Geometry.BendRefusal.TooWide) job.TooWide++;
+                if (bend.Refused == Geometry.BendRefusal.TooWide)
+                {
+                    job.TooWide++;
+                    job.TooWideWidest = Mathf.Max(job.TooWideWidest, Mathf.Abs(bend.Step));
+                }
                 else if (bend.Refused == Geometry.BendRefusal.PastTheEnd)
                 {
                     // Only the far end can be helped by a shorter piece, and only while
@@ -409,7 +420,8 @@ namespace AstvardServerMod
 
             var note = $", went round {job.Bends}";
             if (found.Count > 0) note += $" of {Listing(found)}";
-            if (job.TooWide > 0) note += $", {job.TooWide} too big to get round";
+            if (job.TooWide > 0)
+                note += $", {job.TooWide} too big to get round (widest wanted {job.TooWideWidest:F1} m)";
             if (job.Unbent > 0)
             {
                 note += $", {job.Unbent} left standing at a join";
