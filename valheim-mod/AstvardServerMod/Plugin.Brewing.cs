@@ -28,7 +28,7 @@ namespace AstvardServerMod
         internal static void BindBrewing(BepInEx.Configuration.ConfigFile config)
         {
             _brewEnabled = config.Bind("Медовухи", "Enabled", true,
-                "Варить ли медовухи самому. Меняется в игре: «Функции» → «Работа с сундуками» → «Медовухи».");
+                "Варить ли медовухи самому. Меняется в игре: «Функции» → «Сортировка» → «Настройки» → «Медовухи».");
 
             _brewWishes = config.Bind("Медовухи", "Keep", "",
                 "Заказы до 22.09.2026 лежали здесь, одни на всех персонажей этой игры. Теперь "
