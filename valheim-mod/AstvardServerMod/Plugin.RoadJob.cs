@@ -309,14 +309,10 @@ namespace AstvardServerMod
             // не шлёт, и это не повод отказать в дорожке.
             public bool Forever;
 
-            // Мощёные круги, уже уложенные этой же сетью: внутрь них дорожный факел не
-            // ставится - там своё кольцо. Список общий с заданием сети и растёт по ходу
-            // укладки, поэтому здесь именно ссылка, а не копия.
-            public List<PavedRing> Skip;
-
-            // Сколько факелов не встало из-за этого. Молчаливый пропуск - худший из
-            // возможных: снаружи он неотличим от «некуда поставить».
-            public int Inside;
+            // Куда сеть поставила свои дорожные факелы. Список общий с заданием сети и
+            // растёт по ходу укладки, поэтому здесь ссылка, а не копия: круги кладутся
+            // последними, и каждый гасит те огни, что оказались внутри него.
+            public List<ZDOID> Lit;
 
             // Обход препятствий: сколько обошли, сколько оказалось шире дозволенного
             // отступа и сколько осталось стоять у стыка кусков. Три разные беды, и
@@ -709,7 +705,6 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] Road job {job.Id} {(failure != null ? "failed: " + failure : laidTo < job.Path.Count - 1 ? "stopped" : "done")}: "
                         + $"{laid:F0}/{total:F0} m in {pieces} pieces, {Time.realtimeSinceStartup - began:F0} s, "
                         + $"{job.Record.Before.Count} zones, cleared {cleared}, torches {placed} placed {skipped} skipped"
-                        + (job.Inside > 0 ? $", {job.Inside} inside rings" : "")
                         + DetourNote(job, found) + ".");
         }
 
@@ -767,34 +762,6 @@ namespace AstvardServerMod
             job.Radius = want;
             job.Width = want * 2f;
             return true;
-        }
-
-        /// <summary>Мощёный круг, уже уложенный: где и какого радиуса он вышел.</summary>
-        internal struct PavedRing
-        {
-            public Vector3 At;
-            public float Radius;
-        }
-
-        /// <summary>
-        /// Попадает ли точка внутрь одного из уже уложенных кругов.
-        ///
-        /// Меряется по краю кольца, а не по краю краски: кольцевые факелы стоят в
-        /// `TorchMargin` за ободом, и дорожный факел рядом с ними читался бы как дубль.
-        /// Высота не в счёт - круг лежит на земле, как и дорога.
-        /// </summary>
-        private static bool InsidePavedRing(List<PavedRing> rings, Vector3 at)
-        {
-            if (rings == null) return false;
-
-            foreach (var ring in rings)
-            {
-                var reach = ring.Radius + TorchMargin + 0.5f;
-                if (new Vector2(at.x - ring.At.x, at.z - ring.At.z).sqrMagnitude < reach * reach)
-                    return true;
-            }
-
-            return false;
         }
 
         /// <summary>Whether the zone's ground is built here - its heightmap is up.</summary>
@@ -1076,14 +1043,6 @@ namespace AstvardServerMod
                         continue;
                     }
 
-                    // Внутри круга факел не нужен: там своё кольцо, и второй ряд огней
-                    // вдоль дороги, идущей насквозь, выглядит мусором.
-                    if (InsidePavedRing(job.Skip, spot))
-                    {
-                        job.Inside++;
-                        continue;
-                    }
-
                     var go = Instantiate(prefab, spot + Vector3.up * (lift - TorchSink), Quaternion.identity);
                     go.GetComponent<Piece>()?.SetCreator(job.Creator, platform);
 
@@ -1092,7 +1051,15 @@ namespace AstvardServerMod
 
                     var view = go.GetComponent<ZNetView>();
                     if (job.Forever) MakeTorchForever(view, fire);
-                    if (view != null && view.IsValid()) job.Record.Torches.Add(view.GetZDO().m_uid);
+                    if (view != null && view.IsValid())
+                    {
+                        job.Record.Torches.Add(view.GetZDO().m_uid);
+
+                        // Сети это нужно, чтобы погасить его, если круг метки ляжет
+                        // поверх: круги теперь кладутся последними.
+                        if (job.Lit != null) job.Lit.Add(view.GetZDO().m_uid);
+                    }
+
                     placed++;
                 }
             }

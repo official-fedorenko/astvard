@@ -170,7 +170,7 @@ namespace AstvardServerMod
         private const int LandCellsMax = 200000;
 
         /// <summary>Что обносим кругом и связываем дорогами.</summary>
-        private enum MarkKind { None, Stone, Spawn, Boss }
+        private enum MarkKind { None, Stone, Spawn, Boss, Forge }
 
         /// <summary>Место на карте: где оно, какого рода и каким кругом его обносить.</summary>
         private sealed class Mark
@@ -197,12 +197,26 @@ namespace AstvardServerMod
 
         private const string SpawnSpot = "starttemple";
 
+        /// <summary>
+        /// «Кузница возможностей» - по просьбе хозяина она тоже метка сети.
+        ///
+        /// Сама кузница - деталь `piece_upgradestation`, а сеть читает только локации,
+        /// поэтому целиться надо в локацию, которая её держит: `AncientUpgradeStation`
+        /// в горах. Связь установлена по данным сборки, а не по памяти: русское имя
+        /// «Кузница возможностей» стоит в строке `piece_upgradestation` локализации
+        /// (`resources.assets`), а среди 212 локаций манифеста ровно одна названа под
+        /// неё. Если имя однажды разойдётся, это будет видно: перепись локаций материка
+        /// уходит в лог при каждом отчёте, а в самом отчёте кузница считается отдельно.
+        /// </summary>
+        private const string ForgeSpot = "ancientupgradestation";
+
         private static MarkKind KindOf(string name)
         {
             if (string.IsNullOrEmpty(name)) return MarkKind.None;
 
             var lower = name.ToLowerInvariant();
             if (lower == SpawnSpot) return MarkKind.Spawn;
+            if (lower == ForgeSpot) return MarkKind.Forge;
             if (BossSpots.Contains(lower)) return MarkKind.Boss;
 
             // `DrakeLorestone` в горах - такой же читаемый камень, как `Runestone_*`,
@@ -214,10 +228,12 @@ namespace AstvardServerMod
                 : MarkKind.None;
         }
 
-        /// <summary>Круги ставятся в этом порядке: спавн, алтари, камни.</summary>
+        /// <summary>Круги ставятся в этом порядке: спавн, алтари, кузница, камни.</summary>
         private static int Rank(MarkKind kind)
         {
-            return kind == MarkKind.Spawn ? 0 : kind == MarkKind.Boss ? 1 : 2;
+            if (kind == MarkKind.Spawn) return 0;
+            if (kind == MarkKind.Boss) return 1;
+            return kind == MarkKind.Forge ? 2 : 3;
         }
 
         private static void OnRunesAsk(long sender, float x, float z)
@@ -254,18 +270,19 @@ namespace AstvardServerMod
                 return;
             }
 
-            int stones = 0, bosses = 0;
+            int stones = 0, bosses = 0, forges = 0;
             var home = false;
             foreach (var mark in marks)
             {
                 if (mark.Kind == MarkKind.Stone) stones++;
                 else if (mark.Kind == MarkKind.Boss) bosses++;
+                else if (mark.Kind == MarkKind.Forge) forges++;
                 else if (mark.Kind == MarkKind.Spawn) home = true;
             }
 
             var net = Whole(marks);
 
-            said.Append($"Камней: {stones}, алтарей: {bosses}, спавн: ");
+            said.Append($"Камней: {stones}, алтарей: {bosses}, кузниц: {forges}, спавн: ");
             said.Append(home ? "нашёлся" : "не нашёлся");
             said.Append($". Сеть — {net.Metres / 1000f:0.0} км");
             if (net.Shortcuts > 0)
@@ -364,7 +381,11 @@ namespace AstvardServerMod
             // Круги, уже уложенные этой сетью. Дороги получают этот же список ссылкой: к
             // тому мигу, когда дорога ставит факелы, круги обоих её концов уже уложены -
             // круг метки идёт прямо перед дорогой, которая до неё доводит.
-            public readonly List<PavedRing> Rings = new List<PavedRing>();
+            /// <summary>Дорожные факелы сети: круг, легший поверх, гасит свои из этого списка.</summary>
+            public readonly List<ZDOID> Lit = new List<ZDOID>();
+
+            /// <summary>Сколько их погашено кругами. Молчаливая уборка неотличима от промаха.</summary>
+            public int Doused;
         }
 
         private static RuneJob _runeJob;
@@ -462,7 +483,7 @@ namespace AstvardServerMod
 
                 var road = RoadBetween(from, to, radius, width, paved, smooth, clear, torch,
                                        spacing, forever, creator, platform);
-                road.Skip = job.Rings;
+                road.Lit = job.Lit;
 
                 job.Metres += Flat(from, to);
                 job.Queue.Add(road);
@@ -500,15 +521,15 @@ namespace AstvardServerMod
                 _roadJob = piece;
                 yield return Instance.StartCoroutine(RunRoadJob(piece));
 
+                // Круги кладутся последними, поэтому дороги уже расставили свои огни
+                // там, где встала площадка. Гасим их до того, как поставим кольцевые, -
+                // иначе рядом окажутся два ряда.
+                if (piece.Grow && !job.Stop) job.Doused += DouseInsideRing(job, piece);
+
                 // Кольцо факелов ставится после круга, а не вместе с ним: укладка
                 // расставляет факелы вдоль пути, а путь у круга - полметра, и все они
                 // встали бы кучкой у самого камня.
                 if (piece.Ring > 0 && !job.Stop) RingTorches(piece);
-
-                // Радиус запоминается **после** укладки: круг мог дорасти до края запрета
-                // стройки, и дорогам важен тот размер, который в самом деле лёг.
-                if (piece.Grow)
-                    job.Rings.Add(new PavedRing { At = piece.Centre, Radius = piece.Radius });
 
                 job.Done++;
 
@@ -524,9 +545,11 @@ namespace AstvardServerMod
             }
 
             var how = job.Stop ? "остановлено" : "готово";
+            var doused = job.Doused > 0 ? $", погашено под кругами: {job.Doused}" : "";
             SayAboutZone(job.Sender, $"Камни: {how}, {job.Done} из {job.Queue.Count} за "
-                                     + $"{(Time.realtimeSinceStartup - began) / 60f:0.#} мин.");
-            Log.LogInfo($"[AstvardServerMod] Runes: {how}, {job.Done} of {job.Queue.Count}.");
+                                     + $"{(Time.realtimeSinceStartup - began) / 60f:0.#} мин{doused}.");
+            Log.LogInfo($"[AstvardServerMod] Runes: {how}, {job.Done} of {job.Queue.Count}"
+                        + (job.Doused > 0 ? $", {job.Doused} torches doused under rings" : "") + ".");
 
             _runeJob = null;
         }
@@ -586,6 +609,63 @@ namespace AstvardServerMod
                 Platform = platform,
                 Forever = forever,
             };
+        }
+
+        /// <summary>
+        /// Гасит дорожные факелы сети, оказавшиеся внутри круга.
+        ///
+        /// Круги кладутся последними (см. `Steps`), поэтому дороги успевают расставить
+        /// свои огни там, где потом встанет площадка: ряд вдоль дороги внутри круга
+        /// рядом с кольцевым читается как мусор — хозяин это и заметил.
+        ///
+        /// Гасим **только свои** — те, чьи записи сеть запомнила, когда ставила. Искать
+        /// вокруг круга факелы по породе было бы проще и неверно: у камня вполне может
+        /// стоять чужой, и он не наш, чтобы его трогать.
+        ///
+        /// Радиус берётся тот, который в самом деле лёг: круг мог дорасти до края
+        /// запрета стройки. Меряется по краю кольца, а не краски — кольцевые стоят в
+        /// `TorchMargin` за ободом, и дорожный рядом с ними читался бы как дубль.
+        ///
+        /// Что не нашлось в сцене, из списка всё равно убирается: зона круга загружена,
+        /// мы её только что уложили, так что ненайденное — это снесённое кем-то ещё.
+        /// </summary>
+        private static int DouseInsideRing(RuneJob job, RoadJob ring)
+        {
+            var scene = ZNetScene.instance;
+            if (scene == null || job.Lit.Count == 0) return 0;
+
+            var reach = ring.Radius + TorchMargin + 0.5f;
+            var doused = 0;
+
+            for (var i = job.Lit.Count - 1; i >= 0; i--)
+            {
+                var zdo = ZDOMan.instance != null ? ZDOMan.instance.GetZDO(job.Lit[i]) : null;
+                if (zdo == null)
+                {
+                    job.Lit.RemoveAt(i);
+                    continue;
+                }
+
+                var at = zdo.GetPosition();
+                var away = new Vector2(at.x - ring.Centre.x, at.z - ring.Centre.z);
+                if (away.sqrMagnitude >= reach * reach) continue;
+
+                var go = scene.FindInstance(job.Lit[i]);
+                if (go != null)
+                {
+                    var view = go.GetComponent<ZNetView>();
+                    if (view != null && view.IsValid())
+                    {
+                        view.ClaimOwnership();
+                        scene.Destroy(go);
+                        doused++;
+                    }
+                }
+
+                job.Lit.RemoveAt(i);
+            }
+
+            return doused;
         }
 
         /// <summary>
@@ -816,20 +896,28 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Порядок укладки: спавн и алтари вперёд, остальное - от дома наружу.
+        /// Порядок укладки: сперва все дороги, потом все круги. Внутри каждой половины -
+        /// от дома наружу.
         ///
-        /// Раньше ложились сперва все круги, и внутри - в том порядке, в каком мир отдал
-        /// локации, то есть как попало; остановка на половине оставляла полторы сотни кругов
-        /// по всему материку и обрывки дорог между ними. Теперь шаги идут по расстоянию **по
-        /// дорогам** от начала, и круг метки ставится перед дорогой, которая до неё доводит:
-        /// в любой миг уложенное - связная сеть, растущая от дома.
+        /// **Круги идут последними потому, что дорога ломает готовый круг.** Она приходит
+        /// ровно в середину метки и по дороге выравнивает полосу под свой профиль -
+        /// сквозь диск, который круг только что выровнял в плоскость. На стыке выходит
+        /// канава или гребень через всю площадку, и видно это только в игре: хозяин
+        /// принёс снимки 22.09.2026. Круг, уложенный после, накрывает концы дорог своей
+        /// плоскостью, и площадка выходит целой, а дороги к ней сходятся.
         ///
-        /// Спавн и алтари - исключение по просьбе хозяина: их круги и есть то, ради чего
-        /// нажимают, и ждать их в конце очереди незачем.
+        /// Что на этом потеряно, и это честная цена: **растущей сети больше нет**. Раньше
+        /// круг метки ставился перед дорогой, которая до неё доводит, и в любой миг
+        /// уложенное было связной сетью от дома; теперь остановка на середине оставит
+        /// дороги без кругов. Дороги при этом связны и проходимы, а круг - украшение и
+        /// ориентир, так что терять их не жалко.
         ///
-        /// Заодно это быстрее, и заметно: каждое задание ждёт, пока встанут земля и объекты
-        /// его зон, а соседние куски делят уже загруженные - прыжок же через материк грузит
-        /// всё заново.
+        /// **Спавн и алтари остаются впереди - но среди кругов, а не вообще.** Их нельзя
+        /// поставить до дорог по той же причине, по какой нельзя все остальные.
+        ///
+        /// Порядок «от дома наружу» внутри каждой половины остался, и он не только про
+        /// вид: каждое задание ждёт, пока встанут земля и объекты его зон, соседние куски
+        /// делят уже загруженные, а прыжок через материк грузит всё заново.
         ///
         /// Начало - спавн; если его на этом материке нет, ближайшая к нажавшему метка.
         /// </summary>
@@ -850,36 +938,32 @@ namespace AstvardServerMod
 
             var far = Roads(net.Points, net.Links)[start];
 
+            var roads = new List<Step>();
             var first = new List<Step>();
-            var rest = new List<Step>();
+            var stones = new List<Step>();
 
             for (var i = 0; i < marks.Count; i++)
             {
                 var step = new Step { Mark = i, Edge = -1, Far = far[i] };
-                if (marks[i].Kind == MarkKind.Stone) rest.Add(step);
+                if (marks[i].Kind == MarkKind.Stone) stones.Add(step);
                 else first.Add(step);
             }
 
             for (var i = 0; i < net.Links.Count; i++)
-                rest.Add(new Step
+                roads.Add(new Step
                 {
                     Mark = -1,
                     Edge = i,
                     Far = Mathf.Max(far[net.Links[i].A], far[net.Links[i].B]),
                 });
 
+            roads.Sort((a, b) => a.Far.CompareTo(b.Far));
             first.Sort((a, b) => a.Far.CompareTo(b.Far));
+            stones.Sort((a, b) => a.Far.CompareTo(b.Far));
 
-            // Круг метки - перед дорогой, которая до неё доводит: расстояние у них одно, и
-            // порядок решает только это.
-            rest.Sort((a, b) =>
-            {
-                var by = a.Far.CompareTo(b.Far);
-                return by != 0 ? by : (a.Mark >= 0 ? -1 : b.Mark >= 0 ? 1 : 0);
-            });
-
+            steps.AddRange(roads);
             steps.AddRange(first);
-            steps.AddRange(rest);
+            steps.AddRange(stones);
             return steps;
         }
 
