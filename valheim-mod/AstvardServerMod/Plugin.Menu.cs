@@ -659,6 +659,15 @@ namespace AstvardServerMod
             });
             UpdateRoadClearButtonLabel();
 
+            RoadDetourButton = MakeButton(gui, "", () =>
+            {
+                IsRoadDetour = !IsRoadDetour;
+                UpdateRoadDetourButtonLabel();
+                UpdateRoadHint();
+                Log.LogInfo($"[AstvardServerMod] Road detour: {IsRoadDetour}");
+            });
+            UpdateRoadDetourButtonLabel();
+
             RoadTorchButton = MakeButton(gui, "", () => OpenPavingSubPage(StateRoadTorches));
 
             // On «Рельеф» itself, beside the road it shares its paving with: made here so it
@@ -1659,6 +1668,10 @@ namespace AstvardServerMod
             SetActive(RoadBendButton, road);
             SetActive(RoadSmoothButton, (road || paving) && RuleAllows("smooth"));
             SetActive(RoadClearButton, (road || paving) && RuleAllows("clear"));
+
+            // Обход разрешения не просит: он ничего не сносит. И стоит он только у
+            // дорожки — у площадки нет линии, с которой можно сойти.
+            SetActive(RoadDetourButton, road);
             SetActive(RoadTorchButton, (road || paving) && RuleAllows("torches"));
             SetActive(RoadAreaButton, MenuState == StateTerrain && RuleAllows("area"));
             SetActive(RoadStartButton, road && RuleAllows("road"));

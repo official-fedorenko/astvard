@@ -98,12 +98,21 @@ namespace AstvardServerMod
                 // the same fields, so the two can never disagree about one boulder.
                 var bare = thing.m_destructibleType == DestructibleType.Tree
                            || BreaksDownTo(thing.gameObject, WoodAndStone, 0);
-                if (bare) continue;
 
-                // A berry bush goes under the paving now, and a sapling somebody planted
-                // is theirs to move - neither is worth bending a road for.
+                // Чужой саженец - его хозяину и двигать.
                 var go = thing.gameObject;
-                if (go.GetComponent<Pickable>() != null || go.GetComponentInParent<Piece>() != null) continue;
+                if (go.GetComponentInParent<Piece>() != null) continue;
+
+                // Ягодный куст дорога обходит, а не рубит (просьба хозяина 22.09.2026).
+                // Их на сети десятки, не тысячи, так что отступ в пару метров ей по силам;
+                // с деревьями так нельзя, и почему - в шапке этого файла.
+                if (go.GetComponent<Pickable>() != null)
+                {
+                    Note(blockers, found, area, go, 0f, "berries");
+                    continue;
+                }
+
+                if (bare) continue;
 
                 Note(blockers, found, area, go, 0f, "rock");
             }
@@ -310,7 +319,7 @@ namespace AstvardServerMod
         {
             _handBends = 0;
             _handRefused = 0;
-            if (path.Count < 3 || !RoadClearingActive) return;
+            if (path.Count < 3 || !IsRoadDetour) return;
 
             var reach = RoadSmoothingActive ? radius + SmoothBlend(radius) : radius;
             var blockers = HandBlockersFor(path, reach, path[0], path[path.Count - 1], fresh);

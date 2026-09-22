@@ -173,6 +173,37 @@ namespace AstvardServerMod
                 label.text = IsRoadClearing ? "Сносить: вкл" : "Сносить: выкл";
         }
 
+        internal static GameObject RoadDetourButton;
+
+        /// <summary>
+        /// Обходит ли дорога то, чего не сносит: рудные жилы, локации, гнёзда.
+        ///
+        /// Включено по умолчанию, и это главное в нём. Деревья и простые камни дорога не
+        /// обходит никогда — их она **сносит**, и вилять вокруг каждой ёлки значило бы
+        /// превратить дорогу в змею. Обход нужен для того, что снос трогать не имеет
+        /// права, и без него это просто мостится насквозь: жила посреди полотна, дольмен
+        /// над головой.
+        ///
+        /// Полдня 22.09.2026 обход стоял под выключателем сноса — по рассуждению, что он
+        /// его вторая половина, а «Сносить: выкл» означает «клади как нарисовано».
+        /// Рассуждение было неверным, и хозяин наткнулся на это в тот же вечер: со
+        /// снесением выключенным дорога снова мостила сквозь жилу — ровно та беда, с
+        /// которой всё началось. А довод «клади как нарисовано» умер ещё раньше: проекция
+        /// теперь **сама гнётся**, так что нарисовано именно то, что ляжет.
+        ///
+        /// Разрешения ему не нужно: обход ничего не ломает и никого не лишает.
+        /// </summary>
+        internal static bool IsRoadDetour = true;
+
+        private static void UpdateRoadDetourButtonLabel()
+        {
+            var label = RoadDetourButton != null
+                ? RoadDetourButton.GetComponentInChildren<Text>(true)
+                : null;
+            if (label != null)
+                label.text = IsRoadDetour ? "Обходить: вкл" : "Обходить: выкл";
+        }
+
         // Long enough for a real stretch of road, short enough that one press does not
         // rewrite the terrain of a dozen zones at once.
         private const float MaxRoadLength = 200f;
@@ -448,7 +479,55 @@ namespace AstvardServerMod
         /// machine: on the server, laying an admin's long road, there is no local player
         /// to ask, and with none every ward answers no.
         /// </summary>
-        private static int ClearAlongPath(List<Vector3> path, float radius, bool admin)
+        /// <summary>
+        /// Докуда растение считается подлеском. Молодой бук метра два-три, куст и того
+        /// ниже; взрослый бук за десять, ель за пятнадцать.
+        /// </summary>
+        private const float UndergrowthTall = 3f;
+
+        /// <summary>
+        /// Подлесок: мелочь, которую дорога убирает **всегда**, даже со снесением
+        /// выключенным.
+        ///
+        /// Просьба хозяина 22.09.2026, и она разумная: дорога, по которой нельзя пройти
+        /// из-за кустов, - не дорога, а мелочь эта отрастает сама и никому не жалко.
+        /// Взрослое дерево под это не попадает никогда: его сносит только снос.
+        ///
+        /// Судится ростом по коллайдерам, а не списком имён: имена устаревают с первым
+        /// же обновлением игры, а два метра остаются двумя метрами. И только растение -
+        /// `TreeBase` или `Destructible`, который сама игра считает деревом; низкий
+        /// камень под это не попадает, камни тут ни при чём.
+        ///
+        /// Ягодный куст исключён: его дорога обходит, а не рубит.
+        /// </summary>
+        private static bool IsUndergrowth(GameObject go)
+        {
+            if (go == null) return false;
+            if (go.GetComponent<Pickable>() != null) return false;
+
+            var plant = go.GetComponent<TreeBase>() != null;
+            if (!plant)
+            {
+                var broken = go.GetComponent<Destructible>();
+                plant = broken != null && broken.m_destructibleType == DestructibleType.Tree;
+            }
+
+            if (!plant) return false;
+
+            var tall = 0f;
+            foreach (var col in go.GetComponentsInChildren<Collider>())
+            {
+                if (col == null || !col.enabled || col.isTrigger) continue;
+                tall = Mathf.Max(tall, col.bounds.max.y - go.transform.position.y);
+            }
+
+            // Без коллайдеров рост не измерить, и гадать тут нельзя: промах в эту сторону
+            // валит взрослое дерево у того, кто снос выключил.
+            return tall > 0f && tall <= UndergrowthTall;
+        }
+
+        private static int ClearAlongPath(List<Vector3> path, float radius, bool admin,
+                                          bool undergrowthOnly = false)
         {
             if (path == null || path.Count == 0) return 0;
 
@@ -464,7 +543,7 @@ namespace AstvardServerMod
 
             var reach = radius + ClearSlack;
             var area = Rect.MinMaxRect(minX - reach, minZ - reach, maxX + reach, maxZ + reach);
-            return ClearWhere(area, go => FootprintDistance(go, path) <= radius, admin);
+            return ClearWhere(area, go => FootprintDistance(go, path) <= radius, admin, undergrowthOnly);
         }
 
         /// <summary>
@@ -502,11 +581,12 @@ namespace AstvardServerMod
         /// question this gets is always why that one is still standing, and the log
         /// answers it without another trip into the game.
         /// </summary>
-        private static int ClearWhere(Rect area, System.Func<GameObject, bool> inWay, bool admin)
+        private static int ClearWhere(Rect area, System.Func<GameObject, bool> inWay, bool admin,
+                                      bool undergrowthOnly = false)
         {
             if (ZNetScene.instance == null) return 0;
 
-            var run = new ClearingRun(inWay, area);
+            var run = new ClearingRun(inWay, area, undergrowthOnly);
 
             foreach (var tree in Object.FindObjectsByType<TreeBase>(FindObjectsSortMode.None))
                 run.Consider(tree, null);
@@ -531,13 +611,19 @@ namespace AstvardServerMod
                 run.Consider(thing, bare ? null : "not bare rock or brush");
             }
 
-            // Кусты с ягодами, грибы, кремень и ветки на земле. Прежде они оставались
-            // нарочно - «ягодник у дороги не препятствие», - и это верно у дороги и
-            // неверно на ней: малина, растущая сквозь мощение, выглядит забытой, а не
-            // пощажённой. Судятся они тем же радиусом, то есть только внутри краски;
-            // в кайме сглаживания всё остаётся как росло.
+            // Грибы, кремень и ветки на земле - мелочь, которая под мощением всё равно
+            // не видна. **Ягодные кусты сюда больше не попадают**: с 22.09.2026 дорога
+            // их обходит, а не рубит (просьба хозяина), и отличаются они тем, что куст -
+            // это ещё и `Destructible`, а гриб на земле - только `Pickable`. Судятся тем
+            // же радиусом, то есть только внутри краски; в кайме всё растёт как росло.
             foreach (var pick in Object.FindObjectsByType<Pickable>(FindObjectsSortMode.None))
-                run.Consider(pick, null);
+            {
+                if (pick == null) continue;
+
+                var bush = pick.GetComponent<Destructible>() != null
+                           || pick.GetComponent<TreeBase>() != null;
+                run.Consider(pick, bush ? "berry bush, gone round" : null);
+            }
 
             var removed = new Dictionary<string, int>();
             foreach (var view in run.Doomed)
@@ -583,10 +669,14 @@ namespace AstvardServerMod
 
             private readonly Rect _area;
 
-            public ClearingRun(System.Func<GameObject, bool> inWay, Rect area)
+            /// <summary>Убирать только подлесок: так ходит дорога со снесением выключенным.</summary>
+            private readonly bool _small;
+
+            public ClearingRun(System.Func<GameObject, bool> inWay, Rect area, bool small)
             {
                 _inWay = inWay;
                 _area = area;
+                _small = small;
             }
 
             /// <param name="refusal">Why this kind of thing stays, whatever else is true of it; null if it need not.</param>
@@ -623,6 +713,7 @@ namespace AstvardServerMod
                 {
                     // A sapling somebody planted is a Piece until it grows up.
                     if (go.GetComponentInParent<Piece>() != null) refusal = "built";
+                    else if (_small && !IsUndergrowth(go)) refusal = "not undergrowth";
                     else if (IsProtectedFromDelete(go)) refusal = "protected";
                     else if (Location.IsInsideLocation(at, 0f)) refusal = "inside a location";
                 }
@@ -1919,7 +2010,10 @@ namespace AstvardServerMod
             // reach its ground does not leave a cleared strip behind it. All at once
             // rather than stretch by stretch: the paint takes twenty frames, far too
             // quick for a cancel to land between them.
-            var cleared = RoadClearingActive ? ClearAlongPath(path, radius, IsAdminUnlocked) : 0;
+            // Со снесением выключенным проход всё равно идёт - но берёт один подлесок.
+            var cleared = kind == "area" && !RoadClearingActive
+                ? 0
+                : ClearAlongPath(path, radius, IsAdminUnlocked, !RoadClearingActive);
 
             // Before the paint, so the first stretch's save carries both, and the
             // heightmaps the paint rebuilds show the new ground under it.

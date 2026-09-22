@@ -136,6 +136,7 @@ namespace AstvardServerMod
             pkg.Write(player.GetPlayerID());
             pkg.Write(PlatformManager.DistributionPlatform.LocalUser.PlatformUserID.ToString());
             pkg.Write(RoadTorchForever);
+            pkg.Write(IsRoadDetour);
             ZRoutedRpc.instance.InvokeRoutedRPC(RpcRoadJob, pkg);
 
             UpdateRoadHint();
@@ -309,6 +310,11 @@ namespace AstvardServerMod
             // не шлёт, и это не повод отказать в дорожке.
             public bool Forever;
 
+            // Обходить ли то, что дорога не сносит. Тоже хвостовое поле, и у клиента
+            // постарше его нет: его проекция не гнулась, значит и дорога гнуться не
+            // должна - она обязана быть той, которую ему показали.
+            public bool Bend;
+
             // Куда сеть поставила свои дорожные факелы. Список общий с заданием сети и
             // растёт по ходу укладки, поэтому здесь ссылка, а не копия: круги кладутся
             // последними, и каждый гасит те огни, что оказались внутри него.
@@ -413,6 +419,9 @@ namespace AstvardServerMod
             // а дорожка ему всё равно полагается.
             try { job.Forever = pkg.ReadBool(); }
             catch (System.Exception) { job.Forever = false; }
+
+            try { job.Bend = pkg.ReadBool(); }
+            catch (System.Exception) { job.Bend = false; }
 
             if (!ServerAllows(sender))
             {
@@ -619,10 +628,9 @@ namespace AstvardServerMod
                     // теперь дорогу можно согнуть в обход. До этого в сцене нет ни жилы,
                     // ни локации, у которой можно спросить её радиус.
                     //
-                    // Под тем же переключателем, что и снос: обход - его вторая половина
-                    // («что можно убрать, убираем; что нельзя - обходим»). Выключенный
-                    // снос означает «клади, как нарисовано», и гнуть тогда нечего.
-                    if (complete && job.Clear)
+                    // Под своим переключателем, а не под сносом: обход ничего не ломает,
+                    // и дорога без сноса тем более обязана не мостить сквозь жилу.
+                    if (complete && job.Bend)
                     {
                         float cutAt;
                         var bent = BendRoadPiece(job, piece, found, out cutAt);
@@ -895,7 +903,9 @@ namespace AstvardServerMod
                     RememberBefore(job.Record, comp, save);
                 }
 
-                if (job.Clear && complete) cleared += ClearAlongPath(piece, job.Radius, true);
+                // Со снесением выключенным проход всё равно идёт и убирает подлесок:
+                // дорога, заросшая кустами, - не дорога.
+                if (complete) cleared += ClearAlongPath(piece, job.Radius, true, !job.Clear);
                 if (job.Smooth) SmoothAlongPath(piece, comps, job.Radius);
 
                 foreach (var comp in comps)

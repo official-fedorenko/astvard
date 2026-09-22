@@ -130,6 +130,7 @@ namespace AstvardServerMod
             pkg.Write(player.GetPlayerID());
             pkg.Write(PlatformManager.DistributionPlatform.LocalUser.PlatformUserID.ToString());
             pkg.Write(RoadTorchForever);
+            pkg.Write(IsRoadDetour);
             ZRoutedRpc.instance.InvokeRoutedRPC(RpcRunesLay, pkg);
 
             _runesAsked = true;
@@ -453,6 +454,10 @@ namespace AstvardServerMod
             try { forever = pkg.ReadBool(); }
             catch (System.Exception) { forever = false; }
 
+            var bend = false;
+            try { bend = pkg.ReadBool(); }
+            catch (System.Exception) { bend = false; }
+
             var zones = ZoneSystem.instance;
             var world = WorldGenerator.instance;
             if (zones == null || world == null) return;
@@ -473,7 +478,7 @@ namespace AstvardServerMod
                 if (step.Mark >= 0)
                 {
                     job.Queue.Add(CircleJob(marks[step.Mark], paved, smooth, clear, torch,
-                                            spacing, forever, creator, platform));
+                                            spacing, forever, bend, creator, platform));
                     continue;
                 }
 
@@ -482,7 +487,7 @@ namespace AstvardServerMod
                 var to = net.Points[link.B];
 
                 var road = RoadBetween(from, to, radius, width, paved, smooth, clear, torch,
-                                       spacing, forever, creator, platform);
+                                       spacing, forever, bend, creator, platform);
                 road.Lit = job.Lit;
 
                 job.Metres += Flat(from, to);
@@ -556,8 +561,8 @@ namespace AstvardServerMod
 
         /// <summary>Мощёный круг вокруг метки и кольцо факелов по нему.</summary>
         private static RoadJob CircleJob(Mark mark, bool paved, bool smooth, bool clear,
-                                         int torch, float spacing, bool forever, long creator,
-                                         string platform)
+                                         int torch, float spacing, bool forever, bool bend,
+                                         long creator, string platform)
         {
             // Путь из двух точек в полуметре: укладка идёт по отрезкам, и одной точки ей
             // мало - цикл по парам не сделал бы ни шага. Круг задаёт не путь, а радиус,
@@ -581,12 +586,13 @@ namespace AstvardServerMod
                 Centre = mark.At,
                 Grow = true,
                 Forever = forever,
+                Bend = bend,
             };
         }
 
         private static RoadJob RoadBetween(Vector3 from, Vector3 to, float radius, float width,
                                            bool paved, bool smooth, bool clear, int torch,
-                                           float spacing, bool forever, long creator,
+                                           float spacing, bool forever, bool bend, long creator,
                                            string platform)
         {
             // Тем же сэмплером, что и обычная дорожка: точка на метр пути. Своя кривая
@@ -608,6 +614,7 @@ namespace AstvardServerMod
                 Creator = creator,
                 Platform = platform,
                 Forever = forever,
+                Bend = bend,
             };
         }
 
