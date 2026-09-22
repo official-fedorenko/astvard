@@ -86,6 +86,10 @@ namespace AstvardServerMod
                 return code;
             }
 
+            // Патчится копия, а не сам список: нашлось не то, что ждали — отдаём
+            // оригинал нетронутым. «Нашли не то и всё равно тронули» — худшее, чем
+            // может кончиться транспайлер.
+            var patched = new List<CodeInstruction>(code);
             for (var i = 0; i + 1 < code.Count; i++)
             {
                 if (!code[i].Calls(nrOfPlayers)) continue;
@@ -95,7 +99,7 @@ namespace AstvardServerMod
 
                 // Метки и блоки исключений принадлежат месту в коде, а не инструкции:
                 // потерять их значит увести чужой переход в никуда.
-                code[i + 1] = new CodeInstruction(OpCodes.Call, ourLimit)
+                patched[i + 1] = new CodeInstruction(OpCodes.Call, ourLimit)
                 {
                     labels = next.labels,
                     blocks = next.blocks
@@ -106,15 +110,13 @@ namespace AstvardServerMod
             if (replaced != 1)
             {
                 Plugin.Log.LogError($"[AstvardServerMod] Player limit: expected one «players >= {Plugin.VanillaPlayerLimit}» "
-                                    + $"check in ZNet.RPC_PeerInfo, patched {replaced}. The game has changed — the limit "
-                                    + "may be the game's own.");
-            }
-            else
-            {
-                Plugin.Log.LogInfo($"[AstvardServerMod] Player limit: {Plugin.ServerPlayerLimit()} players.");
+                                    + $"check in ZNet.RPC_PeerInfo, found {replaced}. The game has changed — leaving the "
+                                    + "check alone, the limit stays the game's own ten.");
+                return code;
             }
 
-            return code;
+            Plugin.Log.LogInfo($"[AstvardServerMod] Player limit: {Plugin.ServerPlayerLimit()} players.");
+            return patched;
         }
 
         private static bool IsConstant(CodeInstruction instruction, out int value)
@@ -133,8 +135,10 @@ namespace AstvardServerMod
                 }
             }
 
-            // Компилятор вправе положить маленькое число короткой инструкцией без
-            // операнда, и десятка как раз из таких.
+            // Десятку компилятор кладёт как Ldc_I4_S: коротких безоперандных форм
+            // хватает только до восьми. Они разобраны здесь на случай, если игра
+            // однажды начнёт с другого числа, - тогда патч скажет об этом сам,
+            // вместо того чтобы не найти проверку и промолчать.
             if (instruction.opcode == OpCodes.Ldc_I4_0) { value = 0; return true; }
             if (instruction.opcode == OpCodes.Ldc_I4_1) { value = 1; return true; }
             if (instruction.opcode == OpCodes.Ldc_I4_2) { value = 2; return true; }
