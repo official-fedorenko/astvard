@@ -79,28 +79,41 @@ test('правка мира не проходит молча: о ней пред
   assert.ok(plan.warnings.some((w) => w.includes('мод')));
 });
 
-test('мир по сиду: паспорт вместо привезённой папки', () => {
-  const plan = planServer({ ...GOOD, worldSource: 'seed', seed: 'iMbvYy6FIt' });
+test('мир по сиду: это работа мода, и она видна в его конфиге', () => {
+  const plan = planServer({ ...GOOD, bepinex: true, worldSource: 'seed', seed: 'iMbvYy6FIt' });
   assert.ok(plan.ok, plan.errors.join('; '));
-  assert.strictEqual(plan.worldSource, 'seed');
-  // Флага сида нет и не появится — об этом говорится прямо, чтобы завтра никто не
-  // искал его снова.
-  assert.ok(plan.warnings.some((w) => w.includes('Флага для сида')));
-  // Законченного сохранения у такого мира нет, а server.sh ищет именно его.
+  assert.ok(plan.files['astvard.servermod.cfg'].includes('Seed = iMbvYy6FIt'));
+  assert.ok(plan.commands.some((c) => c.title.includes('конфиг мода')));
+  // Законченного сохранения у нового мира нет, а server.sh ищет именно его.
   assert.ok(plan.files['server.env'].includes('ALLOW_NEW_WORLD=yes'));
-  assert.ok(plan.files['server.env'].includes('iMbvYy6FIt'));
-  assert.ok(plan.commands.some((c) => c.title.includes('паспорт')));
-  assert.ok(!plan.commands.some((c) => c.title === 'Положить мир'));
-  // И ключ снимается тем же планом: оставленный, он превращает опечатку в имени
-  // мира в молча созданный пустой мир.
-  assert.ok(plan.commands.some((c) => c.code.includes('ALLOW_NEW_WORLD')));
+});
+
+test('без мода ни сид, ни слоты не обещаются', () => {
+  assert.ok(!planServer({ ...GOOD, worldSource: 'seed', seed: 'abc' }).ok);
+  assert.ok(!planServer({ ...GOOD, playerLimit: 20 }).ok);
+  // А десять слотов — это просто игра, и мод для них не нужен.
+  assert.ok(planServer({ ...GOOD, playerLimit: 10 }).ok);
+});
+
+test('слоты: границы и молчание, когда их не трогали', () => {
+  for (const n of [0, -1, 65, 2.5]) {
+    assert.ok(!planServer({ ...GOOD, bepinex: true, playerLimit: n }).ok, `${n} прошло`);
+  }
+  const twenty = planServer({ ...GOOD, bepinex: true, playerLimit: 20 });
+  assert.ok(twenty.ok, twenty.errors.join('; '));
+  assert.strictEqual(twenty.playerLimit, 20);
+  assert.ok(twenty.files['astvard.servermod.cfg'].includes('PlayerLimit = 20'));
+  // Больше десяти — вопрос к машине, а не к игре, и об этом сказано.
+  assert.ok(twenty.warnings.some((w) => w.includes('машина')));
+  // Десять — это игра как есть, и лишнего куска конфига быть не должно.
+  assert.ok(!planServer({ ...GOOD, bepinex: true }).files['astvard.servermod.cfg']);
 });
 
 test('сид спрашивается только тогда, когда он нужен', () => {
-  assert.ok(!planServer({ ...GOOD, worldSource: 'seed', seed: '' }).ok);
+  assert.ok(!planServer({ ...GOOD, bepinex: true, worldSource: 'seed', seed: '' }).ok);
   // Случайный сид придумывает не форма, а сервер при выдаче паспорта, поэтому
   // пустое поле здесь — не ошибка.
-  assert.ok(planServer({ ...GOOD, worldSource: 'random', seed: '' }).ok);
+  assert.ok(planServer({ ...GOOD, bepinex: true, worldSource: 'random', seed: '' }).ok);
   // У привезённого мира сид уже внутри него.
   assert.ok(planServer({ ...GOOD, worldSource: 'have' }).ok);
 });

@@ -770,6 +770,11 @@
             <input type="number" id="planPort" class="form-control" value="2458">
             <div class="hint-text">Игра занимает его и следующий. 2456–2457 уже заняты.</div>
           </div>
+          <div class="form-group">
+            <label for="planPlayerLimit">Слотов</label>
+            <input type="number" id="planPlayerLimit" class="form-control" value="10" min="1" max="64">
+            <div class="hint-text">У игры это зашитое число 10; больше умеет только мод.</div>
+          </div>
         </div>
 
         <h4 class="form-section-title">Мир</h4>
@@ -782,7 +787,8 @@
           <div class="form-group">
             <label for="planSeed">Сид</label>
             <input type="text" id="planSeed" class="form-control" placeholder="iMbvYy6FIt" maxlength="32">
-            <div class="hint-text">Флага для сида у игры нет: сид живёт строкой в паспорте мира, и паспорт сайт напишет сам.</div>
+            <div class="hint-text">Флага для сида у игры нет — мир с выбранным сидом заводит мод, и только пока
+              папка мира пуста: существующий мир сид не меняет. <a href="#" id="planSeedRollBtn">Придумать сид</a></div>
           </div>
           <div class="form-group">
             <label for="planWorldFile">Свой файл мира</label>
@@ -847,7 +853,6 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" id="serverCreateCancel">Закрыть</button>
-        <button type="button" class="btn btn-secondary" id="planPassportBtn">Скачать паспорт мира</button>
         <button type="button" class="btn" id="serverPlanBtn">Собрать план</button>
       </div>
     </div>

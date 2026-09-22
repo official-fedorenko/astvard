@@ -4,7 +4,7 @@ const { sendJson, getJsonBody, logAction } = require('../utils');
 const { queryA2SInfo } = require('../protocols/a2s');
 const { readValheimLogStatus } = require('../protocols/valheimLog');
 const { planServer, PRESETS, MODIFIERS, MODIFIER_OPTIONS, SLOT_RE, DEFAULTS } = require('../gameServerPlan');
-const { buildWorldPassport, readWorldPassport, generateSeed } = require('../valheimWorldFile');
+const { readWorldPassport, generateSeed } = require('../valheimWorldFile');
 
 // Only the deployment knows where the game server writes; the database keeps the
 // decision to read a log at all, never the path to it — a path stored in a row
@@ -209,37 +209,11 @@ async function planOptions(req, res) {
   });
 }
 
-// Паспорт мира — единственный способ задать сид: флага у игры нет, а сид лежит
-// строкой в этом файле, и карта растёт из него. Файл маленький и уходит в браузер
-// base64-ом: класть его куда-то у себя сайту незачем — он всё равно не тот, кто
-// положит его на игровую машину.
-async function worldPassport(req, res, actor) {
-  let body;
-  try {
-    body = await getJsonBody(req);
-  } catch {
-    return sendJson(res, 400, { success: false, message: 'Некорректный запрос' });
-  }
-  // Имя мира проверяет план, и проверяет строже: это имя папки и файла.
-  const check = planServer(body);
-  if (!check.ok) {
-    return sendJson(res, 400, { success: false, message: check.errors[0] });
-  }
-  const seed = body.worldSource === 'random' ? generateSeed() : String(body.seed || '').trim();
-  try {
-    const file = buildWorldPassport({ name: String(body.worldName || '').trim(), seed });
-    logAction(actor.username, `Собрал паспорт мира ${body.worldName} (сид ${seed})`);
-    sendJson(res, 200, {
-      success: true,
-      seed,
-      // Номер сохранения у мира, которого ещё не сохраняли, ровно нулевой: так его
-      // пишет и сама игра, когда заводит мир.
-      fileName: '_main.0.fwl2',
-      base64: file.toString('base64')
-    });
-  } catch (err) {
-    sendJson(res, 400, { success: false, message: err.message });
-  }
+// Сид, придуманный по правилам игры: те же десять знаков и тот же алфавит, что у
+// World.GenerateSeed. Придумывает его сайт, а не сервер, ровно затем, чтобы он был
+// записан: мир, сид которого никто не видел, не повторить.
+async function planSeed(req, res) {
+  sendJson(res, 200, { success: true, seed: generateSeed() });
 }
 
 // Свой файл мира с компьютера: сайт читает из него сид и имя. Дальше человек решает
@@ -302,11 +276,11 @@ async function handleServers(req, res, sessionUser, parsedUrl, method) {
     }
     return plan(req, res, sessionUser);
   }
-  if (pathname === '/api/admin/servers/plan/world' && method === 'POST') {
+  if (pathname === '/api/admin/servers/plan/seed' && method === 'POST') {
     if (role !== 'Superadmin') {
       return sendJson(res, 403, { success: false, message: 'Создавать серверы может только суперадмин' });
     }
-    return worldPassport(req, res, sessionUser);
+    return planSeed(req, res);
   }
   if (pathname === '/api/admin/servers/plan/world/read' && method === 'POST') {
     if (role !== 'Superadmin') {

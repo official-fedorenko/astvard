@@ -1,15 +1,18 @@
-// The world's passport: _main.<N>.fwl2 next to _main.<N>.ok in the world's folder.
+// Reading a world's passport: _main.<N>.fwl2 in the world's folder, or an old .fwl
+// next to it. The seed is a string in there, and the whole map is grown from it, so
+// this is how the owner's own world file answers "what seed is this".
 //
-// This is the one thing that makes a chosen seed possible at all. There is no -seed
-// flag and there never was: a world the server creates gets ten random characters
-// from World.GenerateSeed(). But the seed is not magic - it is a string in this file,
-// and everything else about the map is grown from it. Write the file, and the server
-// grows that map on its first start.
+// WRITING one is a different matter, and we do not. Laying a hand-made passport into
+// an empty folder looked like a way to choose a seed, and the mod session had already
+// tried it on a live server: World.GetCreateWorld fails to load such a save and
+// quietly creates a brand new world with a random seed instead, over the top. So the
+// seed is set where it works - the mod patches World.GenerateSeed - and this file
+// only reads.
 //
-// The format is World.SaveWorldFWLData (assembly_valheim.dll 1.0.15), and it was
-// checked against a real file rather than trusted: AstwardWorld's _main.1.fwl2 parses
-// field for field, and the seed hash we compute for its "iMbvYy6FIt" comes out
-// 0x6F78ADD1, the same four bytes the game wrote.
+// The format is World.SaveWorldFWLData (assembly_valheim.dll 1.0.15), checked against
+// a real file rather than trusted: AstwardWorld's _main.1.fwl2 parses field for field,
+// and the seed hash we compute for its "iMbvYy6FIt" comes out 0x6F78ADD1, the same
+// four bytes the game wrote.
 
 // Version.World of this build. Those same four bytes are the entire content of a
 // _main.<N>.ok file - checked on a real one - but we write no .ok: the game does
@@ -81,43 +84,6 @@ function writeInt(chunks, value) {
   chunks.push(b);
 }
 
-// The world's id. name.GetStableHashCode() + Utils.GenerateUID(), and the second half
-// is random in the game too - nothing reads it back for meaning, it only has to
-// differ between worlds so two saves are never taken for one.
-function makeUid(name, random = Math.random) {
-  const low = BigInt(stableHashCode(name));
-  const noise = BigInt(Math.floor(random() * 0x7fffffff));
-  return (low + (noise << 16n)) & 0x7fffffffffffffffn;
-}
-
-// The bytes of _main.0.fwl2 for a world nobody has played yet: no database, no world
-// modifiers, no player history. Everything the game would have written on the first
-// start, except that we choose the seed and it would not have.
-function buildWorldPassport({ name, seed, uid }) {
-  if (!name) throw new Error('имя мира пустое');
-  if (!seed) throw new Error('сид пустой');
-
-  const body = [];
-  writeInt(body, WORLD_VERSION);
-  writeString(body, name);
-  writeString(body, seed);
-  writeInt(body, stableHashCode(seed));
-  const id = Buffer.alloc(8);
-  id.writeBigInt64LE(uid === undefined ? makeUid(name) : BigInt(uid));
-  body.push(id);
-  writeInt(body, WORLD_GEN_VERSION);
-  // m_needsDB: false. The database is what a played world has; this one has nothing
-  // to load, and the server writes its first on the first save.
-  body.push(Buffer.from([0]));
-  writeInt(body, 0); // starting global keys - the modifiers, and we set none
-  writeInt(body, 0); // player history
-
-  const pkg = Buffer.concat(body);
-  const head = Buffer.alloc(4);
-  head.writeInt32LE(pkg.length);
-  return Buffer.concat([head, pkg]);
-}
-
 // What a .fwl2 (or an old .fwl) says about itself. Used to read a world file the
 // owner has on his computer: the answer we are after is its seed.
 function readWorldPassport(buffer) {
@@ -160,7 +126,5 @@ module.exports = {
   SEED_LENGTH,
   stableHashCode,
   generateSeed,
-  makeUid,
-  buildWorldPassport,
   readWorldPassport
 };

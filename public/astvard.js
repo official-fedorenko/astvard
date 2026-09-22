@@ -303,7 +303,7 @@ function bindAstvardHandlers() {
     if (e.target.name === 'planWorldSource') {
       const source = e.target.value;
       document.getElementById('planSeedRow').style.display = source === 'have' ? 'none' : '';
-      document.getElementById('planSeed').disabled = source === 'random';
+      if (source === 'random') rollSeed();
       document.getElementById('planWorldInfo').innerHTML = '';
     }
     if (e.target.id === 'planWorldFile' && e.target.files[0]) readWorldFile(e.target.files[0]);
@@ -460,7 +460,10 @@ function bindAstvardHandlers() {
     if (e.target.closest('#serverCreateBtn')) return openServerCreate();
     if (e.target.closest('#serverCreateClose, #serverCreateCancel')) return closeServerCreate();
     if (e.target.closest('#serverPlanBtn')) return submitServerPlan();
-    if (e.target.closest('#planPassportBtn')) return downloadWorldPassport();
+    if (e.target.closest('#planSeedRollBtn')) {
+      e.preventDefault();
+      return rollSeed();
+    }
 
     if (e.target.closest('#serversRefreshBtn')) {
       await fetch('/api/admin/servers/refresh', { method: 'POST' });
@@ -1583,6 +1586,7 @@ function planFormValue() {
     port: val('planPort'),
     worldSource: (document.querySelector('input[name="planWorldSource"]:checked') || {}).value || 'have',
     seed: val('planSeed'),
+    playerLimit: val('planPlayerLimit'),
     bepinex: on('planBepinex'),
     public: on('planPublic'),
     crossplay: on('planCrossplay'),
@@ -1597,6 +1601,13 @@ function planFormValue() {
     // выбрасываются здесь, чтобы «a, , b» не превращалось в ошибку про пустой ключ.
     setKeys: val('planSetKeys').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean)
   };
+}
+
+// Куда какой файл ложится. Конфиг мода живёт не рядом с compose, а внутри установки
+// игры, и заголовок, показывающий не тот путь, увёл бы правку не туда.
+function planFilePath(plan, name) {
+  if (name === 'astvard.servermod.cfg') return `${plan.root}/server/BepInEx/config/${name}`;
+  return `${plan.root}/${name}`;
 }
 
 function renderPlan(plan) {
@@ -1615,10 +1626,9 @@ function renderPlan(plan) {
     ${plan.warnings.map((w) => `<p class="plan-warn">${escapeHtml(w)}</p>`).join('')}
     <p class="hint-text">Порты ${plan.ports[0]}–${plan.ports[1]}, папка <code>${escapeHtml(plan.root)}</code>. Строка запуска:</p>
     <pre class="plan-code">${escapeHtml(flags)}</pre>
-    <h4 class="form-section-title">${escapeHtml(plan.root)}/server.env</h4>
-    <pre class="plan-code">${escapeHtml(plan.files['server.env'])}</pre>
-    <h4 class="form-section-title">${escapeHtml(plan.root)}/compose.yml</h4>
-    <pre class="plan-code">${escapeHtml(plan.files['compose.yml'])}</pre>
+    ${Object.keys(plan.files).map((name) => `
+      <h4 class="form-section-title">${escapeHtml(planFilePath(plan, name))}</h4>
+      <pre class="plan-code">${escapeHtml(plan.files[name])}</pre>`).join('')}
     <h4 class="form-section-title">По шагам, на машине</h4>
     ${plan.commands.map((c, i) => `
       <div class="plan-step">
@@ -1630,30 +1640,11 @@ function renderPlan(plan) {
        статус — «лог Valheim», ключ <code>${escapeHtml(plan.slot)}</code> — по нему сайт и найдёт его лог.</p>`;
 }
 
-// Файл отдаётся браузером, а не сохраняется на сайте: положить его на игровую
-// машину всё равно человеку, и лишняя копия мира на сервере сайта никому не нужна.
-function downloadBytes(name, base64) {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-async function downloadWorldPassport() {
-  const res = await fetch('/api/admin/servers/plan/world', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(planFormValue())
-  });
+async function rollSeed() {
+  const res = await fetch('/api/admin/servers/plan/seed', { method: 'POST' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return showToast(data.message || 'Не получилось', 'error');
-  // Случайный сид придумывает сервер, и показать его надо обязательно: мир, сид
-  // которого никто не записал, потом не повторить ничем.
   document.getElementById('planSeed').value = data.seed;
-  showToast(`Паспорт мира готов, сид ${data.seed}`, 'success');
-  downloadBytes(data.fileName, data.base64);
 }
 
 async function readWorldFile(file) {

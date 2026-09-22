@@ -1,7 +1,6 @@
 /**
- * Паспорт мира. Здесь проверяется то, на чём держится вся затея с сидом: что мы
- * пишем ровно тот файл, который пишет игра, и считаем ровно тот хеш, который уходит
- * в генератор карты. Ошибка тут не падает, а даёт другой мир — молча.
+ * Чтение паспорта мира: из файла, который хозяин принёс со своего компьютера, надо
+ * узнать сид. Писать такой файл мы не беремся — почему, сказано в самом модуле.
  *
  * Образец — настоящий `_main.1.fwl2` мира AstwardWorld, снятый с отладочного
  * сервера 22.09.2026 и вписанный сюда байтами: файл на диске у той сессии, и
@@ -12,7 +11,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const {
-  stableHashCode, generateSeed, buildWorldPassport, readWorldPassport,
+  stableHashCode, generateSeed, readWorldPassport,
   SEED_ALPHABET, WORLD_VERSION, WORLD_GEN_VERSION
 } = require('../src/valheimWorldFile');
 
@@ -39,29 +38,6 @@ test('хеш сида совпадает с тем, что записала са
   // Эти четыре байта игра посчитала сама и положила в файл; из них растёт карта.
   assert.strictEqual(readWorldPassport(REAL).seedHash, stableHashCode('iMbvYy6FIt'));
   assert.strictEqual(stableHashCode('iMbvYy6FIt') >>> 0, 0x6f78add1);
-});
-
-test('наш паспорт читается нашим же читателем и несёт выбранный сид', () => {
-  const made = buildWorldPassport({ name: 'AstvardTwo', seed: 'iMbvYy6FIt', uid: 123n });
-  const w = readWorldPassport(made);
-  assert.strictEqual(w.name, 'AstvardTwo');
-  assert.strictEqual(w.seed, 'iMbvYy6FIt');
-  assert.strictEqual(w.seedHash, stableHashCode('iMbvYy6FIt'));
-  assert.strictEqual(w.worldGenVersion, WORLD_GEN_VERSION);
-  // Длина в первых четырёх байтах — это длина всего остального, как у игры.
-  assert.strictEqual(made.readInt32LE(0), made.length - 4);
-});
-
-test('заголовок нашего файла совпадает с игровым до байта', () => {
-  const made = buildWorldPassport({ name: 'AstwardWorld', seed: 'iMbvYy6FIt', uid: 0n });
-  // Версия, имя, сид и его хеш — всё, что стоит до uid, у нас и у игры одно и то же.
-  const upToUid = 4 + 4 + 1 + 'AstwardWorld'.length + 1 + 'iMbvYy6FIt'.length + 4;
-  assert.ok(made.subarray(4, upToUid).equals(REAL.subarray(4, upToUid)));
-});
-
-test('пустой сид и пустое имя не превращаются в файл', () => {
-  assert.throws(() => buildWorldPassport({ name: 'W', seed: '' }));
-  assert.throws(() => buildWorldPassport({ name: '', seed: 'abc' }));
 });
 
 test('чужой файл не разбирается молча', () => {

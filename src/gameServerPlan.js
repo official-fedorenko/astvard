@@ -55,8 +55,17 @@ const WORLD_SOURCES = ['have', 'seed', 'random'];
 // Держим её короткой и без управляющих символов: она поедет в имя, в отчёт и в лог.
 const SEED_RE = /^[\x20-\x7E]{1,32}$/;
 
+// Число игроков у игры не настройка, а `public const int ZNet.ServerPlayerLimit = 10`,
+// вкомпилированное в единственную проверку `ZNet.RPC_PeerInfo`. Меняет его мод
+// (Plugin.PlayerLimit.cs), поэтому и предел здесь его, а не игры: снизу один игрок,
+// сверху столько, сколько ещё можно объяснить машиной, а не игрой.
+const MIN_PLAYERS = 1;
+const MAX_PLAYERS = 64;
+const VANILLA_PLAYERS = 10;
+
 const DEFAULTS = {
   port: 2458,
+  playerLimit: VANILLA_PLAYERS,
   saveInterval: 900,
   backups: 4,
   backupShort: 3600,
@@ -100,6 +109,7 @@ function planServer(input = {}) {
   const setKeys = Array.isArray(input.setKeys) ? input.setKeys : [];
 
   const port = intField(input.port, DEFAULTS.port);
+  const playerLimit = intField(input.playerLimit, DEFAULTS.playerLimit);
   const saveInterval = intField(input.saveInterval, DEFAULTS.saveInterval);
   const backups = intField(input.backups, DEFAULTS.backups);
   const backupShort = intField(input.backupShort, DEFAULTS.backupShort);
@@ -131,6 +141,9 @@ function planServer(input = {}) {
     errors.push('Интервал сохранения — целое, не меньше 5 секунд: меньшее игра всё равно поднимет до 5.');
   }
   if (!Number.isInteger(backups) || backups < 0) errors.push('Число резервных копий — целое, не меньше нуля.');
+  if (!Number.isInteger(playerLimit) || playerLimit < MIN_PLAYERS || playerLimit > MAX_PLAYERS) {
+    errors.push(`Слотов: целое от ${MIN_PLAYERS} до ${MAX_PLAYERS}.`);
+  }
   if (!Number.isInteger(backupShort) || backupShort < 5) errors.push('Частая копия — целое, не меньше 5 секунд.');
   if (!Number.isInteger(backupLong) || backupLong < 5) errors.push('Редкая копия — целое, не меньше 5 секунд.');
 
@@ -180,12 +193,24 @@ function planServer(input = {}) {
   }
   if (bepinex) {
     warnings.push('BEPINEX=yes: DLL мода у сервера и у игроков должна совпадать байт в байт, а у этого сервера будет своя папка BepInEx и свой LogOutput.log.');
+  } else {
+    // Ванильный сервер не умеет ни того, ни другого, и попросить его об этом нечем.
+    if (playerLimit !== VANILLA_PLAYERS) {
+      errors.push('Слотов не десять — значит нужен мод: у игры это зашитое число, и меняет его он. Включи «Мод (BepInEx)».');
+    }
+    if (newWorld) {
+      errors.push('Новый мир с выбранным сидом заводит мод: у игры флага для сида нет вовсе. Включи «Мод (BepInEx)» или вези готовую папку мира.');
+    }
+  }
+  if (playerLimit > VANILLA_PLAYERS) {
+    warnings.push(`Слотов ${playerLimit} вместо десяти: игра это выдержит, а вот машина — вопрос отдельный, каждый игрок держит вокруг себя свои зоны. Смотреть по нагрузке, а не по числу.`);
   }
   if (worldSource === 'seed' && !SEED_RE.test(seedInput)) {
     errors.push('Сид: от 1 до 32 обычных символов. Игра берёт любую строку, но эта поедет ещё и в отчёт, и в лог.');
   }
   if (newWorld) {
-    warnings.push('Флага для сида у игры нет, и его не будет: сид живёт строкой в паспорте мира. Паспорт с выбранным сидом сайт напишет сам, и карту из него вырастит сервер при первом запуске.');
+    warnings.push('Флага для сида у игры нет: мир с выбранным сидом заводит мод, ключом «[Мир] Seed» в своём конфиге. '
+      + 'Действует это только на СОЗДАНИЕ мира — папка мира должна быть пуста; существующий мир ключ не трогает никогда.');
   }
 
   const flags = [
@@ -212,7 +237,7 @@ function planServer(input = {}) {
   const opts = {
     slot, worldName, serverName, port, isPublic, password, saveInterval,
     backups, backupShort, backupLong, bepinex, crossplay, instanceId,
-    preset, modifiers, setKeys, newWorld, worldSource, seed: seedInput
+    preset, modifiers, setKeys, newWorld, worldSource, seed: seedInput, playerLimit
   };
 
   return {
@@ -225,10 +250,16 @@ function planServer(input = {}) {
     flags,
     newWorld,
     worldSource,
-    files: errors.length ? null : {
-      'server.env': renderEnv(opts),
-      'compose.yml': renderCompose(opts)
-    },
+    playerLimit,
+    files: errors.length ? null : Object.assign(
+      {
+        'server.env': renderEnv(opts),
+        'compose.yml': renderCompose(opts)
+      },
+      // Конфиг мода отдаётся только тогда, когда моду есть что сказать: пустой
+      // кусок настроек в отчёте читается как «надо что-то сделать».
+      renderModConfig(opts) ? { 'astvard.servermod.cfg': renderModConfig(opts) } : {}
+    ),
     commands: errors.length ? [] : renderCommands(opts)
   };
 }
@@ -261,12 +292,33 @@ function renderEnv(o) {
   if (o.setKeys.length) lines.push(`WORLD_KEYS=${o.setKeys.join(',')}`);
   if (o.newWorld) {
     lines.push('');
-    lines.push(`# Мир начинается с паспорта (сид ${o.seed || 'случайный'}), и законченного сохранения`);
-    lines.push('# в нём ещё нет — а его-то server.sh и ищет. Убрать сразу после первого');
+    lines.push('# Мира ещё нет: его создаст сам сервер при первом запуске, а какой именно —');
+    lines.push('# сказано модом, в его astvard.servermod.cfg. Убрать сразу после первого');
     lines.push('# запуска: этот ключ выключает единственную защиту от опечатки в имени мира.');
     lines.push('ALLOW_NEW_WORLD=yes');
   }
   return lines.join('\n') + '\n';
+}
+
+// Кусок конфига мода: сид и число слотов. Именно кусок, а не файл целиком - файл
+// мод пишет себе сам при первом запуске, со всеми своими тремя десятками настроек, и
+// подменять его нашими двумя строками значило бы стереть остальные.
+function renderModConfig(o) {
+  const parts = [];
+  if (o.newWorld) {
+    parts.push('[Мир]');
+    parts.push('');
+    parts.push('## С каким сидом создать мир, если его ещё нет. Существующий мир не трогается.');
+    parts.push(`Seed = ${o.seed}`);
+  }
+  if (o.playerLimit !== VANILLA_PLAYERS) {
+    if (parts.length) parts.push('');
+    parts.push('[Серверы]');
+    parts.push('');
+    parts.push('## Сколько игроков пускать одновременно. У самой игры это зашитое число 10.');
+    parts.push(`PlayerLimit = ${o.playerLimit}`);
+  }
+  return parts.length ? parts.join('\n') + '\n' : null;
 }
 
 function renderCompose(o) {
@@ -330,13 +382,12 @@ function renderCommands(o) {
       why: `Папка должна называться ровно ${o.worldName}: имя папки и есть личность мира. Внутри ничего не переименовывать, кэш биомов не тащить.`,
       code: `scp -r "<папка мира>" astvard-vps:${dir}/saves/worlds_local/\nchown -R valheim:valheim ${dir}/saves`
     });
-  } else {
+  }
+  if (renderModConfig(o)) {
     list.push({
-      title: 'Положить паспорт мира',
-      why: 'Файл «Скачать паспорт мира» из формы выше — в нём и лежит сид. Карту сервер вырастит из него сам при первом запуске.',
-      code: `mkdir -p ${dir}/saves/worlds_local/${o.worldName}\n`
-        + `scp _main.0.fwl2 astvard-vps:${dir}/saves/worlds_local/${o.worldName}/\n`
-        + `chown -R valheim:valheim ${dir}/saves`
+      title: 'Дописать в конфиг мода',
+      why: 'Сид и число слотов держит мод, а не игра, и лежат они в его конфиге. Файл мод заводит сам при первом запуске, так что порядок такой: поднять сервер, остановить, дописать эти строки в свои разделы, поднять снова.',
+      code: `nano ${dir}/server/BepInEx/config/astvard.servermod.cfg`
     });
   }
   list.push(
@@ -364,6 +415,9 @@ function renderCommands(o) {
 module.exports = {
   planServer,
   WORLD_SOURCES,
+  VANILLA_PLAYERS,
+  MIN_PLAYERS,
+  MAX_PLAYERS,
   PRESETS,
   MODIFIERS,
   MODIFIER_OPTIONS,
