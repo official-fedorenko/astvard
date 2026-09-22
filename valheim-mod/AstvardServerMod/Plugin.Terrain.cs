@@ -1295,9 +1295,11 @@ namespace AstvardServerMod
         /// the last stamp to graze a vertex wins with its weakest edge value. That is
         /// what turned a road into a row of blotches.
         /// </summary>
-        private static void PaintStretch(PaintTarget t, List<Vector3> path, int first, int last,
-                                         float radius, Color paint)
+        /// <returns>Сколько вершин покрашено: ноль говорит, что краска не легла никуда.</returns>
+        private static int PaintStretch(PaintTarget t, List<Vector3> path, int first, int last,
+                                        float radius, Color paint)
         {
+            var painted = 0;
             float minX = float.MaxValue, maxX = float.MinValue;
             float minZ = float.MaxValue, maxZ = float.MinValue;
             for (var k = first; k <= last; k++)
@@ -1348,8 +1350,11 @@ namespace AstvardServerMod
 
                     t.Modified[index] = true;
                     t.Mask[index] = blended;
+                    painted++;
                 }
             }
+
+            return painted;
         }
 
         private static Color PaintColor()

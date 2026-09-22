@@ -324,6 +324,14 @@ namespace AstvardServerMod
             // отступа и сколько осталось стоять у стыка кусков. Три разные беды, и
             // лечатся они по-разному, поэтому и считаются порознь.
             public int Bends;
+
+            /// <summary>
+            /// Сколько вершин краски легло за всё задание. Ноль у круга - это «краска не
+            /// легла никуда», и отличить его от «легла, но не доехала до клиента» иначе
+            /// нечем: 23.09.2026 мощения у спавна не было три укладки подряд, а задание
+            /// все три раза отчитывалось как выполненное.
+            /// </summary>
+            public int Painted;
             public int TooWide;
             public int Unbent;
 
@@ -712,7 +720,8 @@ namespace AstvardServerMod
 
             Log.LogInfo($"[AstvardServerMod] Road job {job.Id} {(failure != null ? "failed: " + failure : laidTo < job.Path.Count - 1 ? "stopped" : "done")}: "
                         + $"{laid:F0}/{total:F0} m in {pieces} pieces, {Time.realtimeSinceStartup - began:F0} s, "
-                        + $"{job.Record.Before.Count} zones, cleared {cleared}, torches {placed} placed {skipped} skipped"
+                        + $"{job.Record.Before.Count} zones, cleared {cleared}, painted {job.Painted}"
+                        + $", torches {placed} placed {skipped} skipped"
                         + DetourNote(job, found) + ".");
         }
 
@@ -908,13 +917,21 @@ namespace AstvardServerMod
                 if (complete) cleared += ClearAlongPath(piece, job.Radius, true, !job.Clear);
                 if (job.Smooth) SmoothAlongPath(piece, comps, job.Radius);
 
+                var blind = 0;
                 foreach (var comp in comps)
                 {
                     // Цель здесь живёт до конца этой строки, так что буферы берутся
                     // взаймы: у клиента цели держатся разом и одалживать нельзя.
                     var target = MakeTarget(comp, true);
-                    if (target != null) PaintStretch(target, piece, 0, piece.Count - 1, job.Radius, job.Paint);
+                    if (target == null) blind++;
+                    else job.Painted += PaintStretch(target, piece, 0, piece.Count - 1, job.Radius, job.Paint);
                 }
+
+                // Компилятор, у которого не спросить ни карты высот, ни маски краски, -
+                // это зона, куда краска не легла, и молчать об этом нельзя.
+                if (blind > 0)
+                    Log.LogWarning($"[AstvardServerMod] Road job {job.Id}: {blind} of {comps.Count} "
+                                   + "compilers would not say what is under them; no paint there.");
 
                 // Save gained an optional paintOnly in 1.0; reflection does not fill it in.
                 foreach (var comp in comps) save.Invoke(comp, new object[] { false });
@@ -947,13 +964,21 @@ namespace AstvardServerMod
         {
             failure = null;
 
+            // Все зоны квадрата, а не его углы. Углов хватало, пока квадрат был уже
+            // зоны: перепрыгнуть 64 м двумя углами нельзя. Но у круга в 25 м сторона
+            // выходит 72 м, и если метка стоит посреди своей зоны, все четыре угла
+            // попадают в диагональных соседей, **а зона самой метки не попадает никуда**.
+            // Краска тогда уходит соседям, у которых до середины 32 м при радиусе 25, то
+            // есть не красится ни одна вершина, - и задание честно пишет «готово».
+            // Ровно так три укладки подряд (23.09.2026) не мостился круг у спавна.
             var zones = new HashSet<Vector2s>();
             foreach (var point in piece)
             {
-                zones.Add(ZoneSystem.GetZone(point + new Vector3(-reach, 0f, -reach)));
-                zones.Add(ZoneSystem.GetZone(point + new Vector3(reach, 0f, -reach)));
-                zones.Add(ZoneSystem.GetZone(point + new Vector3(-reach, 0f, reach)));
-                zones.Add(ZoneSystem.GetZone(point + new Vector3(reach, 0f, reach)));
+                var lo = ZoneSystem.GetZone(point + new Vector3(-reach, 0f, -reach));
+                var hi = ZoneSystem.GetZone(point + new Vector3(reach, 0f, reach));
+                for (var zx = lo.x; zx <= hi.x; zx++)
+                    for (var zy = lo.y; zy <= hi.y; zy++)
+                        zones.Add(new Vector2s(zx, zy));
             }
 
             var comps = new List<TerrainComp>();
