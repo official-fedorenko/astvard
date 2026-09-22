@@ -461,6 +461,24 @@ namespace AstvardServerMod
 
         private static readonly string[] WoodAndStone = { "Stone", "Wood" };
 
+        private static readonly string[] WoodOnly = { "Wood" };
+
+        /// <summary>
+        /// Ягодный куст: его дорога обходит, а не рубит.
+        ///
+        /// Отличается он от грибов, веток и кремня на земле тем, что куст - это ещё и
+        /// `Destructible` (или `TreeBase`), а мелочь на земле - только `Pickable`.
+        /// Правило это спрашивают двое - проход сноса и мерка подлеска, - и жить оно
+        /// обязано в одном месте: 22.09.2026 у них разошлись ответы, и малина уехала
+        /// под мощение проходом сноса, пока обход честно её обходил.
+        /// </summary>
+        private static bool IsBerryBush(GameObject go)
+        {
+            if (go == null || go.GetComponent<Pickable>() == null) return false;
+
+            return go.GetComponent<Destructible>() != null || go.GetComponent<TreeBase>() != null;
+        }
+
         // How far outside the run's own rectangle a thing may stand and still be worth
         // the exact test. Only the position is known before the colliders are read, and
         // a big boulder's centre can sit several metres from the edge it pushes into
@@ -480,12 +498,23 @@ namespace AstvardServerMod
         /// to ask, and with none every ward answers no.
         /// </summary>
         /// <summary>
-        /// Докуда растение считается подлеском. Молодой бук метров пять, куст и того
-        /// ниже; взрослый бук за десять, ель за пятнадцать, дуб выше всех. Три метра,
-        /// стоявшие тут сначала, не брали ни одного молодого бука: по логу укладки
-        /// 22.09.2026 под эту мерку не прошло ничего вообще.
+        /// Докуда растение считается подлеском.
+        ///
+        /// **Число взято из самой игры, а не с потолка.** Мерка (см. `Tall`) берёт
+        /// рисунок целиком, поэтому её метры больше настоящих - и это не беда, покуда
+        /// порода от породы отличается уверенно. Вот что намерила укладка 23.09.2026,
+        /// сотнями штук на каждую породу:
+        ///
+        ///   Beech_small1, Beech_small2, FirTree_small - 6..8
+        ///   Birch2 12..23, Birch1 13..25, Oak1 21..25, FirTree 21..27,
+        ///   Beech1 24..48, Pinetree_01 28..59
+        ///
+        /// То есть между подлеском и самым мелким взрослым деревом лежит пустой
+        /// промежуток 8..12, и черта проводится ровно посередине. Шесть метров,
+        /// стоявшие тут сначала, резали подлесок пополам: `Beech_small2` в семь метров
+        /// оставался стоять на дороге.
         /// </summary>
-        private const float UndergrowthTall = 6f;
+        private const float UndergrowthTall = 10f;
 
         /// <summary>
         /// Подлесок: мелочь, которую дорога убирает **всегда**, даже со снесением
@@ -507,16 +536,24 @@ namespace AstvardServerMod
             tall = 0f;
             if (go == null) return false;
 
-            // Мелочь, лежащая на земле: гриб, ветка, кремень, цветок. Ягодный куст сюда
-            // не попадает вовсе - он приходит со своим отказом, а отказ проверяется до
-            // этого вопроса.
-            if (go.GetComponent<Pickable>() != null) return true;
+            // Мелочь, лежащая на земле: гриб, ветка, кремень, цветок. **Ягодник сюда не
+            // попадает**, и спрашивать об этом надо здесь, а не полагаться на чужой
+            // отказ: через проход сноса куст приходит дважды - сперва `Destructible`-ом,
+            // без всякого отказа, - и первая же такая встреча увезла малину под мощение.
+            if (go.GetComponent<Pickable>() != null) return !IsBerryBush(go);
 
             var plant = go.GetComponent<TreeBase>() != null;
             if (!plant)
             {
                 var broken = go.GetComponent<Destructible>();
-                plant = broken != null && broken.m_destructibleType == DestructibleType.Tree;
+
+                // Куст игра деревом не считает: у `Bush01` и `shrub_2` тип не `Tree`, и
+                // оттого 22.09.2026 не убрался ни один. Судим тем же, чем судит снос, -
+                // тем, во что вещь разбирается: **одно дерево и ни камня** - это куст,
+                // а камень - это камень, и камни трогать нельзя.
+                plant = broken != null
+                        && (broken.m_destructibleType == DestructibleType.Tree
+                            || BreaksDownTo(go, WoodOnly, 0));
             }
 
             if (!plant) return false;
@@ -655,9 +692,7 @@ namespace AstvardServerMod
             {
                 if (pick == null) continue;
 
-                var bush = pick.GetComponent<Destructible>() != null
-                           || pick.GetComponent<TreeBase>() != null;
-                run.Consider(pick, bush ? "berry bush, gone round" : null);
+                run.Consider(pick, IsBerryBush(pick.gameObject) ? "berry bush, gone round" : null);
             }
 
             var removed = new Dictionary<string, int>();
