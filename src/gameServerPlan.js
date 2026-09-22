@@ -45,6 +45,16 @@ const RESERVED_SLOTS = ['server', 'saves', 'logs'];
 // which we do not run anyway.
 const MIN_PASSWORD = 5;
 
+// Откуда возьмётся мир. Флага для сида у игры нет и быть не может, зато сид - это
+// строка в паспорте мира (_main.0.fwl2), и паспорт мы умеем написать сами
+// (src/valheimWorldFile.js). Поэтому «указать сид» здесь настоящее, а не обещание:
+// сервер вырастит карту из этой строки при первом же запуске.
+const WORLD_SOURCES = ['have', 'seed', 'random'];
+
+// В клиенте сид набирают руками, и игра берёт любую строку - в хеш идёт что дали.
+// Держим её короткой и без управляющих символов: она поедет в имя, в отчёт и в лог.
+const SEED_RE = /^[\x20-\x7E]{1,32}$/;
+
 const DEFAULTS = {
   port: 2458,
   saveInterval: 900,
@@ -77,7 +87,14 @@ function planServer(input = {}) {
   const crossplay = input.crossplay === true;
   const bepinex = input.bepinex === true;
   const instanceId = String(input.instanceId || '').trim();
-  const newWorld = input.newWorld === true;
+  // newWorld остался от первой версии формы, когда выбора не было вовсе: тогда
+  // единственным ответом на «мира нет» было отдать его сервером со случайным и
+  // никому не известным сидом.
+  const worldSource = WORLD_SOURCES.includes(input.worldSource)
+    ? input.worldSource
+    : (input.newWorld === true ? 'random' : 'have');
+  const seedInput = String(input.seed || '').trim();
+  const newWorld = worldSource !== 'have';
   const preset = String(input.preset || '').trim();
   const modifiers = Array.isArray(input.modifiers) ? input.modifiers : [];
   const setKeys = Array.isArray(input.setKeys) ? input.setKeys : [];
@@ -164,8 +181,11 @@ function planServer(input = {}) {
   if (bepinex) {
     warnings.push('BEPINEX=yes: DLL мода у сервера и у игроков должна совпадать байт в байт, а у этого сервера будет своя папка BepInEx и свой LogOutput.log.');
   }
+  if (worldSource === 'seed' && !SEED_RE.test(seedInput)) {
+    errors.push('Сид: от 1 до 32 обычных символов. Игра берёт любую строку, но эта поедет ещё и в отчёт, и в лог.');
+  }
   if (newWorld) {
-    warnings.push('Мир создаст сам сервер, и сид у него будет СЛУЧАЙНЫЙ: флага для сида у игры нет вовсе. Свой сид — только миром, созданным в клиенте, и его папкой в worlds_local.');
+    warnings.push('Флага для сида у игры нет, и его не будет: сид живёт строкой в паспорте мира. Паспорт с выбранным сидом сайт напишет сам, и карту из него вырастит сервер при первом запуске.');
   }
 
   const flags = [
@@ -192,7 +212,7 @@ function planServer(input = {}) {
   const opts = {
     slot, worldName, serverName, port, isPublic, password, saveInterval,
     backups, backupShort, backupLong, bepinex, crossplay, instanceId,
-    preset, modifiers, setKeys, newWorld
+    preset, modifiers, setKeys, newWorld, worldSource, seed: seedInput
   };
 
   return {
@@ -204,6 +224,7 @@ function planServer(input = {}) {
     ports: [port, port + PORTS_PER_SERVER - 1],
     flags,
     newWorld,
+    worldSource,
     files: errors.length ? null : {
       'server.env': renderEnv(opts),
       'compose.yml': renderCompose(opts)
@@ -240,9 +261,9 @@ function renderEnv(o) {
   if (o.setKeys.length) lines.push(`WORLD_KEYS=${o.setKeys.join(',')}`);
   if (o.newWorld) {
     lines.push('');
-    lines.push('# Мира ещё нет, и сервер создаст его сам — со СЛУЧАЙНЫМ сидом: флага для');
-    lines.push('# сида у игры нет вовсе. Убрать сразу после первого запуска: этот ключ');
-    lines.push('# выключает единственную защиту от опечатки в имени мира.');
+    lines.push(`# Мир начинается с паспорта (сид ${o.seed || 'случайный'}), и законченного сохранения`);
+    lines.push('# в нём ещё нет — а его-то server.sh и ищет. Убрать сразу после первого');
+    lines.push('# запуска: этот ключ выключает единственную защиту от опечатки в имени мира.');
     lines.push('ALLOW_NEW_WORLD=yes');
   }
   return lines.join('\n') + '\n';
@@ -303,11 +324,19 @@ function renderCommands(o) {
       code: `docker compose -f ${dir}/compose.yml run --rm valheim update`
     }
   ];
-  if (!o.newWorld) {
+  if (o.worldSource === 'have') {
     list.push({
       title: 'Положить мир',
       why: `Папка должна называться ровно ${o.worldName}: имя папки и есть личность мира. Внутри ничего не переименовывать, кэш биомов не тащить.`,
       code: `scp -r "<папка мира>" astvard-vps:${dir}/saves/worlds_local/\nchown -R valheim:valheim ${dir}/saves`
+    });
+  } else {
+    list.push({
+      title: 'Положить паспорт мира',
+      why: 'Файл «Скачать паспорт мира» из формы выше — в нём и лежит сид. Карту сервер вырастит из него сам при первом запуске.',
+      code: `mkdir -p ${dir}/saves/worlds_local/${o.worldName}\n`
+        + `scp _main.0.fwl2 astvard-vps:${dir}/saves/worlds_local/${o.worldName}/\n`
+        + `chown -R valheim:valheim ${dir}/saves`
     });
   }
   list.push(
@@ -334,6 +363,7 @@ function renderCommands(o) {
 
 module.exports = {
   planServer,
+  WORLD_SOURCES,
   PRESETS,
   MODIFIERS,
   MODIFIER_OPTIONS,

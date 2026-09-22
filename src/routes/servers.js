@@ -4,6 +4,7 @@ const { sendJson, getJsonBody, logAction } = require('../utils');
 const { queryA2SInfo } = require('../protocols/a2s');
 const { readValheimLogStatus } = require('../protocols/valheimLog');
 const { planServer, PRESETS, MODIFIERS, MODIFIER_OPTIONS, SLOT_RE, DEFAULTS } = require('../gameServerPlan');
+const { buildWorldPassport, readWorldPassport, generateSeed } = require('../valheimWorldFile');
 
 // Only the deployment knows where the game server writes; the database keeps the
 // decision to read a log at all, never the path to it — a path stored in a row
@@ -208,6 +209,61 @@ async function planOptions(req, res) {
   });
 }
 
+// Паспорт мира — единственный способ задать сид: флага у игры нет, а сид лежит
+// строкой в этом файле, и карта растёт из него. Файл маленький и уходит в браузер
+// base64-ом: класть его куда-то у себя сайту незачем — он всё равно не тот, кто
+// положит его на игровую машину.
+async function worldPassport(req, res, actor) {
+  let body;
+  try {
+    body = await getJsonBody(req);
+  } catch {
+    return sendJson(res, 400, { success: false, message: 'Некорректный запрос' });
+  }
+  // Имя мира проверяет план, и проверяет строже: это имя папки и файла.
+  const check = planServer(body);
+  if (!check.ok) {
+    return sendJson(res, 400, { success: false, message: check.errors[0] });
+  }
+  const seed = body.worldSource === 'random' ? generateSeed() : String(body.seed || '').trim();
+  try {
+    const file = buildWorldPassport({ name: String(body.worldName || '').trim(), seed });
+    logAction(actor.username, `Собрал паспорт мира ${body.worldName} (сид ${seed})`);
+    sendJson(res, 200, {
+      success: true,
+      seed,
+      // Номер сохранения у мира, которого ещё не сохраняли, ровно нулевой: так его
+      // пишет и сама игра, когда заводит мир.
+      fileName: '_main.0.fwl2',
+      base64: file.toString('base64')
+    });
+  } catch (err) {
+    sendJson(res, 400, { success: false, message: err.message });
+  }
+}
+
+// Свой файл мира с компьютера: сайт читает из него сид и имя. Дальше человек решает
+// сам — взять этот сид новому миру или везти всю папку целиком.
+async function worldRead(req, res) {
+  let body;
+  try {
+    body = await getJsonBody(req);
+  } catch {
+    return sendJson(res, 400, { success: false, message: 'Некорректный запрос' });
+  }
+  // Паспорт мира — это сотня байт. Всё, что больше, это уже не он, а, скорее всего,
+  // сама карта, и разбирать её здесь нечем и незачем.
+  const raw = Buffer.from(String(body.base64 || ''), 'base64');
+  if (!raw.length || raw.length > 64 * 1024) {
+    return sendJson(res, 400, { success: false, message: 'Нужен файл .fwl2 или .fwl — он маленький, рядом с ним лежит сама карта' });
+  }
+  try {
+    sendJson(res, 200, { success: true, world: readWorldPassport(raw) });
+  } catch (err) {
+    sendJson(res, 400, { success: false, message: `Не читается как файл мира: ${err.message}` });
+  }
+}
+
 async function remove(req, res, actor, id) {
   const result = await run('DELETE FROM servers WHERE id = ?', [id]);
   if (!result.changes) return sendJson(res, 404, { success: false, message: 'Сервер не найден' });
@@ -245,6 +301,18 @@ async function handleServers(req, res, sessionUser, parsedUrl, method) {
       return sendJson(res, 403, { success: false, message: 'Создавать серверы может только суперадмин' });
     }
     return plan(req, res, sessionUser);
+  }
+  if (pathname === '/api/admin/servers/plan/world' && method === 'POST') {
+    if (role !== 'Superadmin') {
+      return sendJson(res, 403, { success: false, message: 'Создавать серверы может только суперадмин' });
+    }
+    return worldPassport(req, res, sessionUser);
+  }
+  if (pathname === '/api/admin/servers/plan/world/read' && method === 'POST') {
+    if (role !== 'Superadmin') {
+      return sendJson(res, 403, { success: false, message: 'Создавать серверы может только суперадмин' });
+    }
+    return worldRead(req, res);
   }
 
   const idMatch = pathname.match(/^\/api\/admin\/servers\/(\d+)$/);

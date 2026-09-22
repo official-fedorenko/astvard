@@ -299,6 +299,16 @@ function bindAstvardHandlers() {
     if (e.target.id === 'whitelistSearch') renderWhitelist();
   });
 
+  document.addEventListener('change', (e) => {
+    if (e.target.name === 'planWorldSource') {
+      const source = e.target.value;
+      document.getElementById('planSeedRow').style.display = source === 'have' ? 'none' : '';
+      document.getElementById('planSeed').disabled = source === 'random';
+      document.getElementById('planWorldInfo').innerHTML = '';
+    }
+    if (e.target.id === 'planWorldFile' && e.target.files[0]) readWorldFile(e.target.files[0]);
+  });
+
   document.addEventListener('click', async (e) => {
     const approve = e.target.closest('.wl-approve');
     if (approve) {
@@ -450,6 +460,7 @@ function bindAstvardHandlers() {
     if (e.target.closest('#serverCreateBtn')) return openServerCreate();
     if (e.target.closest('#serverCreateClose, #serverCreateCancel')) return closeServerCreate();
     if (e.target.closest('#serverPlanBtn')) return submitServerPlan();
+    if (e.target.closest('#planPassportBtn')) return downloadWorldPassport();
 
     if (e.target.closest('#serversRefreshBtn')) {
       await fetch('/api/admin/servers/refresh', { method: 'POST' });
@@ -1570,7 +1581,8 @@ function planFormValue() {
     serverName: val('planServerName'),
     worldName: val('planWorldName'),
     port: val('planPort'),
-    newWorld: on('planNewWorld'),
+    worldSource: (document.querySelector('input[name="planWorldSource"]:checked') || {}).value || 'have',
+    seed: val('planSeed'),
     bepinex: on('planBepinex'),
     public: on('planPublic'),
     crossplay: on('planCrossplay'),
@@ -1616,6 +1628,53 @@ function renderPlan(plan) {
       </div>`).join('')}
     <p class="hint-text">Когда сервер поднимется, добавь его в список выше: адрес и порт ${plan.ports[0]},
        статус — «лог Valheim», ключ <code>${escapeHtml(plan.slot)}</code> — по нему сайт и найдёт его лог.</p>`;
+}
+
+// Файл отдаётся браузером, а не сохраняется на сайте: положить его на игровую
+// машину всё равно человеку, и лишняя копия мира на сервере сайта никому не нужна.
+function downloadBytes(name, base64) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadWorldPassport() {
+  const res = await fetch('/api/admin/servers/plan/world', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(planFormValue())
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return showToast(data.message || 'Не получилось', 'error');
+  // Случайный сид придумывает сервер, и показать его надо обязательно: мир, сид
+  // которого никто не записал, потом не повторить ничем.
+  document.getElementById('planSeed').value = data.seed;
+  showToast(`Паспорт мира готов, сид ${data.seed}`, 'success');
+  downloadBytes(data.fileName, data.base64);
+}
+
+async function readWorldFile(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let bin = '';
+  buf.forEach((b) => { bin += String.fromCharCode(b); });
+  const res = await fetch('/api/admin/servers/plan/world/read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base64: btoa(bin) })
+  });
+  const data = await res.json().catch(() => ({}));
+  const box = document.getElementById('planWorldInfo');
+  if (!res.ok) {
+    box.innerHTML = `<p class="plan-error">${escapeHtml(data.message || 'Не получилось')}</p>`;
+    return;
+  }
+  const w = data.world;
+  document.getElementById('planSeed').value = w.seed;
+  box.innerHTML = `<p class="hint-text">Файл мира «${escapeHtml(w.name)}», сид <code>${escapeHtml(w.seed)}</code>.</p>`
+    + (w.sameGenerator ? '' : '<p class="plan-warn">Мир сделан другой версией генератора — тот же сид даст другую карту. Вези папку целиком, а не сид.</p>');
 }
 
 async function submitServerPlan() {

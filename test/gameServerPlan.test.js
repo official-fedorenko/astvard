@@ -79,16 +79,37 @@ test('правка мира не проходит молча: о ней пред
   assert.ok(plan.warnings.some((w) => w.includes('мод')));
 });
 
-test('новый мир означает случайный сид, и об этом сказано', () => {
-  const plan = planServer({ ...GOOD, newWorld: true });
-  assert.ok(plan.warnings.some((w) => w.includes('СЛУЧАЙНЫЙ')));
+test('мир по сиду: паспорт вместо привезённой папки', () => {
+  const plan = planServer({ ...GOOD, worldSource: 'seed', seed: 'iMbvYy6FIt' });
+  assert.ok(plan.ok, plan.errors.join('; '));
+  assert.strictEqual(plan.worldSource, 'seed');
+  // Флага сида нет и не появится — об этом говорится прямо, чтобы завтра никто не
+  // искал его снова.
+  assert.ok(plan.warnings.some((w) => w.includes('Флага для сида')));
+  // Законченного сохранения у такого мира нет, а server.sh ищет именно его.
   assert.ok(plan.files['server.env'].includes('ALLOW_NEW_WORLD=yes'));
-  // И тем же планом ключ снимается: оставленный, он превращает опечатку в имени
-  // мира обратно в молча созданный пустой мир.
+  assert.ok(plan.files['server.env'].includes('iMbvYy6FIt'));
+  assert.ok(plan.commands.some((c) => c.title.includes('паспорт')));
+  assert.ok(!plan.commands.some((c) => c.title === 'Положить мир'));
+  // И ключ снимается тем же планом: оставленный, он превращает опечатку в имени
+  // мира в молча созданный пустой мир.
   assert.ok(plan.commands.some((c) => c.code.includes('ALLOW_NEW_WORLD')));
-  // Мир кладут только тогда, когда он есть.
-  assert.ok(!plan.commands.some((c) => c.title.includes('Положить мир')));
-  assert.ok(planServer(GOOD).commands.some((c) => c.title.includes('Положить мир')));
+});
+
+test('сид спрашивается только тогда, когда он нужен', () => {
+  assert.ok(!planServer({ ...GOOD, worldSource: 'seed', seed: '' }).ok);
+  // Случайный сид придумывает не форма, а сервер при выдаче паспорта, поэтому
+  // пустое поле здесь — не ошибка.
+  assert.ok(planServer({ ...GOOD, worldSource: 'random', seed: '' }).ok);
+  // У привезённого мира сид уже внутри него.
+  assert.ok(planServer({ ...GOOD, worldSource: 'have' }).ok);
+});
+
+test('привезённый мир — это папка, и о ней сказано', () => {
+  const plan = planServer(GOOD);
+  assert.strictEqual(plan.worldSource, 'have');
+  assert.ok(plan.commands.some((c) => c.title === 'Положить мир'));
+  assert.ok(!plan.files['server.env'].includes('ALLOW_NEW_WORLD'));
 });
 
 test('файлы говорят про свою папку, и порт в compose тот же, что в флагах', () => {

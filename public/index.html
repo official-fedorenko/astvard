@@ -744,8 +744,8 @@
         <button class="modal-close" id="serverCreateClose">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="hint-text">Игра читает ровно эти флаги и никаких других. Сида среди них нет: мир,
-           созданный сервером, получает случайный — свой сид задаётся только миром из клиента.</p>
+        <p class="hint-text">Игра читает ровно эти флаги и никаких других. Флага для сида среди них нет —
+           сид живёт строкой в паспорте мира, и такой паспорт сайт напишет сам: выбери ниже, откуда взять мир.</p>
 
         <div class="form-row">
           <div class="form-group">
@@ -772,8 +772,27 @@
           </div>
         </div>
 
+        <h4 class="form-section-title">Мир</h4>
         <div class="form-group">
-          <label class="check-chip"><input type="checkbox" id="planNewWorld"> Мира ещё нет — пусть сервер создаст его сам</label>
+          <label class="check-chip"><input type="radio" name="planWorldSource" value="have" checked> Мир уже есть — привезу папку</label>
+          <label class="check-chip"><input type="radio" name="planWorldSource" value="seed"> Новый мир по моему сиду</label>
+          <label class="check-chip"><input type="radio" name="planWorldSource" value="random"> Новый мир со случайным сидом</label>
+        </div>
+        <div class="form-row" id="planSeedRow" style="display:none;">
+          <div class="form-group">
+            <label for="planSeed">Сид</label>
+            <input type="text" id="planSeed" class="form-control" placeholder="iMbvYy6FIt" maxlength="32">
+            <div class="hint-text">Флага для сида у игры нет: сид живёт строкой в паспорте мира, и паспорт сайт напишет сам.</div>
+          </div>
+          <div class="form-group">
+            <label for="planWorldFile">Свой файл мира</label>
+            <input type="file" id="planWorldFile" class="form-control" accept=".fwl2,.fwl">
+            <div class="hint-text">Возьму из него сид и имя. Это <code>_main.N.fwl2</code> из папки мира.</div>
+          </div>
+        </div>
+        <div id="planWorldInfo"></div>
+
+        <div class="form-group">
           <label class="check-chip"><input type="checkbox" id="planBepinex"> Мод (BepInEx)</label>
           <label class="check-chip"><input type="checkbox" id="planPublic"> Публичный сервер</label>
           <label class="check-chip"><input type="checkbox" id="planCrossplay"> Crossplay</label>
@@ -828,6 +847,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" id="serverCreateCancel">Закрыть</button>
+        <button type="button" class="btn btn-secondary" id="planPassportBtn">Скачать паспорт мира</button>
         <button type="button" class="btn" id="serverPlanBtn">Собрать план</button>
       </div>
     </div>
