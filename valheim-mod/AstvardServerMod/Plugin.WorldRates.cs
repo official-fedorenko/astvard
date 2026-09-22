@@ -32,12 +32,53 @@ namespace AstvardServerMod
 
         internal static GameObject ResourceRateApply;
 
+        /// <summary>
+        /// Сид, с которым сервер создаст мир, если мира ещё нет.
+        ///
+        /// У выделенного сервера **флага сида нет и не было** — сверено не по вики, а по
+        /// самой сборке: из командной строки он разбирает `-name -port -world -password
+        /// -savedir -public -logFile -saveinterval -backups -backupshort -backuplong
+        /// -crossplay -instanceid -preset -modifier -setkey -resetmodifiers`, и ничего
+        /// про сид. Мир, созданный сервером, получает десять случайных знаков из
+        /// `World.GenerateSeed()`, и выбрать карту можно было только одним способом:
+        /// создать мир клиентом и положить папку в `worlds_local`.
+        ///
+        /// Подложить один паспорт мира (`_main.N.fwl2`) не выходит, это проверено дважды
+        /// 22.09.2026: `World.GetCreateWorld` пробует загрузить сохранение, при любой
+        /// ошибке данных пишет в лог `Failed to load world … data error MissingDB` и
+        /// **создаёт новый мир со случайным сидом**, затирая подложенное.
+        ///
+        /// Поэтому сид берётся отсюда. Пустая строка — как было, случайный.
+        /// </summary>
+        private static ConfigEntry<string> _worldSeed;
+
         internal static void BindWorldRates(ConfigFile config)
         {
             _resourcePercent = config.Bind("Мир", "ResourceRatePercent", VanillaResourcePercent,
                 "Сколько ресурсов падает, в процентах от обычного: 100 — как в игре, 500 — впятеро. "
                 + "От 25 до 1000. Значение не из меню мира делает мир «с читами» для достижений. "
                 + "Админ меняет это в игре, в «Настройках».");
+
+            _worldSeed = config.Bind("Мир", "Seed", "",
+                "С каким сидом создать мир, если его ещё нет. Пустая строка — случайный, как у "
+                + "игры. Существующий мир не трогается никогда: сид берётся только в миг "
+                + "создания. Обнулить мир на той же карте — стереть папку мира и перезапустить.");
+        }
+
+        /// <summary>
+        /// Какой сид подставить вместо случайного, или пусто.
+        ///
+        /// Только на выделенном сервере: на клиенте `GenerateSeed` зовёт ещё и кнопка
+        /// «случайный сид» в меню создания мира, и подменять её значило бы отнять у
+        /// человека возможность сделать себе обычный мир.
+        /// </summary>
+        internal static string WantedWorldSeed
+        {
+            get
+            {
+                if (_worldSeed == null || !GUIManager.IsHeadless()) return "";
+                return (_worldSeed.Value ?? "").Trim();
+            }
         }
 
         private static int ResourcePercent

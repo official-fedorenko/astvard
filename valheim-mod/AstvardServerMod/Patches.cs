@@ -439,6 +439,32 @@ namespace AstvardServerMod
         }
     }
 
+    /// <summary>
+    /// Даёт серверу создать мир с выбранным сидом.
+    ///
+    /// `World.GenerateSeed` - чистая статика, десять случайных знаков, и во всей сборке
+    /// её зовёт ровно одно место: `World.GetCreateWorld`, когда сохранения нет или оно не
+    /// прочиталось (сверено по декомпиляту 1.0.15). Значит подмена здесь не может
+    /// затронуть **существующий** мир: у него сид уже записан в паспорте, и заново его
+    /// никто не выдаёт.
+    ///
+    /// Пустая настройка пропускает игру вперёд, и тогда всё как было. На клиенте
+    /// подмена не работает вовсе - см. `Plugin.WantedWorldSeed`.
+    /// </summary>
+    [HarmonyPatch(typeof(World), nameof(World.GenerateSeed))]
+    public static class WorldSeedPatch
+    {
+        private static bool Prefix(ref string __result)
+        {
+            var want = Plugin.WantedWorldSeed;
+            if (string.IsNullOrEmpty(want)) return true;
+
+            __result = want;
+            Plugin.Log.LogInfo($"[AstvardServerMod] World seed: creating with «{want}» from config.");
+            return false;
+        }
+    }
+
     [HarmonyPatch(typeof(InventoryGui), "Hide")]
     public static class InventoryHidePatch
     {
