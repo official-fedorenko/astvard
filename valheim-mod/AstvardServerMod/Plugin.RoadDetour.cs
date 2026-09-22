@@ -253,6 +253,10 @@ namespace AstvardServerMod
                                        DetourMinRamp, DetourRampPerStep, DetourMaxStep,
                                        opens ? slack : 0f, closes ? slack : 0f);
 
+            // Длина этого куска: по ней видно, попадает ли изгиб в него вообще.
+            var marks = Geometry.Distances(flat);
+            var along = marks[marks.Length - 1];
+
             foreach (var bend in plan.Bends)
             {
                 if (bend.Refused == Geometry.BendRefusal.TooWide)
@@ -264,6 +268,13 @@ namespace AstvardServerMod
                 {
                     // Only the far end can be helped by a shorter piece, and only while
                     // what is left is still worth laying.
+                    // Разгон начинается уже за концом этого куска - значит вещь лежит
+                    // дальше, и этот кусок её не касается вовсе. Резать нечего, и
+                    // считать её оставшейся стоять нельзя: её встретит следующий кусок.
+                    // Восемь из 44 в седьмой укладке 23.09.2026 были этой ложной
+                    // тревогой.
+                    if (bend.From >= along) continue;
+
                     var cut = bend.From - DetourCutBack;
                     if (cut >= DetourLeastPiece && (cutAt < 0f || cut < cutAt)) cutAt = cut;
                     else
