@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using BepInEx;
 using UnityEngine;
 
 namespace AstvardServerMod
@@ -30,8 +31,10 @@ namespace AstvardServerMod
                 "Варить ли медовухи самому. Меняется в игре: «Функции» → «Работа с сундуками» → «Медовухи».");
 
             _brewWishes = config.Bind("Медовухи", "Keep", "",
-                "Что варить и сколько бутылок держать на складе: «основа=число» через точку с "
-                + "запятой. Пустая строка — не варить ничего. Правится из игры, руками сюда лезть незачем.");
+                "Заказы до 22.09.2026 лежали здесь, одни на всех персонажей этой игры. Теперь "
+                + "они у каждого свои, в astvard-brewing.txt рядом. Эта строка достанется тому "
+                + "персонажу, который умеет сварить всё, что в ней заказано, и очистится. "
+                + "Пустая — так и надо, всё уже переехало.");
         }
 
         internal static bool BrewEnabled
@@ -44,10 +47,155 @@ namespace AstvardServerMod
             if (_brewEnabled != null) _brewEnabled.Value = on;
         }
 
-        /// <summary>Заказы: имя префаба основы → сколько бутылок готового держать.</summary>
+        /// <summary>
+        /// Заказы у каждого персонажа свои, и лежат они в своём файле.
+        ///
+        /// Ключ - номер персонажа (`Player.GetPlayerID()`), тот самый, которым игра метит
+        /// создателя постройки. Не ник: два «Бьёрна» завести никто не мешает. И не номер
+        /// Steam: этот файл и так лежит у клиента, номер аккаунта стоял бы одинаковым в
+        /// каждой строке; больше того, персонажи Valheim лежат в
+        /// `AppData\LocalLow\IronGate\Valheim\characters` и общие для всех аккаунтов Steam
+        /// одного пользователя Windows - различить их номером аккаунта нельзя в принципе.
+        ///
+        /// Имя персонажа пишется рядом только затем, чтобы файл читался глазами.
+        /// </summary>
+        private const string BrewFile = "astvard-brewing.txt";
+
+        private static string BrewPath
+        {
+            get { return System.IO.Path.Combine(Paths.ConfigPath, BrewFile); }
+        }
+
+        private static Dictionary<long, Brewing.Book> _brewBooks;
+
+        /// <summary>Кому уже сказали, что общая строка не его. Чтобы не сказать этого дважды в секунду.</summary>
+        private static long _brewToldOn;
+
+        /// <summary>Чей сейчас заказ; 0 - персонажа ещё нет, его ZDO не готов.</summary>
+        private static long BrewWho()
+        {
+            var player = Player.m_localPlayer;
+            return player != null ? player.GetPlayerID() : 0L;
+        }
+
+        private static void LoadBrewBooks()
+        {
+            if (_brewBooks != null) return;
+
+            _brewBooks = new Dictionary<long, Brewing.Book>();
+            try
+            {
+                if (!System.IO.File.Exists(BrewPath)) return;
+
+                _brewBooks = Brewing.ReadBooks(System.IO.File.ReadAllLines(BrewPath));
+                Log.LogInfo($"[AstvardServerMod] Brewing: orders of {_brewBooks.Count} characters loaded.");
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogError($"[AstvardServerMod] Could not read {BrewFile}: {ex.Message}");
+            }
+        }
+
+        /// <summary>Через временный файл, чтобы убитая на полпути игра не оставила огрызок.</summary>
+        private static void SaveBrewBooks()
+        {
+            if (_brewBooks == null) return;
+
+            try
+            {
+                var lines = new List<string>
+                    { "# astvard brewing: character id, name, what to keep brewing" };
+                lines.AddRange(Brewing.PackBooks(_brewBooks.Values));
+
+                var temp = BrewPath + ".tmp";
+                System.IO.File.WriteAllLines(temp, lines);
+                if (System.IO.File.Exists(BrewPath)) System.IO.File.Replace(temp, BrewPath, null);
+                else System.IO.File.Move(temp, BrewPath);
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogError($"[AstvardServerMod] Could not write {BrewFile}: {ex.Message}");
+            }
+        }
+
+        private static Brewing.Book BookFor(long who)
+        {
+            LoadBrewBooks();
+
+            Brewing.Book book;
+            if (!_brewBooks.TryGetValue(who, out book) || book == null)
+            {
+                book = new Brewing.Book { Id = who };
+                _brewBooks[who] = book;
+            }
+
+            return book;
+        }
+
+        /// <summary>
+        /// Общая строка заказов, жившая в конфиге до 22.09.2026, достаётся одному
+        /// персонажу и один раз.
+        ///
+        /// Кому - решается не догадкой, а единственным, что про неё известно: забрать её
+        /// может тот, кто умеет сварить **всё**, что в ней заказано. Заказ на восемь
+        /// медовух мог сделать только персонаж с восемью рецептами, и новый, у которого
+        /// их четыре, её не заберёт - ровно тем, что новый наследовал чужие заказы, всё
+        /// это и началось. Забрал - строка стирается, и второй раз её уже никто не
+        /// получит.
+        ///
+        /// Никакого флага «уже пробовали» тут нет нарочно: персонажа меняют, не выходя из
+        /// игры, и флаг заперся бы на том, кто зашёл первым. Пустая строка выходит первой
+        /// же проверкой, то есть после переезда это стоит одного сравнения с нулём.
+        /// </summary>
+        private static void AdoptSharedOrder()
+        {
+            if (_brewWishes == null || string.IsNullOrEmpty(_brewWishes.Value)) return;
+
+            var who = BrewWho();
+            if (who == 0L || _brewBooks.ContainsKey(who)) return;
+
+            var shared = Brewing.ReadWishes(_brewWishes.Value);
+            if (shared.Count == 0) return;
+
+            var known = new HashSet<string>();
+            foreach (var brew in KnownBrews()) known.Add(brew.Base);
+
+            // Пустой список - это не «ничего не открыто», а «ObjectDB ещё не готов».
+            if (known.Count == 0) return;
+
+            if (!Brewing.MayAdopt(shared, known))
+            {
+                // Иначе «мои заказы пропали» не объясняется ничем: этот персонаж их не
+                // получил, а кто получит - неизвестно, пока он не зайдёт. Раз на
+                // персонажа, а не раз в секунду.
+                if (who != _brewToldOn)
+                {
+                    _brewToldOn = who;
+                    Log.LogInfo($"[AstvardServerMod] Brewing: the shared order of {shared.Count} drinks "
+                                + "is not this character's - it cannot brew all of it. It waits for one that can.");
+                }
+
+                return;
+            }
+
+            var player = Player.m_localPlayer;
+            var book = BookFor(who);
+            book.Wishes = shared;
+            book.Name = Brewing.CleanLabel(player != null ? player.GetPlayerName() : "");
+
+            _brewWishes.Value = "";
+            SaveBrewBooks();
+
+            Log.LogInfo($"[AstvardServerMod] Brewing: the shared order of {shared.Count} "
+                        + $"drinks is now {book.Name}'s alone.");
+        }
+
+        /// <summary>Заказы этого персонажа: имя префаба основы → сколько бутылок держать.</summary>
         internal static Dictionary<string, int> BrewWishes()
         {
-            return Brewing.ReadWishes(_brewWishes != null ? _brewWishes.Value : "");
+            LoadBrewBooks();
+            AdoptSharedOrder();
+            return Brewing.WishesFor(_brewBooks, BrewWho());
         }
 
         internal static int BrewWish(string baseName)
@@ -59,19 +207,14 @@ namespace AstvardServerMod
         /// <summary>
         /// Сколько из заказанного этот персонаж вообще умеет сварить.
         ///
-        /// The order lives in the mod's own config, which belongs to the game as
-        /// installed - not to the character and not to the account. Order eight meads on
-        /// a character who has unlocked eight recipes, then come back on a new one who
-        /// has four, and four of those orders are for drinks this one has never seen.
+        /// Теперь, когда заказы у каждого свои, это почти всегда всё: заказать можно
+        /// только из того, что открыто. Проверка остаётся против файла, правленного
+        /// руками, и против того дня, когда рецепт из игры пропадёт.
         ///
-        /// The list has always shown only what the character knows (KnownBrews asks
-        /// IsRecipeKnown), and the brewing has always brewed only that. It was the count
-        /// on the button that counted all eight, and that is the whole of it: nothing
-        /// was being brewed behind the page's back, the number was simply the wrong one.
-        ///
-        /// The orders the character cannot make are left exactly where they are. They
-        /// are not this one's to throw away - the character who placed them will want
-        /// them when it comes back.
+        /// Писалось же оно для другого: до 22.09.2026 заказ был один на все персонажи
+        /// этого клиента, и у нового персонажа с четырьмя рецептами на кнопке стояло
+        /// «заказов 8». Список и сама варка и тогда спрашивали `IsRecipeKnown`, то есть
+        /// лишнего не варилось никогда — врало ровно это число.
         /// </summary>
         internal static int BrewWishesHere()
         {
@@ -87,13 +230,24 @@ namespace AstvardServerMod
 
         internal static void SetBrewWish(string baseName, int keep)
         {
-            if (_brewWishes == null || string.IsNullOrEmpty(baseName)) return;
+            if (string.IsNullOrEmpty(baseName)) return;
 
+            // Спрашивается до правки: здесь же случается переезд общей строки, так что
+            // первая правка меняет уже свой заказ, а не заводит рядом пустой.
             var wishes = BrewWishes();
             if (keep <= 0) wishes.Remove(baseName);
             else wishes[baseName] = keep > Brewing.MaxKeep ? Brewing.MaxKeep : keep;
 
-            _brewWishes.Value = Brewing.PackWishes(wishes);
+            // Без персонажа писать некуда: страница без него не открывается, а строка под
+            // нулевым номером собрала бы в себя всех сразу.
+            var who = BrewWho();
+            if (who == 0L) return;
+
+            var player = Player.m_localPlayer;
+            var book = BookFor(who);
+            book.Wishes = wishes;
+            book.Name = Brewing.CleanLabel(player != null ? player.GetPlayerName() : "");
+            SaveBrewBooks();
         }
 
         // ---------------- что вообще можно сварить ----------------

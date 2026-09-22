@@ -151,5 +151,135 @@ namespace AstvardServerMod
 
             return best;
         }
+
+        // ---------------- заказы по персонажам ----------------
+
+        /// <summary>
+        /// Заказы одного персонажа: его номер, имя для чтения и что он заказал.
+        ///
+        /// Ключ — номер персонажа (`Player.GetPlayerID()`), а не его имя: имя не уникально,
+        /// двух «Бьёрнов» завести никто не мешает, и заказы у них слились бы в один. Имя
+        /// лежит рядом только затем, чтобы файл можно было прочесть глазами.
+        /// </summary>
+        public sealed class Book
+        {
+            public long Id;
+
+            public string Name = "";
+
+            public Dictionary<string, int> Wishes = new Dictionary<string, int>();
+        }
+
+        /// <summary>
+        /// Читает файл заказов: по строке на персонажа, поля через табуляцию.
+        ///
+        /// Табуляция, а не «=», потому что сами заказы внутри строки разделены как раз
+        /// «=» и «;», а имя персонажа — чужой ввод, в котором может оказаться что угодно.
+        /// Имя при записи чистится (<see cref="CleanLabel"/>), но читать надо и то, что
+        /// туда мог вписать человек руками.
+        ///
+        /// Строка с пустыми заказами — **не** то же самое, что отсутствие строки. «Я
+        /// ничего не варю» и «я ещё ничего не решал» — разные ответы, и от второго
+        /// зависит, достанутся ли персонажу общие заказы.
+        /// </summary>
+        public static Dictionary<long, Book> ReadBooks(IEnumerable<string> lines)
+        {
+            var books = new Dictionary<long, Book>();
+            if (lines == null) return books;
+
+            foreach (var raw in lines)
+            {
+                if (raw == null) continue;
+
+                var line = raw.Trim();
+                if (line.Length == 0 || line[0] == '#') continue;
+
+                var parts = line.Split('\t');
+                if (parts.Length < 2) continue;
+
+                long id;
+                if (!long.TryParse(parts[0].Trim(), out id) || id == 0L) continue;
+
+                var book = new Book();
+                book.Id = id;
+                book.Name = parts[1].Trim();
+                book.Wishes = ReadWishes(parts.Length > 2 ? parts[2] : "");
+
+                // Последнее слово за последней строкой, как и внутри строки заказов.
+                books[id] = book;
+            }
+
+            return books;
+        }
+
+        /// <summary>Обратно в строки файла, без заголовка — его пишет тот, кто сохраняет.</summary>
+        public static List<string> PackBooks(IEnumerable<Book> books)
+        {
+            var lines = new List<string>();
+            if (books == null) return lines;
+
+            foreach (var book in books)
+            {
+                if (book == null || book.Id == 0L) continue;
+                lines.Add(book.Id + "\t" + CleanLabel(book.Name) + "\t" + PackWishes(book.Wishes));
+            }
+
+            return lines;
+        }
+
+        /// <summary>
+        /// Имя, которым не разорвать строку файла: без табуляций, переводов строки и
+        /// прочего невидимого. Пустое имя — это «…»: строка без имени читается хуже, чем
+        /// строка с заглушкой.
+        /// </summary>
+        public static string CleanLabel(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "…";
+
+            var clean = new StringBuilder(name.Length);
+            foreach (var c in name)
+                if (!char.IsControl(c) && c != '\t') clean.Append(c);
+
+            var done = clean.ToString().Trim();
+            return done.Length == 0 ? "…" : done;
+        }
+
+        /// <summary>
+        /// Чьи заказы в силе: свои, если у персонажа есть своя строка, иначе ничьи.
+        ///
+        /// Именно ничьи, а не общие. Общая строка (та, что жила в конфиге до 22.09.2026)
+        /// достаётся ровно одному персонажу и один раз — см. <see cref="MayAdopt"/>, —
+        /// а всем остальным доставаться не должна: тем, что новый персонаж наследовал
+        /// чужие заказы, всё это и началось.
+        /// </summary>
+        public static Dictionary<string, int> WishesFor(Dictionary<long, Book> books, long id)
+        {
+            Book book;
+            if (books != null && id != 0L && books.TryGetValue(id, out book) && book != null)
+                return new Dictionary<string, int>(book.Wishes);
+
+            return new Dictionary<string, int>();
+        }
+
+        /// <summary>
+        /// Может ли этот персонаж забрать себе общую строку заказов.
+        ///
+        /// Может тот, кто умеет сварить **всё**, что в ней заказано. Это не догадка о том,
+        /// кто её писал, а единственное, что про неё вообще известно: заказ на восемь
+        /// медовух мог сделать только персонаж с восемью рецептами, и новый, у которого их
+        /// четыре, её не заберёт. Забрал — строка стирается, и второй раз её уже никто не
+        /// унаследует.
+        ///
+        /// Пустую строку забирать не у кого и незачем.
+        /// </summary>
+        public static bool MayAdopt(Dictionary<string, int> shared, ICollection<string> knownBases)
+        {
+            if (shared == null || shared.Count == 0 || knownBases == null) return false;
+
+            foreach (var name in shared.Keys)
+                if (!knownBases.Contains(name)) return false;
+
+            return true;
+        }
     }
 }
