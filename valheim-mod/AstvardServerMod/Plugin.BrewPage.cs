@@ -27,6 +27,8 @@ namespace AstvardServerMod
 
         internal static GameObject BrewOneHint;
 
+        internal static GameObject BrewTakeButton;
+
         internal static GameObject BrewKeepInput;
 
         internal static GameObject BrewApplyButton;
@@ -49,6 +51,18 @@ namespace AstvardServerMod
             BrewToggleButton = MakeButton(gui, "", () =>
             {
                 SetBrewEnabled(!BrewEnabled);
+                RefreshMenu();
+            });
+
+            // Кнопка есть только пока есть что забирать - то есть ровно один раз за всю
+            // жизнь этой установки, после переезда заказов на персонажей.
+            BrewTakeButton = MakeButton(gui, "", () =>
+            {
+                var took = TakeSharedOrder();
+                if (took > 0)
+                    Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                        $"Прежние заказы ({took}) теперь твои");
+
                 RefreshMenu();
             });
 
@@ -190,6 +204,10 @@ namespace AstvardServerMod
                                 + (string.IsNullOrEmpty(BrewWhy)
                                     ? ""
                                     : $"{NEWLINE}{NEWLINE}Сейчас не варим:{NEWLINE}{BrewWhy}.")
+                                + (SharedOrderLeft() > 0
+                                    ? $"{NEWLINE}{NEWLINE}Заказы теперь у каждого{NEWLINE}"
+                                      + $"персонажа свои. Прежние{NEWLINE}общие ждут, кому{NEWLINE}достаться."
+                                    : "")
                                 + WindowNote(_itemOffset, brews.Count);
             }
 
@@ -248,9 +266,13 @@ namespace AstvardServerMod
             // то, куда класть, а медовухи про то, что делать.
             SetActive(BrewButton, mine && MenuState == StateSortSetup);
 
+            var waiting = SharedOrderLeft();
+            SetLabel(BrewTakeButton, $"Забрать прежние заказы ({waiting})");
+
             var list = mine && MenuState == StateBrews;
             SetActive(BrewHint, list);
             SetActive(BrewToggleButton, list);
+            SetActive(BrewTakeButton, list && waiting > 0);
             for (var i = 0; i < MaxTemplateButtons; i++)
                 SetActive(BrewRowButtons[i], list && i < _shownBrews);
 

@@ -32,9 +32,9 @@ namespace AstvardServerMod
 
             _brewWishes = config.Bind("Медовухи", "Keep", "",
                 "Заказы до 22.09.2026 лежали здесь, одни на всех персонажей этой игры. Теперь "
-                + "они у каждого свои, в astvard-brewing.txt рядом. Эта строка достанется тому "
-                + "персонажу, который умеет сварить всё, что в ней заказано, и очистится. "
-                + "Пустая — так и надо, всё уже переехало.");
+                + "они у каждого свои, в astvard-brewing.txt рядом. Эту строку можно забрать "
+                + "себе кнопкой «Забрать прежние заказы» на странице медовух — тогда она "
+                + "очистится. Пустая — так и надо, всё уже переехало.");
         }
 
         internal static bool BrewEnabled
@@ -67,9 +67,6 @@ namespace AstvardServerMod
         }
 
         private static Dictionary<long, Brewing.Book> _brewBooks;
-
-        /// <summary>Кому уже сказали, что общая строка не его. Чтобы не сказать этого дважды в секунду.</summary>
-        private static long _brewToldOn;
 
         /// <summary>Чей сейчас заказ; 0 - персонажа ещё нет, его ZDO не готов.</summary>
         private static long BrewWho()
@@ -133,68 +130,60 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Общая строка заказов, жившая в конфиге до 22.09.2026, достаётся одному
-        /// персонажу и один раз.
+        /// Сколько заказов осталось в общей строке, которая ждёт хозяина.
         ///
-        /// Кому - решается не догадкой, а единственным, что про неё известно: забрать её
-        /// может тот, кто умеет сварить **всё**, что в ней заказано. Заказ на восемь
-        /// медовух мог сделать только персонаж с восемью рецептами, и новый, у которого
-        /// их четыре, её не заберёт - ровно тем, что новый наследовал чужие заказы, всё
-        /// это и началось. Забрал - строка стирается, и второй раз её уже никто не
-        /// получит.
-        ///
-        /// Никакого флага «уже пробовали» тут нет нарочно: персонажа меняют, не выходя из
-        /// игры, и флаг заперся бы на том, кто зашёл первым. Пустая строка выходит первой
-        /// же проверкой, то есть после переезда это стоит одного сравнения с нулём.
+        /// Это те заказы, что до 22.09.2026 лежали одни на всю установку игры. Их не
+        /// выбрасывают и никому не приписывают: чей они, снаружи не видно никак, а угадать
+        /// нечем. Догадка «пусть заберёт тот, кто умеет сварить всё заказанное» была
+        /// написана и снесена в тот же час: в живом конфиге хозяина оказалось
+        /// одиннадцать разных медовух, и такая догадка почти наверняка не сработала бы -
+        /// молча, оставив человека без заказов и без объяснения.
         /// </summary>
-        private static void AdoptSharedOrder()
+        internal static int SharedOrderLeft()
         {
-            if (_brewWishes == null || string.IsNullOrEmpty(_brewWishes.Value)) return;
+            return _brewWishes == null || string.IsNullOrEmpty(_brewWishes.Value)
+                ? 0
+                : Brewing.ReadWishes(_brewWishes.Value).Count;
+        }
 
+        /// <summary>
+        /// Отдаёт общую строку нынешнему персонажу - по кнопке, а не сама.
+        ///
+        /// Дописывает, а не заменяет: у персонажа уже могли завестись свои заказы, и
+        /// затереть их значило бы поменять одну потерю на другую. Своё при совпадении
+        /// сильнее - оно новее.
+        ///
+        /// Взяли - строка стирается, и кнопки больше нет: второй раз брать нечего.
+        /// </summary>
+        internal static int TakeSharedOrder()
+        {
             var who = BrewWho();
-            if (who == 0L || _brewBooks.ContainsKey(who)) return;
+            if (who == 0L || _brewWishes == null) return 0;
 
             var shared = Brewing.ReadWishes(_brewWishes.Value);
-            if (shared.Count == 0) return;
+            if (shared.Count == 0) return 0;
 
-            var known = new HashSet<string>();
-            foreach (var brew in KnownBrews()) known.Add(brew.Base);
-
-            // Пустой список - это не «ничего не открыто», а «ObjectDB ещё не готов».
-            if (known.Count == 0) return;
-
-            if (!Brewing.MayAdopt(shared, known))
-            {
-                // Иначе «мои заказы пропали» не объясняется ничем: этот персонаж их не
-                // получил, а кто получит - неизвестно, пока он не зайдёт. Раз на
-                // персонажа, а не раз в секунду.
-                if (who != _brewToldOn)
-                {
-                    _brewToldOn = who;
-                    Log.LogInfo($"[AstvardServerMod] Brewing: the shared order of {shared.Count} drinks "
-                                + "is not this character's - it cannot brew all of it. It waits for one that can.");
-                }
-
-                return;
-            }
+            LoadBrewBooks();
 
             var player = Player.m_localPlayer;
             var book = BookFor(who);
-            book.Wishes = shared;
+            foreach (var pair in shared)
+                if (!book.Wishes.ContainsKey(pair.Key)) book.Wishes[pair.Key] = pair.Value;
+
             book.Name = Brewing.CleanLabel(player != null ? player.GetPlayerName() : "");
 
             _brewWishes.Value = "";
             SaveBrewBooks();
 
-            Log.LogInfo($"[AstvardServerMod] Brewing: the shared order of {shared.Count} "
-                        + $"drinks is now {book.Name}'s alone.");
+            Log.LogInfo($"[AstvardServerMod] Brewing: {book.Name} took the old shared order "
+                        + $"of {shared.Count} drinks.");
+            return shared.Count;
         }
 
         /// <summary>Заказы этого персонажа: имя префаба основы → сколько бутылок держать.</summary>
         internal static Dictionary<string, int> BrewWishes()
         {
             LoadBrewBooks();
-            AdoptSharedOrder();
             return Brewing.WishesFor(_brewBooks, BrewWho());
         }
 

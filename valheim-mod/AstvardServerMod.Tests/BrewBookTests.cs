@@ -126,37 +126,4 @@ public class BrewBookTests
 
         Assert.Equal(9, back[42L].Wishes["MeadBaseTasty"]);
     }
-
-    // ---------------- переезд общей строки ----------------
-
-    [Fact]
-    public void TheSharedOrderGoesToWhoeverCanBrewAllOfIt()
-    {
-        var shared = Brewing.ReadWishes("MeadBaseTasty=10;MeadBaseHealthMinor=4");
-        var eightRecipes = new HashSet<string>
-            { "MeadBaseTasty", "MeadBaseHealthMinor", "MeadBaseStaminaMinor" };
-
-        Assert.True(Brewing.MayAdopt(shared, eightRecipes));
-    }
-
-    [Fact]
-    public void ANewCharacterCannotTakeAnOrderItCouldNotHaveMade()
-    {
-        // Ровно тот случай, с которого всё началось: восемь заказов у персонажа с
-        // четырьмя рецептами.
-        var shared = Brewing.ReadWishes("MeadBaseTasty=10;MeadBaseHealthMinor=4");
-        var fourRecipes = new HashSet<string> { "MeadBaseTasty" };
-
-        Assert.False(Brewing.MayAdopt(shared, fourRecipes));
-    }
-
-    [Fact]
-    public void ThereIsNothingToAdoptFromAnEmptyOrder()
-    {
-        var known = new HashSet<string> { "MeadBaseTasty" };
-
-        Assert.False(Brewing.MayAdopt(Brewing.ReadWishes(""), known));
-        Assert.False(Brewing.MayAdopt(new Dictionary<string, int>(), known));
-        Assert.False(Brewing.MayAdopt(Brewing.ReadWishes("MeadBaseTasty=1"), new HashSet<string>()));
-    }
 }
