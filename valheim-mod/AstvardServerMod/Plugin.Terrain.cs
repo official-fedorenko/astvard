@@ -547,13 +547,11 @@ namespace AstvardServerMod
             {
                 var broken = go.GetComponent<Destructible>();
 
-                // Куст игра деревом не считает: у `Bush01` и `shrub_2` тип не `Tree`, и
-                // оттого 22.09.2026 не убрался ни один. Судим тем же, чем судит снос, -
-                // тем, во что вещь разбирается: **одно дерево и ни камня** - это куст,
-                // а камень - это камень, и камни трогать нельзя.
+                // Куст игра деревом не считает: у `Bush01` и `shrub_2` тип не `Tree`,
+                // и оттого 22.09.2026 не убрался ни один.
                 plant = broken != null
                         && (broken.m_destructibleType == DestructibleType.Tree
-                            || BreaksDownTo(go, WoodOnly, 0));
+                            || IsBrush(go, broken));
             }
 
             if (!plant) return false;
@@ -563,6 +561,37 @@ namespace AstvardServerMod
             // Без роста гадать нельзя: промах в эту сторону валит взрослое дерево у того,
             // кто снос выключил.
             return tall > 0f && tall <= UndergrowthTall;
+        }
+
+        /// <summary>
+        /// Куст: то, что разбирается в дерево и ни во что больше.
+        ///
+        /// **Спрашивать это через `BreaksDownTo` нельзя, и на этом я обжёгся.** Та
+        /// проверка написана под один вопрос - «голый ли это камень или простой куст», -
+        /// и на каменном звене цепочки она спрашивает **про камень**, что бы у неё ни
+        /// просили: `DropsOnly(mine5.m_dropItems, StoneOnly)`, а не `allowed`. То есть
+        /// вопрос «только дерево?» на первом же камне превращался в «только камень?» и
+        /// отвечал «да» - и `Rock_3` поехал под нож у того, кто снос выключил
+        /// (укладка 23.09.2026, поймано на третьем задании).
+        ///
+        /// Здесь цепочки нет вовсе, и это нарочно: куст - вещь об одном звене, а всё
+        /// многозвенное (валун, дающий свою разбитую копию) кустом быть не может.
+        /// </summary>
+        private static bool IsBrush(GameObject go, Destructible broken)
+        {
+            // Камень - камень и есть, чем бы он ни оказался дальше.
+            if (go.GetComponent<MineRock>() != null || go.GetComponent<MineRock5>() != null) return false;
+
+            var next = broken.m_spawnWhenDestroyed;
+            if (next != null && (next.GetComponent<MineRock>() != null
+                                 || next.GetComponent<MineRock5>() != null
+                                 || next.GetComponent<Destructible>() != null))
+                return false;
+
+            // Ни одной добычи - не куст: гадать о том, чего вещь не сказала о себе, в эту
+            // сторону нельзя.
+            var drops = go.GetComponent<DropOnDestroyed>();
+            return DropsOnly(drops != null ? drops.m_dropWhenDestroyed : null, WoodOnly);
         }
 
         /// <summary>
