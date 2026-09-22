@@ -296,9 +296,13 @@ namespace AstvardServerMod
                 if (Location.IsInsideNoBuildLocation(at)) continue;
                 if (!admin && !PrivateArea.CheckAccess(at, 0f, false)) continue;
 
-                // A torch's worth of room, from knee height up, so the ground itself and the
-                // grass on it do not count.
-                if (Physics.CheckCapsule(at + Vector3.up * 0.5f, at + Vector3.up * 1.5f, 0.3f,
+                // A torch's worth of room, from just above the turf up. It used to start
+                // at the knee, and a torch would go up through a fallen branch lying
+                // flatter than that: the ground is a ray against the terrain alone, so
+                // whatever lies on the terrain is not ground and has to be seen here or
+                // not at all. Grass carries no collider, so nothing is lost by looking
+                // lower.
+                if (Physics.CheckCapsule(at + Vector3.up * 0.2f, at + Vector3.up * 1.5f, 0.3f,
                                          TorchBlockers, QueryTriggerInteraction.Ignore)) continue;
 
                 spot = at;

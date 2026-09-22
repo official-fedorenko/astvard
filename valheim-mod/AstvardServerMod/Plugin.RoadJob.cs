@@ -318,6 +318,13 @@ namespace AstvardServerMod
             // возможных: снаружи он неотличим от «некуда поставить».
             public int Inside;
 
+            // Обход препятствий: сколько обошли, сколько оказалось шире дозволенного
+            // отступа и сколько осталось стоять у стыка кусков. Три разные беды, и
+            // лечатся они по-разному, поэтому и считаются порознь.
+            public int Bends;
+            public int TooWide;
+            public int Unbent;
+
             // The zones the piece in hand needs: poked, and their objects built.
             public readonly HashSet<Vector2s> Zones = new HashSet<Vector2s>();
         }
@@ -537,12 +544,12 @@ namespace AstvardServerMod
             var total = along[along.Length - 1];
             var reach = job.Smooth ? job.Radius + SmoothBlend(job.Radius) : job.Radius;
 
-            // Placed for the whole road at once and handed out by station, so the step runs
-            // on across the joins instead of starting over at each piece.
-            var posts = job.Torch > 0
-                ? Geometry.EdgePosts(flat, job.Spacing, job.Radius + TorchMargin)
-                : new List<Post>();
-            var nextPost = 0;
+            // Факелы теперь расставляются по куску, а не по всей дороге сразу: кусок
+            // может согнуться, обходя препятствие, и ряд, посчитанный заранее, встал бы
+            // вдоль линии, которой на земле уже нет. Через стык переносится пройденное
+            // после последней пары - шаг от этого не сбивается.
+            var since = 0f;
+            var found = new Dictionary<string, int>();
 
             var laidTo = 0;
             var cleared = 0;
@@ -612,25 +619,51 @@ namespace AstvardServerMod
                     // otherwise still get a whole piece laid.
                     if (job.Stop || ZNet.instance == null || ZDOMan.instance == null) break;
 
+                    // Объекты зоны стоят - только теперь видно, что на пути, и только
+                    // теперь дорогу можно согнуть в обход. До этого в сцене нет ни жилы,
+                    // ни локации, у которой можно спросить её радиус.
+                    if (complete)
+                    {
+                        float cutAt;
+                        var bent = BendRoadPiece(job, piece, found, out cutAt);
+                        if (cutAt > 0f)
+                        {
+                            // Что-то стоит у самого конца куска: обойти и вернуться на
+                            // линию внутри него негде, а конец двигать нельзя - с него
+                            // начинается следующий кусок. Значит кусок кончится раньше, и
+                            // та же вещь встретится сначала, когда места будет вдоволь.
+                            while (last > first + 2 && along[last] - along[first] > cutAt) last--;
+                            piece = job.Path.GetRange(first, last - first + 1);
+                            bent = BendRoadPiece(job, piece, found, out cutAt);
+                        }
+
+                        if (cutAt > 0f) job.Unbent++;
+                        else piece = bent;
+                    }
+
                     failure = LayRoadJobPiece(job, piece, reach, complete, ref cleared);
                     if (failure != null) break;
 
                     laidTo = last;
                     pieces++;
 
-                    if (posts.Count > 0)
+                    if (job.Torch > 0)
                     {
                         // A frame on, so the rays that find the torches' footing hit the new ground.
                         yield return null;
                         if (ZNet.instance == null || ZNetScene.instance == null) break;
 
+                        var pieceFlat = new List<Vec2>(piece.Count);
+                        foreach (var point in piece) pieceFlat.Add(new Vec2(point.x, point.z));
+
+                        var run = Geometry.EdgePostsRunning(pieceFlat, job.Spacing,
+                                                            job.Radius + TorchMargin, 0f, since);
+                        since = run.Since;
+
                         // A stop that came in that frame still gets this piece's torches: the
                         // piece is down, and a stretch without them would look unfinished.
-                        var batch = new List<Post>();
-                        var end = last == job.Path.Count - 1 ? float.MaxValue : along[last];
-                        while (nextPost < posts.Count && posts[nextPost].Station <= end) batch.Add(posts[nextPost++]);
-                        if (complete) PlaceRoadJobTorches(job, batch, ref placed, ref skipped);
-                        else skipped += batch.Count;
+                        if (complete) PlaceRoadJobTorches(job, run.Posts, ref placed, ref skipped);
+                        else skipped += run.Posts.Count;
                     }
 
                     Log.LogInfo($"[AstvardServerMod] Road job {job.Id}: {along[first]:F0}-{along[last]:F0} m laid, "
@@ -653,6 +686,8 @@ namespace AstvardServerMod
             var note = (job.Smooth && laid > 0f ? ", сглажена" : "")
                        + (cleared > 0 ? $", снесено: {cleared}" : "")
                        + (job.Torch > 0 ? $", факелов: {placed}" + (skipped > 0 ? $", {skipped} некуда поставить" : "") : "")
+                       + (job.Bends > 0 ? $", обойдено: {job.Bends}" : "")
+                       + (job.TooWide + job.Unbent > 0 ? $", обойти не вышло: {job.TooWide + job.Unbent}" : "")
                        + (incomplete > 0 && (job.Clear || job.Torch > 0)
                            ? $", кусков без сноса и факелов: {incomplete} — там не догрузились объекты"
                            : "");
@@ -670,7 +705,8 @@ namespace AstvardServerMod
             Log.LogInfo($"[AstvardServerMod] Road job {job.Id} {(failure != null ? "failed: " + failure : laidTo < job.Path.Count - 1 ? "stopped" : "done")}: "
                         + $"{laid:F0}/{total:F0} m in {pieces} pieces, {Time.realtimeSinceStartup - began:F0} s, "
                         + $"{job.Record.Before.Count} zones, cleared {cleared}, torches {placed} placed {skipped} skipped"
-                        + (job.Inside > 0 ? $", {job.Inside} inside rings" : "") + ".");
+                        + (job.Inside > 0 ? $", {job.Inside} inside rings" : "")
+                        + DetourNote(job, found) + ".");
         }
 
         /// <summary>

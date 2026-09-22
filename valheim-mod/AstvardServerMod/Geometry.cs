@@ -401,6 +401,76 @@ namespace AstvardServerMod
             return posts;
         }
 
+        /// <summary>Posts for one piece of a road, and the walking left over for the next.</summary>
+        internal sealed class PostRun
+        {
+            public List<Post> Posts = new List<Post>();
+
+            /// <summary>Metres walked since the last pair went up.</summary>
+            public float Since;
+        }
+
+        /// <summary>
+        /// Posts along a piece of a road laid piece by piece, carrying the step on from
+        /// where the piece before it stopped.
+        ///
+        /// <see cref="EdgePosts"/> centres its row on the road it is given, which is
+        /// right for a road laid in one go and wrong for one laid in pieces: each piece
+        /// would centre a row of its own and the joins would come out with a pair too
+        /// many or too few. A long road used to get round that by having its whole row
+        /// worked out before any of it was laid - which stopped working the day a piece
+        /// could bend to go round something, because then the row was drawn for a road
+        /// that is not the one that ended up on the ground.
+        ///
+        /// So the row is walked out piece by piece instead, and what is carried across a
+        /// join is the metres since the last pair. The step never restarts; the piece
+        /// that bends gets its posts beside the road as bent.
+        /// </summary>
+        internal static PostRun EdgePostsRunning(IList<Vec2> path, float spacing, float offset,
+                                                 float stationBase, float since)
+        {
+            var run = new PostRun();
+            run.Since = since;
+            if (path.Count < 2) return run;
+
+            spacing = Math.Max(spacing, 0.5f);
+            var walked = 0f;
+
+            for (var k = 0; k < path.Count - 1; k++)
+            {
+                var a = path[k];
+                var b = path[k + 1];
+                var dx = b.X - a.X;
+                var dz = b.Z - a.Z;
+                var segment = (float)Math.Sqrt(dx * dx + dz * dz);
+                if (segment < 1e-6f) continue;
+
+                var dirX = dx / segment;
+                var dirZ = dz / segment;
+                var at = 0f;
+
+                while (run.Since + (segment - at) >= spacing)
+                {
+                    at += spacing - run.Since;
+                    run.Since = 0f;
+
+                    var x = a.X + dirX * at;
+                    var z = a.Z + dirZ * at;
+                    var direction = new Vec2(dirX, dirZ);
+                    var station = stationBase + walked + at;
+
+                    // Left of the travel is (-dz, dx), as it is everywhere else here.
+                    run.Posts.Add(new Post(new Vec2(x - dirZ * offset, z + dirX * offset), direction, station));
+                    run.Posts.Add(new Post(new Vec2(x + dirZ * offset, z - dirX * offset), direction, station));
+                }
+
+                run.Since += segment - at;
+                walked += segment;
+            }
+
+            return run;
+        }
+
         /// <summary>
         /// Places for posts round the rim of a round pad: as many as the step fits into
         /// the circumference, never fewer than three, evenly shared out.
@@ -1382,6 +1452,422 @@ namespace AstvardServerMod
         {
             if (count <= 0) return 0f;
             return count * width + (count - 1) * gap;
+        }
+
+        // ---------------- going round what stands in the way ----------------
+
+        /// <summary>
+        /// Something the road must not run through, as a flat circle: an ore vein, a
+        /// dolmen, the radius a location keeps to itself. Height plays no part, as it
+        /// plays none anywhere else here.
+        /// </summary>
+        internal struct Blocker
+        {
+            public Vec2 At;
+
+            public float Radius;
+
+            public Blocker(Vec2 at, float radius)
+            {
+                At = at;
+                Radius = radius;
+            }
+        }
+
+        /// <summary>Why a step aside was not taken.</summary>
+        internal enum BendRefusal
+        {
+            None = 0,
+
+            /// <summary>Wider than the road is allowed to stray from its line.</summary>
+            TooWide = 1,
+
+            /// <summary>So near an end of this stretch that the road could not come back on the line.</summary>
+            PastTheEnd = 2,
+        }
+
+        /// <summary>One step aside, measured in metres along the road it belongs to.</summary>
+        internal struct Bend
+        {
+            /// <summary>Where the road starts leaving its line.</summary>
+            public float From;
+
+            /// <summary>Where it is back on it.</summary>
+            public float To;
+
+            /// <summary>How far out it goes at the widest; positive is left of travel.</summary>
+            public float Step;
+
+            /// <summary>Why this one was left alone, or None when it was taken.</summary>
+            public BendRefusal Refused;
+        }
+
+        /// <summary>What <see cref="Detour"/> made of a road.</summary>
+        internal sealed class DetourPlan
+        {
+            /// <summary>The road as it should now run - always as many points as it was given.</summary>
+            public List<Vec2> Path = new List<Vec2>();
+
+            /// <summary>Every step aside considered, taken or not, in the order they come.</summary>
+            public List<Bend> Bends = new List<Bend>();
+
+            /// <summary>How many were taken.</summary>
+            public int Taken;
+
+            /// <summary>The widest step taken, in metres.</summary>
+            public float Widest;
+        }
+
+        /// <summary>
+        /// Bends a road round what it must not run through, and leaves the rest of it
+        /// where it was.
+        ///
+        /// The shape is the one asked for: the road holds its line until a few metres
+        /// before it would meet the thing, eases out far enough to pass it, holds that
+        /// out for as long as the thing lasts, and eases back. Which side it passes on
+        /// is whichever is nearer - a vein a little to the left of the line is passed on
+        /// its right, because that is the shorter way round, and that is decided from the
+        /// side the middle of the thing falls, not from its edges.
+        ///
+        /// The easing runs for rampPerStep metres for every metre of the step, and never
+        /// less than minRamp: a road that steps five metres aside inside five would turn
+        /// twice through forty-five degrees, and the smoothing that follows would make
+        /// something of that which is neither a bend nor a corner. The minimum is what a
+        /// step of a hand's width gets.
+        ///
+        /// Two things close enough that their easings would overlap are gone round
+        /// together, on one side, by one step wide enough for both - otherwise the road
+        /// would come back on the line and leave it again within a few metres, which
+        /// reads as a wobble rather than as a way round.
+        ///
+        /// Both ends stay exactly where they were. A road is laid in pieces end to end,
+        /// and a piece that finished a metre to the side of where the next one starts
+        /// would leave a step in the paving. So a thing too near an end to be gone round
+        /// and come back from is left alone and said so - the caller can cut its piece
+        /// shorter and meet the same thing again with room to spare.
+        ///
+        /// Everything is measured against the road as it was given, never against the
+        /// road as it is being bent: two veins in a row would otherwise each be measured
+        /// from the other's step, and the second would be gone round by the wrong amount.
+        /// </summary>
+        /// <param name="halfWidth">Half the paving, so the step clears the thing by the road's own edge.</param>
+        /// <param name="clearance">Room between that edge and the thing.</param>
+        /// <param name="maxStep">How far the road may stray from its line at all.</param>
+        internal static DetourPlan Detour(IList<Vec2> path, IList<Blocker> blockers,
+                                          float halfWidth, float clearance,
+                                          float minRamp, float rampPerStep, float maxStep)
+        {
+            var plan = new DetourPlan();
+            for (var i = 0; i < path.Count; i++) plan.Path.Add(path[i]);
+            if (path.Count < 3 || blockers == null || blockers.Count == 0) return plan;
+
+            var along = Distances(path);
+            var total = along[along.Length - 1];
+            if (total <= 0f) return plan;
+
+            var normals = LeftNormals(path);
+
+            var groups = new List<Group>();
+            foreach (var blocker in blockers)
+            {
+                var group = GroupFor(path, along, normals, blocker, halfWidth + clearance);
+                if (group != null) groups.Add(group);
+            }
+
+            if (groups.Count == 0) return plan;
+
+            groups.Sort(CompareGroups);
+            MergeGroups(groups, minRamp, rampPerStep, maxStep);
+
+            foreach (var group in groups)
+            {
+                // Already clear of the road by as much as was asked for. Bending it by a
+                // finger's width would be a bend in the log and nothing on the ground.
+                if (Math.Abs(group.Step) < 0.05f) continue;
+
+                var bend = new Bend();
+                bend.From = group.From - group.Ramp;
+                bend.To = group.To + group.Ramp;
+                bend.Step = group.Step;
+
+                if (Math.Abs(group.Step) > maxStep) bend.Refused = BendRefusal.TooWide;
+                else if (bend.From < 0f || bend.To > total) bend.Refused = BendRefusal.PastTheEnd;
+
+                plan.Bends.Add(bend);
+                if (bend.Refused != BendRefusal.None) continue;
+
+                plan.Taken++;
+                if (Math.Abs(group.Step) > Math.Abs(plan.Widest)) plan.Widest = group.Step;
+
+                for (var i = 0; i < path.Count; i++)
+                {
+                    var weight = BendWeight(along[i], bend.From, bend.To, group.Ramp);
+                    if (weight <= 0f) continue;
+
+                    var offset = group.Step * weight;
+                    plan.Path[i] = new Vec2(plan.Path[i].X + normals[i].X * offset,
+                                            plan.Path[i].Z + normals[i].Z * offset);
+                }
+            }
+
+            return plan;
+        }
+
+        /// <summary>The way left of travel at every point of a path, as a unit vector.</summary>
+        private static Vec2[] LeftNormals(IList<Vec2> path)
+        {
+            var normals = new Vec2[path.Count];
+            for (var i = 0; i < path.Count; i++)
+            {
+                var before = path[Math.Max(0, i - 1)];
+                var after = path[Math.Min(path.Count - 1, i + 1)];
+                var dx = after.X - before.X;
+                var dz = after.Z - before.Z;
+                var length = (float)Math.Sqrt(dx * dx + dz * dz);
+
+                // Points on top of one another leave no direction to take a side from;
+                // the nearest one that does is the right answer for both.
+                if (length < 1e-6f)
+                {
+                    normals[i] = i > 0 ? normals[i - 1] : new Vec2(0f, 1f);
+                    continue;
+                }
+
+                normals[i] = new Vec2(-dz / length, dx / length);
+            }
+
+            return normals;
+        }
+
+        /// <summary>How much of a step is in force at a point, easing in and out at the edges.</summary>
+        private static float BendWeight(float at, float from, float to, float ramp)
+        {
+            if (at <= from || at >= to) return 0f;
+            if (ramp <= 0f) return 1f;
+
+            if (at < from + ramp) return SmoothStep01((at - from) / ramp);
+            if (at > to - ramp) return SmoothStep01((to - at) / ramp);
+            return 1f;
+        }
+
+        private static float SmoothStep01(float t)
+        {
+            if (t <= 0f) return 0f;
+            if (t >= 1f) return 1f;
+            return t * t * (3f - 2f * t);
+        }
+
+        /// <summary>One or more blockers gone round together, and the step that clears them all.</summary>
+        private sealed class Group
+        {
+            public float From;
+
+            public float To;
+
+            /// <summary>The step that would pass every member on its left, and on its right.</summary>
+            public float Left;
+
+            public float Right;
+
+            public float Step;
+
+            public float Ramp;
+
+            /// <summary>The nearer of the two sides, and the easing that step needs.</summary>
+            public void Settle(float minRamp, float rampPerStep)
+            {
+                Step = Math.Abs(Left) <= Math.Abs(Right) ? Left : Right;
+                Ramp = Math.Max(minRamp, rampPerStep * Math.Abs(Step));
+            }
+        }
+
+        private static int CompareGroups(Group a, Group b)
+        {
+            return a.From.CompareTo(b.From);
+        }
+
+        /// <summary>
+        /// Where a blocker touches the road and how far the road would have to move to
+        /// pass it, or null when it stands clear of the road already.
+        /// </summary>
+        private static Group GroupFor(IList<Vec2> path, float[] along, Vec2[] normals,
+                                      Blocker blocker, float margin)
+        {
+            var need = blocker.Radius + margin;
+            if (need <= 0f) return null;
+
+            float distance;
+            var nearest = NearestOnPath(path, blocker.At.X, blocker.At.Z, out distance);
+            if (distance > need) return null;
+
+            // Which side the middle of it falls, measured where the road passes closest.
+            var k = Math.Max(0, Math.Min(path.Count - 1, (int)Math.Round(nearest)));
+            var side = (blocker.At.X - path[k].X) * normals[k].X
+                       + (blocker.At.Z - path[k].Z) * normals[k].Z;
+
+            var group = new Group();
+            group.From = float.MaxValue;
+            group.To = float.MinValue;
+
+            for (var i = 0; i < path.Count; i++)
+            {
+                var dx = path[i].X - blocker.At.X;
+                var dz = path[i].Z - blocker.At.Z;
+                if (dx * dx + dz * dz > need * need) continue;
+
+                if (along[i] < group.From) group.From = along[i];
+                if (along[i] > group.To) group.To = along[i];
+            }
+
+            // Small enough to sit between two points of the road and touch neither.
+            if (group.From > group.To)
+            {
+                var at = ProfileAt(along, nearest);
+                group.From = at;
+                group.To = at;
+            }
+
+            group.Left = side + need;
+            group.Right = side - need;
+            return group;
+        }
+
+        /// <summary>
+        /// Folds together the groups whose easings would overlap, until none do. The
+        /// step of a merged group has to clear every member of it on whichever side it
+        /// takes, so the two sides are carried along and only chosen at the end.
+        /// </summary>
+        private static void MergeGroups(List<Group> groups, float minRamp, float rampPerStep, float maxStep)
+        {
+            // The widest easing anything here could ask for: two groups further apart
+            // than this can never grow into one another, however they are settled.
+            var reach = Math.Max(minRamp, rampPerStep * maxStep);
+
+            var merged = true;
+            while (merged && groups.Count > 1)
+            {
+                merged = false;
+                for (var i = 0; i < groups.Count - 1; )
+                {
+                    var a = groups[i];
+                    var b = groups[i + 1];
+                    a.Settle(minRamp, rampPerStep);
+                    b.Settle(minRamp, rampPerStep);
+
+                    var gap = b.From - a.To;
+                    if (gap > Math.Min(reach, a.Ramp + b.Ramp))
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    a.To = Math.Max(a.To, b.To);
+                    a.Left = Math.Max(a.Left, b.Left);
+                    a.Right = Math.Min(a.Right, b.Right);
+                    groups.RemoveAt(i + 1);
+                    merged = true;
+                }
+            }
+
+            foreach (var group in groups) group.Settle(minRamp, rampPerStep);
+        }
+
+        // ---------------- how steep a road may get ----------------
+
+        /// <summary>
+        /// A height profile held to a grade a player can walk up, as far as the ground
+        /// allows it to be.
+        ///
+        /// <see cref="SmoothProfile"/> takes the lumps off a road and leaves an even
+        /// slope exactly as it found it - which is right for a hillside of a grade worth
+        /// keeping and wrong for one too steep to walk, where it leaves the road standing
+        /// on end. This cuts into the rise and fills the dip until no two neighbours are
+        /// further apart than maxGrade allows, and it does that without ever asking the
+        /// ground for more than maxCut metres of digging or filling - the engine keeps
+        /// the ground within eight metres of where it was born, and a road that asked for
+        /// more would get a wall where the asking stopped.
+        ///
+        /// Both ends stay where the ground is. A road has to meet the land it comes from,
+        /// and the piece laid after this one starts at this one's last height.
+        ///
+        /// So a hillside steeper than the grade and longer than the digging can pay for
+        /// comes out gentler than it was and steeper than asked: this eases a road where
+        /// it cannot make it walkable, and it never promises the caller which of the two
+        /// happened. <see cref="Steepest"/> answers that.
+        /// </summary>
+        internal static float[] LimitGrade(IList<float> heights, float step, float maxGrade, float maxCut)
+        {
+            var n = heights.Count;
+            var result = new float[n];
+            for (var i = 0; i < n; i++) result[i] = heights[i];
+            if (n < 3 || step <= 0f || maxGrade <= 0f || maxCut <= 0f) return result;
+
+            var rise = maxGrade * step;
+
+            // Only where it is too steep, and there each point moves to halfway between
+            // its neighbours - which is the flattest it can be without moving them. The
+            // easing spreads outwards of its own accord: a point pulled down makes its
+            // own neighbour too steep, and that one moves next round.
+            //
+            // Capping the grade outright instead - every point held within a step of the
+            // one before it - cannot be done at all when the two ends are further apart
+            // than the grade allows, and a road between two heights is exactly that. It
+            // was tried; the cap and the digging budget push opposite ways and the
+            // profile never settles. This settles, and on a rise too long to pay for it
+            // settles on the straight ramp between the ends, where every point already
+            // is halfway between its neighbours. That is the flattest such a road can be.
+            var rounds = Math.Min(2000, 20 * n);
+            for (var round = 0; round < rounds; round++)
+            {
+                var moved = 0f;
+
+                // Alternating the direction keeps one end from leading the other: a
+                // single direction spreads the easing downhill faster than uphill, and
+                // the road comes out lopsided about its own slope.
+                var forwards = (round & 1) == 0;
+                for (var k = 1; k < n - 1; k++)
+                {
+                    var i = forwards ? k : n - 1 - k;
+                    var before = result[i - 1];
+                    var after = result[i + 1];
+
+                    // Steep is a matter of either neighbour: a point at the top of a
+                    // cliff is level with the one behind it and still has to move.
+                    if (Math.Abs(result[i] - before) <= rise && Math.Abs(after - result[i]) <= rise)
+                        continue;
+
+                    var want = (before + after) * 0.5f;
+
+                    // The engine keeps the ground within eight metres of where it was
+                    // born, so the asking stops first - past the budget it would get a
+                    // wall where the asking stopped instead of the slope it asked for.
+                    if (want > heights[i] + maxCut) want = heights[i] + maxCut;
+                    else if (want < heights[i] - maxCut) want = heights[i] - maxCut;
+
+                    var shift = Math.Abs(want - result[i]);
+                    if (shift > moved) moved = shift;
+                    result[i] = want;
+                }
+
+                if (moved < 1e-4f) break;
+            }
+
+            return result;
+        }
+
+        /// <summary>The steepest grade anywhere along a profile, as a rise over a run.</summary>
+        internal static float Steepest(IList<float> profile, float step)
+        {
+            if (profile.Count < 2 || step <= 0f) return 0f;
+
+            var worst = 0f;
+            for (var i = 1; i < profile.Count; i++)
+            {
+                var grade = Math.Abs(profile[i] - profile[i - 1]) / step;
+                if (grade > worst) worst = grade;
+            }
+
+            return worst;
         }
     }
 }

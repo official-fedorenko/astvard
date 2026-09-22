@@ -1,0 +1,243 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace AstvardServerMod
+{
+    public partial class Plugin
+    {
+        /// <summary>
+        /// Что дорога обходит, а не сносит.
+        ///
+        /// The clearing takes out what a road may take out - trees, bare rock, brush -
+        /// and leaves standing what it must not: an ore vein, a mud pile, the Mistlands'
+        /// bones, and everything inside a location, which is villages, ruins, dolmens
+        /// and cave mouths. Until now that was the end of it, and the road was laid
+        /// straight through whatever stayed: a copper vein came out standing in the
+        /// middle of the paving, and a boulder inside a dolmen's radius kept its ground
+        /// while the levelling dug the road out from under it and left it overhead.
+        ///
+        /// So the road goes round instead. What stands fast is read off as flat circles
+        /// and handed to <see cref="Geometry.Detour"/>, which steps the road aside by the
+        /// short way round and brings it back on its line before the piece ends.
+        ///
+        /// Read once per piece, after its zones have built their objects - before that
+        /// there is nothing in the scene to find, and a location without its prefab has
+        /// no radius to ask for.
+        /// </summary>
+        private const float DetourClearance = 1f;
+
+        /// <summary>The shortest easing, for a step so small a longer one would be silly.</summary>
+        private const float DetourMinRamp = 5f;
+
+        /// <summary>Metres of easing for every metre of the step aside.</summary>
+        private const float DetourRampPerStep = 3f;
+
+        /// <summary>
+        /// How far the road may stray from its line at all. The job holds the zones
+        /// within <see cref="RoadJobMargin"/> of the path it was given, and paint outside
+        /// them would be written to compilers nobody loaded; the widest vein and the
+        /// average ruin both fit well inside this.
+        /// </summary>
+        private const float DetourMaxStep = 16f;
+
+        /// <summary>A piece is never cut shorter than this to make room for a way round.</summary>
+        private const float DetourLeastPiece = 24f;
+
+        /// <summary>
+        /// How far short of the easing a piece is cut when it is cut at all.
+        ///
+        /// Stopping exactly where the easing would begin gains nothing: the next piece
+        /// would start at that same metre, and the way round would need to begin at its
+        /// very first point - which is the one point that may not move, because it is
+        /// where this piece ended. A few metres of lead-in is what makes the second
+        /// attempt work.
+        /// </summary>
+        private const float DetourCutBack = 8f;
+
+        /// <summary>Whatever stands fast near a piece of road, as flat circles.</summary>
+        private static List<Geometry.Blocker> RoadBlockers(List<Vector3> piece, float reach,
+                                                           Vector3 from, Vector3 to,
+                                                           Dictionary<string, int> found)
+        {
+            var blockers = new List<Geometry.Blocker>();
+            if (ZNetScene.instance == null) return blockers;
+
+            // The circles reach out as far as the road might step, plus what it would
+            // have to clear: anything further off than that cannot be in its way
+            // whichever side it takes.
+            var slack = reach + DetourMaxStep + DetourClearance + 16f;
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (var point in piece)
+            {
+                if (point.x < minX) minX = point.x;
+                if (point.x > maxX) maxX = point.x;
+                if (point.z < minZ) minZ = point.z;
+                if (point.z > maxZ) maxZ = point.z;
+            }
+
+            var area = Rect.MinMaxRect(minX - slack, minZ - slack, maxX + slack, maxZ + slack);
+
+            foreach (var rock in Object.FindObjectsByType<MineRock>(FindObjectsSortMode.None))
+                if (rock != null && !DropsOnly(rock.m_dropItems, StoneOnly))
+                    Note(blockers, found, area, rock.gameObject, 0f, "ore");
+
+            foreach (var rock in Object.FindObjectsByType<MineRock5>(FindObjectsSortMode.None))
+                if (rock != null && !DropsOnly(rock.m_dropItems, StoneOnly))
+                    Note(blockers, found, area, rock.gameObject, 0f, "ore");
+
+            foreach (var thing in Object.FindObjectsByType<Destructible>(FindObjectsSortMode.None))
+            {
+                if (thing == null) continue;
+
+                // The same question the clearing asks, the other way up: what it would
+                // take out needs no going round, and what it would leave does. Asked of
+                // the same fields, so the two can never disagree about one boulder.
+                var bare = thing.m_destructibleType == DestructibleType.Tree
+                           || BreaksDownTo(thing.gameObject, WoodAndStone, 0);
+                if (bare) continue;
+
+                // A berry bush goes under the paving now, and a sapling somebody planted
+                // is theirs to move - neither is worth bending a road for.
+                var go = thing.gameObject;
+                if (go.GetComponent<Pickable>() != null || go.GetComponentInParent<Piece>() != null) continue;
+
+                Note(blockers, found, area, go, 0f, "rock");
+            }
+
+            // A nest the road ran through would go on sending its greydwarves at whoever
+            // walks it. The circle is its own footing, which is small, plus a few metres
+            // of room - what matters is not paving over it.
+            foreach (var nest in Object.FindObjectsByType<CreatureSpawner>(FindObjectsSortMode.None))
+                if (nest != null) Note(blockers, found, area, nest.gameObject, 4f, "nest");
+
+            // And the structures: everything a location covers, read from the location
+            // itself now that its prefab is in the scene. The two ends of the whole road
+            // are let off - the network's roads run between markers, and a road that
+            // went round the one it was going to would never arrive.
+            foreach (var place in Object.FindObjectsByType<Location>(FindObjectsSortMode.None))
+            {
+                if (place == null) continue;
+
+                var radius = place.m_noBuild && place.m_noBuildRadiusOverride > 0f
+                    ? place.m_noBuildRadiusOverride
+                    : place.GetMaxRadius();
+                if (radius <= 0f) continue;
+
+                var at = place.transform.position;
+                if (Flat(at, from) <= radius || Flat(at, to) <= radius) continue;
+                if (!area.Contains(new Vector2(at.x, at.z))) continue;
+
+                blockers.Add(new Geometry.Blocker(new Vec2(at.x, at.z), radius));
+                Tally(found, "location");
+            }
+
+            return blockers;
+        }
+
+        /// <summary>One thing added to the list, measured by its own colliders.</summary>
+        private static void Note(List<Geometry.Blocker> blockers, Dictionary<string, int> found,
+                                 Rect area, GameObject go, float least, string kind)
+        {
+            var at = go.transform.position;
+            if (!area.Contains(new Vector2(at.x, at.z))) return;
+
+            var radius = Mathf.Max(least, FlatRadius(go));
+            if (radius <= 0f) return;
+
+            blockers.Add(new Geometry.Blocker(new Vec2(at.x, at.z), radius));
+            Tally(found, kind);
+        }
+
+        /// <summary>
+        /// How wide a thing is on the ground, measured from where it stands.
+        ///
+        /// From the colliders, not from a number per kind: veins, boulders and bones are
+        /// all different and the game gives no width. Measured out from the object's own
+        /// middle rather than from the middle of its box, because that is the point the
+        /// circle is centred on - a boulder whose pivot sits at one end would otherwise
+        /// be given a circle that misses half of it.
+        /// </summary>
+        private static float FlatRadius(GameObject go)
+        {
+            var at = go.transform.position;
+            var widest = 0f;
+
+            foreach (var col in go.GetComponentsInChildren<Collider>())
+            {
+                if (col == null || !col.enabled || col.isTrigger) continue;
+
+                var box = col.bounds;
+                var dx = Mathf.Max(Mathf.Abs(box.max.x - at.x), Mathf.Abs(at.x - box.min.x));
+                var dz = Mathf.Max(Mathf.Abs(box.max.z - at.z), Mathf.Abs(at.z - box.min.z));
+                var reach = Mathf.Sqrt(dx * dx + dz * dz);
+                if (reach > widest) widest = reach;
+            }
+
+            return widest;
+        }
+
+        /// <summary>
+        /// A piece of road bent round what it must not pave over.
+        ///
+        /// <paramref name="cutAt"/> comes back positive when something stands too near
+        /// the far end of the piece to be gone round inside it: there is no room left to
+        /// come back on the line, and the end of a piece may not move, because the next
+        /// piece starts from it. The caller cuts the piece short there and meets the
+        /// same thing again at the start of the next one, with the whole of it to work
+        /// in. Blockers at the near end cannot be helped that way and are left standing,
+        /// as they were before any of this.
+        /// </summary>
+        private static List<Vector3> BendRoadPiece(RoadJob job, List<Vector3> piece,
+                                                   Dictionary<string, int> found, out float cutAt)
+        {
+            cutAt = -1f;
+            if (piece.Count < 3) return piece;
+
+            var blockers = RoadBlockers(piece, job.Radius, job.Path[0], job.Path[job.Path.Count - 1], found);
+            if (blockers.Count == 0) return piece;
+
+            var flat = new List<Vec2>(piece.Count);
+            foreach (var point in piece) flat.Add(new Vec2(point.x, point.z));
+
+            var plan = Geometry.Detour(flat, blockers, job.Radius, DetourClearance,
+                                       DetourMinRamp, DetourRampPerStep, DetourMaxStep);
+
+            foreach (var bend in plan.Bends)
+            {
+                if (bend.Refused == Geometry.BendRefusal.TooWide) job.TooWide++;
+                else if (bend.Refused == Geometry.BendRefusal.PastTheEnd)
+                {
+                    // Only the far end can be helped by a shorter piece, and only while
+                    // what is left is still worth laying.
+                    var cut = bend.From - DetourCutBack;
+                    if (cut >= DetourLeastPiece && (cutAt < 0f || cut < cutAt)) cutAt = cut;
+                    else job.Unbent++;
+                }
+            }
+
+            if (cutAt > 0f) return piece;
+
+            job.Bends += plan.Taken;
+            if (plan.Taken == 0) return piece;
+
+            var bent = new List<Vector3>(piece.Count);
+            for (var i = 0; i < piece.Count; i++)
+                bent.Add(new Vector3(plan.Path[i].X, piece[i].y, plan.Path[i].Z));
+
+            return bent;
+        }
+
+        /// <summary>What the going round came to, for the line the job writes when it ends.</summary>
+        private static string DetourNote(RoadJob job, Dictionary<string, int> found)
+        {
+            if (job.Bends == 0 && job.TooWide == 0 && job.Unbent == 0 && found.Count == 0) return "";
+
+            var note = $", went round {job.Bends}";
+            if (found.Count > 0) note += $" of {Listing(found)}";
+            if (job.TooWide > 0) note += $", {job.TooWide} too big to get round";
+            if (job.Unbent > 0) note += $", {job.Unbent} left standing at a join";
+            return note;
+        }
+    }
+}

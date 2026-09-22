@@ -481,8 +481,13 @@ namespace AstvardServerMod
         /// Mistlands' giant bones where they are, with no list of names to go stale. Left
         /// alone as well: anything somebody built, anything inside a location's radius -
         /// villages, ruins, dolmens, cave mouths - and everything ForceDelete already
-        /// protects. Pickables stay; a berry bush or a stone lying on the ground is not an
-        /// obstacle.
+        /// protects. Everything left standing is now gone round rather than paved over,
+        /// which is what makes the two rules read as one: what a road may take, it takes,
+        /// and what it may not, it bends away from. See Plugin.RoadDetour.cs.
+        ///
+        /// Pickables go too, since 22.09.2026 - berry bushes, mushrooms, flint and
+        /// branches. They used to stay, on the grounds that a berry bush is not an
+        /// obstacle, which is true beside a road and false on one.
         ///
         /// Removal claims ownership first and goes through ZNetScene.Destroy. The claim is
         /// what makes it stick: Destroy erases the world record only for an object this
@@ -525,6 +530,14 @@ namespace AstvardServerMod
                            || BreaksDownTo(thing.gameObject, WoodAndStone, 0);
                 run.Consider(thing, bare ? null : "not bare rock or brush");
             }
+
+            // Кусты с ягодами, грибы, кремень и ветки на земле. Прежде они оставались
+            // нарочно - «ягодник у дороги не препятствие», - и это верно у дороги и
+            // неверно на ней: малина, растущая сквозь мощение, выглядит забытой, а не
+            // пощажённой. Судятся они тем же радиусом, то есть только внутри краски;
+            // в кайме сглаживания всё остаётся как росло.
+            foreach (var pick in Object.FindObjectsByType<Pickable>(FindObjectsSortMode.None))
+                run.Consider(pick, null);
 
             var removed = new Dictionary<string, int>();
             foreach (var view in run.Doomed)
@@ -608,9 +621,8 @@ namespace AstvardServerMod
 
                 if (refusal == null)
                 {
-                    if (go.GetComponent<Pickable>() != null) refusal = "pickable";
                     // A sapling somebody planted is a Piece until it grows up.
-                    else if (go.GetComponentInParent<Piece>() != null) refusal = "built";
+                    if (go.GetComponentInParent<Piece>() != null) refusal = "built";
                     else if (IsProtectedFromDelete(go)) refusal = "protected";
                     else if (Location.IsInsideLocation(at, 0f)) refusal = "inside a location";
                 }
@@ -741,14 +753,59 @@ namespace AstvardServerMod
         // ---------------- smoothing ----------------
 
         /// <summary>
-        /// How far to either side of the road the reshaped ground runs out. Wide enough
-        /// that a road cut into a slope does not leave a wall at its edge, narrow enough
-        /// that it does not go on to reshape the hillside beside it.
+        /// Metres of run for every metre the ground is cut down or filled up beside the
+        /// road: the slope its sides come out at.
+        ///
+        /// Two thirds of a metre up to a metre along, about thirty-four degrees. Steep
+        /// enough to keep the road from eating the hillside, and gentle enough to walk
+        /// off the road at all - which sheer earth walls, the way it used to come out,
+        /// are not.
+        /// </summary>
+        private const float SideSlope = 1.5f;
+
+        /// <summary>
+        /// The widest the reshaped ground can run out to either side of the road.
+        ///
+        /// It used to be the whole story: two to six metres of easing, whatever the road
+        /// was doing to the ground. So a road cut three metres into a hill had three
+        /// metres to give those three back in, which is a wall at forty-five degrees,
+        /// and the owner flew the network on 21.09.2026 and found exactly that - earth
+        /// cliffs either side of every cutting, with the turf hanging over them.
+        ///
+        /// Now this is only the ceiling, and how much of it is used is decided vertex by
+        /// vertex from how far that vertex has to move - see LevelAlong. Flat ground
+        /// still gets the couple of metres it always did, because flat ground has
+        /// nothing to run out from.
+        ///
+        /// What it is used for unchanged is reach: which zones the work touches, how far
+        /// a ward refusal looks, and what the preview's fainter ring shows. Those have to
+        /// be told the worst case before the ground is read, and this is the worst case.
         /// </summary>
         private static float SmoothBlend(float radius)
         {
-            return Mathf.Clamp(radius * 1.5f, 2f, 6f);
+            // Восемь метров выката хватает на пятиметровый срез, а это уже глубже, чем
+            // движку позволено копать. Но шире, чем держатся зоны задания, уходить
+            // нельзя ни на метр: краска за их краем пишется в компиляторы, которых никто
+            // не грузил. Поэтому у широкого круга выкат уже, чем у узкой дороги - ему и
+            // нужно меньше, он лежит на ровном.
+            return Mathf.Min(Mathf.Max(radius * 1.5f, 8f),
+                             Mathf.Max(4f, RoadJobMargin - radius - 4f));
         }
+
+        /// <summary>
+        /// How steep a road may run along its length, as a rise over a run, and how many
+        /// metres of digging it may spend getting there.
+        ///
+        /// The smoothing takes the lumps off a road and leaves an even slope alone, which
+        /// is right up to a point and wrong past it: a road up a forty-five degree
+        /// hillside came out as a forty-five degree road, which reads as a staircase and
+        /// walks like one. A third is about nineteen degrees. The budget stops short of
+        /// the eight metres the engine allows, so the rest of the levelling still has
+        /// room inside it.
+        /// </summary>
+        private const float RoadMaxGrade = 0.35f;
+
+        private const float RoadMaxCut = 6f;
 
         /// <summary>
         /// The line a ward refusal gains while smoothing is on. The blend band runs out
@@ -801,10 +858,20 @@ namespace AstvardServerMod
                 heights.Add(last);
             }
 
-            var profile = Geometry.SmoothProfile(heights, SmoothHalfWindow(radius));
-
             var flat = new List<Vec2>(path.Count);
             foreach (var p in path) flat.Add(new Vec2(p.x, p.z));
+
+            var profile = Geometry.SmoothProfile(heights, SmoothHalfWindow(radius));
+
+            // And then held to a grade a player can walk. The step between two points of
+            // the path is measured rather than assumed: the path is a curve sampled at
+            // about a metre, and «about» is not good enough to call a slope by.
+            if (path.Count > 1)
+            {
+                var span = Geometry.Distances(flat);
+                var step = span[span.Length - 1] / (path.Count - 1);
+                if (step > 0f) profile = Geometry.LimitGrade(profile, step, RoadMaxGrade, RoadMaxCut);
+            }
 
             var blend = SmoothBlend(radius);
             foreach (var comp in comps) LevelAlong(comp, flat, profile, radius, blend);
@@ -869,10 +936,18 @@ namespace AstvardServerMod
                     var target = Geometry.ProfileAt(profile, along) - origin.y;
                     var current = hmap.GetHeight(j, i);
 
+                    // Как далеко тянется откос здесь - по тому, насколько эту точку надо
+                    // двигать. Метр среза покупает полтора метра выката, так что глубокая
+                    // выемка сама себе делает пологий борт, а ровная земля по-прежнему
+                    // обходится парой метров: ей не с чего скатываться. Потолок нужен не
+                    // для красоты - за ним зоны, которых никто не грузил.
+                    var here = Mathf.Clamp(Mathf.Abs(current - target) * SideSlope, 2f, blend);
+                    if (distance > radius + here) continue;
+
                     var desired = distance <= radius
                         ? target
                         : Mathf.Lerp(target, current,
-                            Mathf.SmoothStep(0f, 1f, (distance - radius) / blend));
+                            Mathf.SmoothStep(0f, 1f, (distance - radius) / here));
 
                     // Fold in and clear any pending smooth delta, then stay inside the
                     // engine's ±8 m budget - the game's own LevelTerrain does the same.
