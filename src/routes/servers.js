@@ -3,6 +3,7 @@ const logger = require('../logger');
 const { sendJson, getJsonBody, logAction } = require('../utils');
 const { queryA2SInfo } = require('../protocols/a2s');
 const { readValheimLogStatus } = require('../protocols/valheimLog');
+const { planServer, PRESETS, MODIFIERS, MODIFIER_OPTIONS, SLOT_RE, DEFAULTS } = require('../gameServerPlan');
 
 // Only the deployment knows where the game server writes; the database keeps the
 // decision to read a log at all, never the path to it — a path stored in a row
@@ -10,6 +11,17 @@ const { readValheimLogStatus } = require('../protocols/valheimLog');
 const VALHEIM_LOG_FILE = process.env.VALHEIM_LOG_FILE || '/srv/valheim/logs/server.log';
 
 const PROBES = ['a2s', 'valheim-log'];
+
+// A second server on this machine lives in /srv/valheim-<slot>, so its log is where
+// its slot says. The row still holds no path: the slot has to match SLOT_RE, and the
+// rest of the path is written here - a path stored in a row would be a file for the
+// site to read chosen by whoever can edit servers, which is the whole reason the
+// column above never existed.
+function logFileFor(server) {
+  const slot = server && server.slot;
+  if (!slot || !SLOT_RE.test(slot)) return VALHEIM_LOG_FILE;
+  return `/srv/valheim-${slot}/logs/server.log`;
+}
 
 // Кто сейчас в игре, по номерам из лога, разложенным на людей нашей базы.
 // Держится в памяти, а не в строке сервера: это снимок момента, живущий до
@@ -54,7 +66,7 @@ function listServers() {
 // turns Steam's advertising on only for a public server. Its own log is what is
 // left, and it is on this machine.
 function probeServer(server) {
-  if (server.probe === 'valheim-log') return readValheimLogStatus(VALHEIM_LOG_FILE);
+  if (server.probe === 'valheim-log') return readValheimLogStatus(logFileFor(server));
   return queryA2SInfo(server.host, server.port);
 }
 
@@ -136,17 +148,21 @@ async function add(req, res, actor) {
   const { name, host } = body;
   const port = Number(body.port);
   const probe = body.probe || 'a2s';
+  const slot = String(body.slot || '').trim() || null;
   if (!name || !host || !Number.isInteger(port) || port < 1 || port > 65535) {
     return sendJson(res, 400, { success: false, message: 'Нужны название, адрес и порт' });
   }
   if (!PROBES.includes(probe)) {
     return sendJson(res, 400, { success: false, message: 'Неизвестный способ проверки статуса' });
   }
+  if (slot && !SLOT_RE.test(slot)) {
+    return sendJson(res, 400, { success: false, message: 'Ключ сервера: латиница в нижнем регистре, цифры и дефис' });
+  }
 
   try {
     const inserted = await run(
-      'INSERT INTO servers (name, host, port, probe) VALUES (?, ?, ?, ?)',
-      [name, host, port, probe]
+      'INSERT INTO servers (name, host, port, probe, slot) VALUES (?, ?, ?, ?, ?)',
+      [name, host, port, probe, slot]
     );
     const servers = await all('SELECT * FROM servers WHERE id = ?', [inserted.lastID]);
     await refreshServer(servers[0]).catch(() => {});
@@ -158,6 +174,38 @@ async function add(req, res, actor) {
     }
     throw err;
   }
+}
+
+// The site never starts anything: it works out what a new server would need and
+// hands the owner the files and the commands. The answer depends on nothing but the
+// request, so nothing is stored here either - a plan is worth exactly as much as the
+// moment it was asked for.
+async function plan(req, res, actor) {
+  let body;
+  try {
+    body = await getJsonBody(req);
+  } catch {
+    return sendJson(res, 400, { success: false, message: 'Некорректный запрос' });
+  }
+  const result = planServer(body);
+  // Only a saved plan is worth a line in the journal; asking is just looking, and a
+  // form that reports on every keystroke would bury everything else in there.
+  if (result.ok && body.remember === true) {
+    logAction(actor.username, `Собрал план сервера: ${result.slot}`);
+  }
+  sendJson(res, 200, { success: true, plan: result });
+}
+
+// What the form has to offer, straight from the game's own enums: a list written out
+// in the page would go stale the day the game adds a modifier.
+async function planOptions(req, res) {
+  sendJson(res, 200, {
+    success: true,
+    presets: PRESETS,
+    modifiers: MODIFIERS,
+    modifierOptions: MODIFIER_OPTIONS,
+    defaults: DEFAULTS
+  });
 }
 
 async function remove(req, res, actor, id) {
@@ -187,6 +235,17 @@ async function handleServers(req, res, sessionUser, parsedUrl, method) {
   if (pathname === '/api/admin/servers' && method === 'GET') return adminList(req, res);
   if (pathname === '/api/admin/servers' && method === 'POST') return add(req, res, sessionUser);
   if (pathname === '/api/admin/servers/refresh' && method === 'POST') return refreshNow(req, res);
+  if (pathname === '/api/admin/servers/plan/options' && method === 'GET') return planOptions(req, res);
+
+  // Planning a server is a superadmin's business: what comes out of it is the
+  // command line of a machine, and the same hand that may hand out admin in the
+  // game is the one that may do this.
+  if (pathname === '/api/admin/servers/plan' && method === 'POST') {
+    if (role !== 'Superadmin') {
+      return sendJson(res, 403, { success: false, message: 'Создавать серверы может только суперадмин' });
+    }
+    return plan(req, res, sessionUser);
+  }
 
   const idMatch = pathname.match(/^\/api\/admin\/servers\/(\d+)$/);
   if (idMatch && method === 'DELETE') return remove(req, res, sessionUser, Number(idMatch[1]));

@@ -447,6 +447,10 @@ function bindAstvardHandlers() {
       return loadServersSection();
     }
 
+    if (e.target.closest('#serverCreateBtn')) return openServerCreate();
+    if (e.target.closest('#serverCreateClose, #serverCreateCancel')) return closeServerCreate();
+    if (e.target.closest('#serverPlanBtn')) return submitServerPlan();
+
     if (e.target.closest('#serversRefreshBtn')) {
       await fetch('/api/admin/servers/refresh', { method: 'POST' });
       return loadServersSection();
@@ -1508,3 +1512,119 @@ async function sortingToggleCategory(id, removed) {
 }
 
 bindSortingHandlers();
+
+
+// ——— Создание сервера ————————————————————————————————————————————————
+//
+// Сайт ничего не запускает и не может: он собирает план — файлы и команды, — а
+// нажимает их хозяин на самой машине. Что игра правда читает, решает сервер
+// (src/gameServerPlan.js); страница только спрашивает и показывает ответ.
+
+let astvardPlanOptionsLoaded = false;
+
+async function openServerCreate() {
+  const overlay = document.getElementById('serverCreateModalOverlay');
+  if (!overlay) return;
+  // Списки пресетов и правил приезжают с сервера, а он берёт их из перечислений
+  // самой игры: написанные в странице, они устарели бы в день, когда игра добавит
+  // ещё одно правило.
+  if (!astvardPlanOptionsLoaded) {
+    try {
+      const res = await fetch('/api/admin/servers/plan/options');
+      const data = await res.json();
+      const preset = document.getElementById('planPreset');
+      data.presets.forEach((name) => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        preset.appendChild(opt);
+      });
+      document.getElementById('planModifiers').innerHTML = data.modifiers.map((m) => `
+        <div class="form-group">
+          <label for="planMod-${m}">${escapeHtml(m)}</label>
+          <select id="planMod-${m}" class="form-control plan-modifier" data-name="${m}">
+            <option value="">не трогать</option>
+            ${data.modifierOptions.map((o) => `<option value="${o}">${escapeHtml(o)}</option>`).join('')}
+          </select>
+        </div>`).join('');
+      astvardPlanOptionsLoaded = true;
+    } catch (err) {
+      showToast('Не удалось спросить у сервера список правил мира', 'error');
+    }
+  }
+  overlay.classList.add('active');
+}
+
+function closeServerCreate() {
+  const overlay = document.getElementById('serverCreateModalOverlay');
+  if (overlay) overlay.classList.remove('active');
+}
+
+function planFormValue() {
+  const val = (id) => (document.getElementById(id).value || '').trim();
+  const on = (id) => document.getElementById(id).checked;
+  const modifiers = Array.from(document.querySelectorAll('.plan-modifier'))
+    .filter((el) => el.value)
+    .map((el) => ({ name: el.dataset.name, option: el.value }));
+  return {
+    slot: val('planSlot'),
+    serverName: val('planServerName'),
+    worldName: val('planWorldName'),
+    port: val('planPort'),
+    newWorld: on('planNewWorld'),
+    bepinex: on('planBepinex'),
+    public: on('planPublic'),
+    crossplay: on('planCrossplay'),
+    password: val('planPassword'),
+    instanceId: val('planInstanceId'),
+    saveInterval: val('planSaveInterval'),
+    backups: val('planBackups'),
+    backupShort: val('planBackupShort'),
+    backupLong: val('planBackupLong'),
+    preset: val('planPreset'),
+    // Через запятую — то, как эти ключи пишут в конфиге игры; пустые куски
+    // выбрасываются здесь, чтобы «a, , b» не превращалось в ошибку про пустой ключ.
+    setKeys: val('planSetKeys').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean)
+  };
+}
+
+function renderPlan(plan) {
+  const box = document.getElementById('planResult');
+  if (!plan.ok) {
+    box.innerHTML = `<h4 class="form-section-title">Так не выйдет</h4>
+      ${plan.errors.map((e) => `<p class="plan-error">${escapeHtml(e)}</p>`).join('')}`;
+    return;
+  }
+  // Значение с пробелом показывается в кавычках: в самом запуске оно в них и стоит, а
+  // строка «-name Аствард 2» читается как два аргумента, а это неправда.
+  const quote = (v) => (/\s/.test(v) ? `"${v}"` : v);
+  const flags = plan.flags.map(([f, v]) => (v ? `${f} ${quote(v)}` : f)).join(' ');
+  box.innerHTML = `
+    <h4 class="form-section-title">Что получится</h4>
+    ${plan.warnings.map((w) => `<p class="plan-warn">${escapeHtml(w)}</p>`).join('')}
+    <p class="hint-text">Порты ${plan.ports[0]}–${plan.ports[1]}, папка <code>${escapeHtml(plan.root)}</code>. Строка запуска:</p>
+    <pre class="plan-code">${escapeHtml(flags)}</pre>
+    <h4 class="form-section-title">${escapeHtml(plan.root)}/server.env</h4>
+    <pre class="plan-code">${escapeHtml(plan.files['server.env'])}</pre>
+    <h4 class="form-section-title">${escapeHtml(plan.root)}/compose.yml</h4>
+    <pre class="plan-code">${escapeHtml(plan.files['compose.yml'])}</pre>
+    <h4 class="form-section-title">По шагам, на машине</h4>
+    ${plan.commands.map((c, i) => `
+      <div class="plan-step">
+        <h5>${i + 1}. ${escapeHtml(c.title)}</h5>
+        <p class="hint-text">${escapeHtml(c.why)}</p>
+        <pre class="plan-code">${escapeHtml(c.code)}</pre>
+      </div>`).join('')}
+    <p class="hint-text">Когда сервер поднимется, добавь его в список выше: адрес и порт ${plan.ports[0]},
+       статус — «лог Valheim», ключ <code>${escapeHtml(plan.slot)}</code> — по нему сайт и найдёт его лог.</p>`;
+}
+
+async function submitServerPlan() {
+  const res = await fetch('/api/admin/servers/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(planFormValue())
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return showToast(data.message || 'Не получилось', 'error');
+  renderPlan(data.plan);
+}

@@ -496,6 +496,10 @@
               <i data-lucide="refresh-cw"></i>
               <span>Обновить статус</span>
             </button>
+            <button class="btn" id="serverCreateBtn">
+              <i data-lucide="server-cog"></i>
+              <span>Создать новый сервер</span>
+            </button>
           </div>
         </div>
 
@@ -729,6 +733,105 @@
 
 
 
+
+  <!-- СОЗДАНИЕ СЕРВЕРА. Форма собирает флаги, которые игра правда читает: список снят с
+       FejdStartup.ParseServerArguments, а не с вики. Сайт ничего не запускает — он
+       выдаёт server.env, compose.yml и команды, которые хозяин выполняет на машине. -->
+  <div class="modal-overlay" id="serverCreateModalOverlay">
+    <div class="modal" style="max-width:860px;">
+      <div class="modal-header">
+        <h3>Создать новый сервер</h3>
+        <button class="modal-close" id="serverCreateClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint-text">Игра читает ровно эти флаги и никаких других. Сида среди них нет: мир,
+           созданный сервером, получает случайный — свой сид задаётся только миром из клиента.</p>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="planSlot">Ключ сервера<span class="required-mark">*</span></label>
+            <input type="text" id="planSlot" class="form-control" placeholder="vtoroy" maxlength="24">
+            <div class="hint-text">Им называются папка <code>/srv/valheim-&lt;ключ&gt;</code>, контейнер и проект compose.</div>
+          </div>
+          <div class="form-group">
+            <label for="planServerName">Название в списке игры<span class="required-mark">*</span></label>
+            <input type="text" id="planServerName" class="form-control" placeholder="Аствард 2" maxlength="64">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="planWorldName">Имя мира<span class="required-mark">*</span></label>
+            <input type="text" id="planWorldName" class="form-control" placeholder="AstvardTwo" maxlength="32">
+            <div class="hint-text">Это имя ПАПКИ мира, символ в символ, и оно же его личность.</div>
+          </div>
+          <div class="form-group">
+            <label for="planPort">Порт</label>
+            <input type="number" id="planPort" class="form-control" value="2458">
+            <div class="hint-text">Игра занимает его и следующий. 2456–2457 уже заняты.</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="check-chip"><input type="checkbox" id="planNewWorld"> Мира ещё нет — пусть сервер создаст его сам</label>
+          <label class="check-chip"><input type="checkbox" id="planBepinex"> Мод (BepInEx)</label>
+          <label class="check-chip"><input type="checkbox" id="planPublic"> Публичный сервер</label>
+          <label class="check-chip"><input type="checkbox" id="planCrossplay"> Crossplay</label>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="planPassword">Пароль</label>
+            <input type="text" id="planPassword" class="form-control" placeholder="только для публичного">
+          </div>
+          <div class="form-group">
+            <label for="planInstanceId">instanceid</label>
+            <input type="text" id="planInstanceId" class="form-control" placeholder="только с crossplay">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="planSaveInterval">Сохранение, с</label>
+            <input type="number" id="planSaveInterval" class="form-control" value="900">
+          </div>
+          <div class="form-group">
+            <label for="planBackups">Копий</label>
+            <input type="number" id="planBackups" class="form-control" value="4">
+          </div>
+          <div class="form-group">
+            <label for="planBackupShort">Частая, с</label>
+            <input type="number" id="planBackupShort" class="form-control" value="3600">
+          </div>
+          <div class="form-group">
+            <label for="planBackupLong">Редкая, с</label>
+            <input type="number" id="planBackupLong" class="form-control" value="43200">
+          </div>
+        </div>
+
+        <h4 class="form-section-title">Правила мира</h4>
+        <p class="hint-text">Это правка САМОГО МИРА: она впечатывается в него при каждом запуске и остаётся
+           до <code>-resetmodifiers</code>. Пустые поля ничего не трогают.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="planPreset">Пресет</label>
+            <select id="planPreset" class="form-control"><option value="">не трогать</option></select>
+          </div>
+          <div class="form-group">
+            <label for="planSetKeys">Глобальные ключи</label>
+            <input type="text" id="planSetKeys" class="form-control" placeholder="nobuildcost, passivemobs">
+          </div>
+        </div>
+        <div id="planModifiers" class="form-row"></div>
+
+        <div id="planResult"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="serverCreateCancel">Закрыть</button>
+        <button type="button" class="btn" id="serverPlanBtn">Собрать план</button>
+      </div>
+    </div>
+  </div>
 
   <!-- SEND NOTIFICATION MODAL -->
   <div class="modal-overlay" id="sendNotificationModalOverlay">

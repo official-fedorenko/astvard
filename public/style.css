@@ -1929,3 +1929,65 @@ th.sorting-check, td.sorting-check { width: 44px; }
 
 /* Список полок в модалке карточки — во всю её ширину, как остальные поля панели. */
 #rowDetailActions .sorting-pick { width: 100%; }
+
+/* Форма создания сервера. Строка из полей — обычная сетка панели: на телефоне она
+   разваливается в столбец сама, поэтому отдельного правила под мобильные тут нет. */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.form-section-title {
+  margin: 8px 0 4px;
+  font-size: 15px;
+  color: hsl(var(--text-primary));
+}
+
+/* Готовый файл и команда. Моноширинный и с переносами: путь и флаг рвать по буквам
+   нельзя, а полоса прокрутки внутри модалки прячет вторую половину команды. */
+.plan-code {
+  background-color: hsl(var(--bg-main));
+  border: 1px solid hsl(var(--border-color));
+  border-radius: var(--border-radius-sm);
+  padding: 12px 14px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 8px 0 0;
+}
+
+.plan-step {
+  border-left: 2px solid hsl(var(--border-color));
+  padding-left: 14px;
+  margin-bottom: 18px;
+}
+
+.plan-step h5 {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Предупреждение — это не ошибка: оно говорит, что будет, а не что нельзя. */
+.plan-warn {
+  color: hsl(var(--accent-amber));
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0;
+}
+
+.plan-error {
+  color: hsl(var(--accent-red));
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0;
+}

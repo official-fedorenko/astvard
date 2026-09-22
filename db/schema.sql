@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS servers (
       host TEXT NOT NULL,
       port INTEGER NOT NULL,
       probe TEXT NOT NULL DEFAULT 'a2s',
+      slot TEXT,
       is_online INTEGER,
       players INTEGER,
       max_players INTEGER,
@@ -143,6 +144,7 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
 -- When an article last changed, for sitemap.xml and dateModified. NULL on rows
 -- written before the column: those fall back to created_at.
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS slot TEXT;
 
 -- What players may build on the game server (src/gameBuilds.js): the mod's rules for
 -- players and who may build each shared template. The mod pulls this by token and
