@@ -334,6 +334,27 @@ namespace AstvardServerMod
             /// </summary>
             public bool EndsInRings;
 
+            /// <summary>
+            /// Метки этой дороги: с какой начинается, какой кончается. -1 у всего, что
+            /// метками не связано, - у ручной дорожки и у самого круга (у круга своя,
+            /// <see cref="Mark"/>).
+            /// </summary>
+            public int MarkA = -1;
+
+            public int MarkB = -1;
+
+            /// <summary>Метка этого круга.</summary>
+            public int Mark = -1;
+
+            /// <summary>
+            /// Насколько далеко от каждой метки должна дотянуться её краска, общее на всю
+            /// сеть. Дороги пишут сюда, отойдя от метки в обход, круг читает и дорастает:
+            /// круг, не накрывший начало своей дороги, оставит между ними дыру.
+            ///
+            /// Работает это только потому, что дороги кладутся раньше кругов (22.09.2026).
+            /// </summary>
+            public float[] MarkReach;
+
             /// <summary>Из оставшихся стоять - сколько упёрлось в стык между кусками.</summary>
             public int UnbentNear;
 
@@ -690,6 +711,8 @@ namespace AstvardServerMod
 
                         if (cutAt > 0f) job.Unbent++;
                         else piece = bent;
+
+                        NoteRoadEndReach(job, piece, first, last);
                     }
 
                     failure = LayRoadJobPiece(job, piece, reach, complete, ref cleared);
@@ -761,6 +784,31 @@ namespace AstvardServerMod
         }
 
         /// <summary>
+        /// Запоминает, насколько конец дороги отошёл от своей метки, чтобы круг метки
+        /// дорос и накрыл его.
+        ///
+        /// Меряется от исходного пути, а не от согнутого: сдвиг - это и есть разница
+        /// между тем, где конец был задуман, и тем, где он лёг.
+        /// </summary>
+        private static void NoteRoadEndReach(RoadJob job, List<Vector3> piece, int first, int last)
+        {
+            if (job.MarkReach == null) return;
+
+            if (first == 0 && job.MarkA >= 0 && job.MarkA < job.MarkReach.Length)
+                Reached(job, job.MarkA, piece[0], job.Path[0]);
+
+            if (last == job.Path.Count - 1 && job.MarkB >= 0 && job.MarkB < job.MarkReach.Length)
+                Reached(job, job.MarkB, piece[piece.Count - 1], job.Path[last]);
+        }
+
+        private static void Reached(RoadJob job, int mark, Vector3 laid, Vector3 meant)
+        {
+            // Метр сверх радиуса дороги: круг должен накрыть её край, а не её середину.
+            var want = Flat(laid, meant) + job.Radius + 1f;
+            if (want > job.MarkReach[mark]) job.MarkReach[mark] = want;
+        }
+
+        /// <summary>
         /// Every zone within the margin of the piece's centreline. Probes half a zone apart over
         /// the square round a point every few metres cannot step over a 64 m zone.
         /// </summary>
@@ -798,14 +846,30 @@ namespace AstvardServerMod
         private static bool GrowRoadJobRing(RoadJob job)
         {
             var here = Location.GetZoneLocation(job.Centre);
-            if (here == null || !here.m_noBuild) return false;
+            // Первым делом - то, что сделали дороги: их начала могли отойти от метки в
+            // обход, и круг обязан до них дотянуться. Это решается без сцены, но живёт
+            // здесь же, чтобы `reach` пересчитался один раз и в одном месте.
+            var grown = false;
+            if (job.Mark >= 0 && job.MarkReach != null && job.Mark < job.MarkReach.Length)
+            {
+                var need = Mathf.Min(job.MarkReach[job.Mark], RingMax);
+                if (need > job.Radius + 0.1f)
+                {
+                    Log.LogInfo($"[AstvardServerMod] Road job {job.Id}: ring {job.Radius:F1} → "
+                                + $"{need:F1} m, to cover the roads that left it aside.");
+                    job.Radius = need;
+                    grown = true;
+                }
+            }
+
+            if (here == null || !here.m_noBuild) return grown;
 
             var edge = here.m_noBuildRadiusOverride > 0f
                 ? here.m_noBuildRadiusOverride
                 : here.GetMaxRadius();
 
             var want = Mathf.Min(edge, RingMax);
-            if (want <= job.Radius + 0.1f) return false;
+            if (want <= job.Radius + 0.1f) return grown;
 
             Log.LogInfo($"[AstvardServerMod] Road job {job.Id}: ring {job.Radius:F1} → {want:F1} m, "
                         + $"to the no-build edge of {Utils.GetPrefabName(here.gameObject)}"

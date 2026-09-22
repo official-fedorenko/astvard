@@ -387,6 +387,12 @@ namespace AstvardServerMod
 
             /// <summary>Сколько их погашено кругами. Молчаливая уборка неотличима от промаха.</summary>
             public int Doused;
+
+            /// <summary>
+            /// Докуда должна дотянуться краска каждой метки. Дороги пишут, круги читают -
+            /// и потому дороги обязаны лечь раньше кругов, как они и ложатся.
+            /// </summary>
+            public float[] Reach;
         }
 
         private static RuneJob _runeJob;
@@ -469,7 +475,12 @@ namespace AstvardServerMod
                 return;
             }
 
-            var job = new RuneJob { Sender = sender, Stones = marks.Count };
+            var job = new RuneJob
+            {
+                Sender = sender,
+                Stones = marks.Count,
+                Reach = new float[marks.Count],
+            };
 
             var net = Whole(marks);
 
@@ -477,8 +488,11 @@ namespace AstvardServerMod
             {
                 if (step.Mark >= 0)
                 {
-                    job.Queue.Add(CircleJob(marks[step.Mark], paved, smooth, clear, torch,
-                                            spacing, forever, bend, creator, platform));
+                    var ring = CircleJob(marks[step.Mark], paved, smooth, clear, torch,
+                                         spacing, forever, bend, creator, platform);
+                    ring.Mark = step.Mark;
+                    ring.MarkReach = job.Reach;
+                    job.Queue.Add(ring);
                     continue;
                 }
 
@@ -489,6 +503,12 @@ namespace AstvardServerMod
                 var road = RoadBetween(from, to, radius, width, paved, smooth, clear, torch,
                                        spacing, forever, bend, creator, platform);
                 road.Lit = job.Lit;
+
+                // Точки сети - это метки, одна к одной, так что номер связи и есть номер
+                // метки на её конце.
+                road.MarkA = link.A;
+                road.MarkB = link.B;
+                road.MarkReach = job.Reach;
 
                 job.Metres += Flat(from, to);
                 job.Queue.Add(road);

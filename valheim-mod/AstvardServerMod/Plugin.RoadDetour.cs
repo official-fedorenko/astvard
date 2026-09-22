@@ -57,7 +57,7 @@ namespace AstvardServerMod
         /// end is met again by cutting the piece short, but a thing near the near end has
         /// nowhere to go, and the near end of the first piece is the mark itself.
         /// </summary>
-        private const float DetourEndSlack = 6f;
+        private const float DetourEndSlack = 12f;
 
         /// <summary>
         /// How far short of the easing a piece is cut when it is cut at all.
@@ -223,11 +223,16 @@ namespace AstvardServerMod
             cutAt = -1f;
             if (piece.Count < 3) return piece;
 
-            // Сдвинуть конец дороги можно ровно настолько, чтобы он остался внутри
-            // самого малого круга и краска дороги не вылезла из него: круг у метки не
-            // меньше `RingMin`, а дорога занимает свой радиус.
+            // Сдвинуть конец дороги можно настолько, насколько круг метки сможет за ним
+            // дорасти: круг читает, куда отошли её дороги, и накрывает их (23.09.2026,
+            // решение хозяина). Потолок у круга `RingMax`, дальше его не пускают зоны
+            // задания.
+            //
+            // Двенадцать метров выбраны по логу шестой укладки: нужные шаги шли от 3,2 до
+            // 15 м с медианой 10, и 36 из 40 укладываются в двенадцать. Запас в шесть,
+            // стоявший тут до того, брал четыре из сорока.
             var slack = job.EndsInRings
-                ? Mathf.Max(0f, Mathf.Min(DetourEndSlack, RingMin - job.Radius))
+                ? Mathf.Max(0f, Mathf.Min(DetourEndSlack, RingMax - job.Radius))
                 : 0f;
 
             var blockers = RoadBlockers(RoadArea(piece, job.Radius), job.Path[0],
