@@ -54,21 +54,16 @@ namespace AstvardServerMod
         /// </summary>
         private const float DetourCutBack = 8f;
 
-        /// <summary>Whatever stands fast near a piece of road, as flat circles.</summary>
-        private static List<Geometry.Blocker> RoadBlockers(List<Vector3> piece, float reach,
-                                                           Vector3 from, Vector3 to,
-                                                           Dictionary<string, int> found)
+        /// <summary>
+        /// The ground a road covers, with room to spare: anything outside this cannot be
+        /// in its way whichever side it takes.
+        /// </summary>
+        private static Rect RoadArea(List<Vector3> path, float reach)
         {
-            var blockers = new List<Geometry.Blocker>();
-            if (ZNetScene.instance == null) return blockers;
-
-            // The circles reach out as far as the road might step, plus what it would
-            // have to clear: anything further off than that cannot be in its way
-            // whichever side it takes.
             var slack = reach + DetourMaxStep + DetourClearance + 16f;
             float minX = float.MaxValue, maxX = float.MinValue;
             float minZ = float.MaxValue, maxZ = float.MinValue;
-            foreach (var point in piece)
+            foreach (var point in path)
             {
                 if (point.x < minX) minX = point.x;
                 if (point.x > maxX) maxX = point.x;
@@ -76,7 +71,15 @@ namespace AstvardServerMod
                 if (point.z > maxZ) maxZ = point.z;
             }
 
-            var area = Rect.MinMaxRect(minX - slack, minZ - slack, maxX + slack, maxZ + slack);
+            return Rect.MinMaxRect(minX - slack, minZ - slack, maxX + slack, maxZ + slack);
+        }
+
+        /// <summary>Whatever stands fast in an area, as flat circles.</summary>
+        private static List<Geometry.Blocker> RoadBlockers(Rect area, Vector3 from, Vector3 to,
+                                                           Dictionary<string, int> found)
+        {
+            var blockers = new List<Geometry.Blocker>();
+            if (ZNetScene.instance == null) return blockers;
 
             foreach (var rock in Object.FindObjectsByType<MineRock>(FindObjectsSortMode.None))
                 if (rock != null && !DropsOnly(rock.m_dropItems, StoneOnly))
@@ -194,7 +197,8 @@ namespace AstvardServerMod
             cutAt = -1f;
             if (piece.Count < 3) return piece;
 
-            var blockers = RoadBlockers(piece, job.Radius, job.Path[0], job.Path[job.Path.Count - 1], found);
+            var blockers = RoadBlockers(RoadArea(piece, job.Radius), job.Path[0],
+                                        job.Path[job.Path.Count - 1], found);
             if (blockers.Count == 0) return piece;
 
             var flat = new List<Vec2>(piece.Count);
@@ -226,6 +230,116 @@ namespace AstvardServerMod
                 bent.Add(new Vector3(plan.Path[i].X, piece[i].y, plan.Path[i].Z));
 
             return bent;
+        }
+
+        // ---------------- дорожка, которую кладут руками ----------------
+
+        /// <summary>
+        /// Препятствия рядом с проекцией дорожки, снятые не чаще, чем нужно.
+        ///
+        /// The projection is redrawn whenever the player moves a tenth of a metre, and
+        /// reading what stands fast is five sweeps of the whole scene - at that rate it
+        /// would be the most expensive thing in the mod. None of it moves, so the answer
+        /// is kept: read over a good deal more ground than the road covers, and read
+        /// again only when the road leaves that ground or the answer has stood a while.
+        /// </summary>
+        private static readonly List<Geometry.Blocker> HandBlockers = new List<Geometry.Blocker>();
+
+        private static readonly Dictionary<string, int> HandFound = new Dictionary<string, int>();
+
+        private static Rect _handBlockersFor;
+
+        private static float _handBlockersWhen = float.MinValue;
+
+        /// <summary>
+        /// How long a reading stands before it is taken again.
+        ///
+        /// Long, because nothing it reads moves on its own and the sweep is not cheap.
+        /// What it can miss is a vein somebody mined out or a zone that finished loading
+        /// while the projection was up, and both are put right by the reading the laying
+        /// itself takes, which never uses what is kept here.
+        /// </summary>
+        private const float HandBlockersHold = 8f;
+
+        /// <summary>How much more ground is read than the road needs, so a step does not read it again.</summary>
+        private const float HandBlockersSlack = 32f;
+
+        /// <summary>What the road in hand goes round, for the word at the end of it.</summary>
+        private static int _handBends;
+
+        private static int _handRefused;
+
+        private static List<Geometry.Blocker> HandBlockersFor(List<Vector3> path, float reach,
+                                                              Vector3 from, Vector3 to, bool fresh)
+        {
+            var want = RoadArea(path, reach);
+            var kept = !fresh
+                       && Time.realtimeSinceStartup - _handBlockersWhen < HandBlockersHold
+                       && want.xMin >= _handBlockersFor.xMin && want.xMax <= _handBlockersFor.xMax
+                       && want.yMin >= _handBlockersFor.yMin && want.yMax <= _handBlockersFor.yMax;
+            if (kept) return HandBlockers;
+
+            var area = Rect.MinMaxRect(want.xMin - HandBlockersSlack, want.yMin - HandBlockersSlack,
+                                       want.xMax + HandBlockersSlack, want.yMax + HandBlockersSlack);
+
+            HandFound.Clear();
+            HandBlockers.Clear();
+            HandBlockers.AddRange(RoadBlockers(area, from, to, HandFound));
+            _handBlockersFor = area;
+            _handBlockersWhen = Time.realtimeSinceStartup;
+            return HandBlockers;
+        }
+
+        /// <summary>
+        /// A road laid by hand bent round what it must not pave over - the same going
+        /// round the server does for a long one.
+        ///
+        /// Called from the projection and from the laying both, and that is the point of
+        /// it. A road that quietly went round something the projection had drawn running
+        /// straight through would be worse than one that paved it over: the straight one
+        /// is at least the road that was shown. The two are the same curve at two
+        /// samplings - half a metre for the projection, a metre for the paint - and since
+        /// the going round is worked out in metres along the road, they come out the same
+        /// shape.
+        ///
+        /// A pad is a single point and comes back untouched, which is right: a disc has
+        /// no line to step aside from.
+        /// </summary>
+        /// <param name="fresh">The laying reads the ground again; the projection may use what is kept.</param>
+        private static void BendRoadByHand(List<Vector3> path, float radius, bool fresh)
+        {
+            _handBends = 0;
+            _handRefused = 0;
+            if (path.Count < 3 || !RoadClearingActive) return;
+
+            var reach = RoadSmoothingActive ? radius + SmoothBlend(radius) : radius;
+            var blockers = HandBlockersFor(path, reach, path[0], path[path.Count - 1], fresh);
+            if (blockers.Count == 0) return;
+
+            var flat = new List<Vec2>(path.Count);
+            foreach (var point in path) flat.Add(new Vec2(point.x, point.z));
+
+            var plan = Geometry.Detour(flat, blockers, radius, DetourClearance,
+                                       DetourMinRamp, DetourRampPerStep, DetourMaxStep);
+
+            _handBends = plan.Taken;
+            foreach (var bend in plan.Bends)
+                if (bend.Refused != Geometry.BendRefusal.None) _handRefused++;
+
+            if (plan.Taken == 0) return;
+
+            for (var i = 0; i < path.Count; i++)
+                path[i] = new Vector3(plan.Path[i].X, path[i].y, plan.Path[i].Z);
+        }
+
+        /// <summary>What a hand-laid road says about going round, at the end of it.</summary>
+        private static string HandDetourNote()
+        {
+            if (_handBends == 0 && _handRefused == 0) return "";
+
+            var note = _handBends > 0 ? $", обойдено: {_handBends}" : "";
+            if (_handRefused > 0) note += $", обойти не вышло: {_handRefused}";
+            return note;
         }
 
         /// <summary>What the going round came to, for the line the job writes when it ends.</summary>

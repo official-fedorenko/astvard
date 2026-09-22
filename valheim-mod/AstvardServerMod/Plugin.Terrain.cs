@@ -1503,6 +1503,12 @@ namespace AstvardServerMod
                 return;
             }
 
+            // Гнётся здесь, а не при укладке: проекция обязана показывать ту дорогу,
+            // которая ляжет. Считается это только на перерисовке, то есть когда что-то
+            // сдвинулось, а сами препятствия под ней держатся своим сроком - читать сцену
+            // на каждую десятую долю метра было бы самым дорогим, что делает мод.
+            BendRoadByHand(PreviewStamps, half, false);
+
             _roadPreview.SetActive(true);
             var colour = tooLong ? PreviewTooLong : PreviewGood;
             DrawAlongGround(_roadLine, PreviewStamps, 0f, half * 2f, 0.15f, Faded(colour, 0.3f));
@@ -1783,6 +1789,11 @@ namespace AstvardServerMod
             RoadPoints(from, to, RoadSagitta(length), 1f, RoadPath);
             if (RoadPath.Count == 0) return;
 
+            // Тем же обходом, что показала проекция, и до всего остального: обереги,
+            // компиляторы и запись отката считаются уже по согнутому пути - иначе дорога
+            // ушла бы в зону, которую никто не собрал.
+            BendRoadByHand(RoadPath, radius, true);
+
             // Smoothing reaches past the paint into the blend band. So does the ward
             // check, and so does the list of zones: every zone the road writes has to be
             // in it - that is also what undo records.
@@ -1974,6 +1985,7 @@ namespace AstvardServerMod
 
             var clearedNote = (RoadSmoothingActive ? (kind == "area" ? ", земля сглажена" : ", сглажена") : "")
                               + (cleared > 0 ? $", снесено: {cleared}" : "")
+                              + (kind == "road" ? HandDetourNote() : "")
                               + TorchNote(torches);
             if (!stopped)
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
