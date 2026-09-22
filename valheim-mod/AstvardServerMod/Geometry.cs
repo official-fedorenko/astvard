@@ -1540,11 +1540,19 @@ namespace AstvardServerMod
         /// would come back on the line and leave it again within a few metres, which
         /// reads as a wobble rather than as a way round.
         ///
-        /// Both ends stay exactly where they were. A road is laid in pieces end to end,
-        /// and a piece that finished a metre to the side of where the next one starts
-        /// would leave a step in the paving. So a thing too near an end to be gone round
-        /// and come back from is left alone and said so - the caller can cut its piece
-        /// shorter and meet the same thing again with room to spare.
+        /// Both ends stay exactly where they were, unless the caller says otherwise. A
+        /// road is laid in pieces end to end, and a piece that finished a metre to the
+        /// side of where the next one starts would leave a step in the paving. So a thing
+        /// too near an end to be gone round and come back from is left alone and said so -
+        /// the caller can cut its piece shorter and meet the same thing again with room
+        /// to spare.
+        ///
+        /// `startSlack` and `endSlack` are how far that end of the road may move if it
+        /// helps. Nought means what it always meant: it may not move at all. This is for
+        /// the ends of a whole road that finish inside something already paved - the
+        /// circle round a mark - where beginning three metres off its middle is a thing
+        /// nobody can see. It is NOT for the joins between pieces, which have nothing
+        /// around them and must meet to the centimetre.
         ///
         /// Everything is measured against the road as it was given, never against the
         /// road as it is being bent: two veins in a row would otherwise each be measured
@@ -1553,9 +1561,12 @@ namespace AstvardServerMod
         /// <param name="halfWidth">Half the paving, so the step clears the thing by the road's own edge.</param>
         /// <param name="clearance">Room between that edge and the thing.</param>
         /// <param name="maxStep">How far the road may stray from its line at all.</param>
+        /// <param name="startSlack">How far the road's first point may move; 0 pins it.</param>
+        /// <param name="endSlack">How far its last point may move; 0 pins it.</param>
         internal static DetourPlan Detour(IList<Vec2> path, IList<Blocker> blockers,
                                           float halfWidth, float clearance,
-                                          float minRamp, float rampPerStep, float maxStep)
+                                          float minRamp, float rampPerStep, float maxStep,
+                                          float startSlack = 0f, float endSlack = 0f)
         {
             var plan = new DetourPlan();
             for (var i = 0; i < path.Count; i++) plan.Path.Add(path[i]);
@@ -1590,8 +1601,17 @@ namespace AstvardServerMod
                 bend.To = group.To + group.Ramp;
                 bend.Step = group.Step;
 
+                // Насколько сдвинется конец, если взять этот изгиб: у самого конца
+                // вес может не успеть сойти к нулю, и сдвиг там - это `Step` на вес.
+                var atStart = bend.From < 0f
+                    ? Math.Abs(group.Step) * BendWeight(0f, bend.From, bend.To, group.Ramp)
+                    : 0f;
+                var atEnd = bend.To > total
+                    ? Math.Abs(group.Step) * BendWeight(total, bend.From, bend.To, group.Ramp)
+                    : 0f;
+
                 if (Math.Abs(group.Step) > maxStep) bend.Refused = BendRefusal.TooWide;
-                else if (bend.From < 0f || bend.To > total) bend.Refused = BendRefusal.PastTheEnd;
+                else if (atStart > startSlack || atEnd > endSlack) bend.Refused = BendRefusal.PastTheEnd;
 
                 plan.Bends.Add(bend);
                 if (bend.Refused != BendRefusal.None) continue;

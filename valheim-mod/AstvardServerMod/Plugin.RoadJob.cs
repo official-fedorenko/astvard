@@ -326,6 +326,15 @@ namespace AstvardServerMod
             public int Bends;
 
             /// <summary>
+            /// Оба конца дороги лежат в мощёном круге метки - значит их можно сдвинуть.
+            ///
+            /// Верно только для дорог сети: они идут от метки к метке, и круг вокруг
+            /// каждой кладётся тем же заданием. У дорожки, уложенной руками, концы
+            /// показал игрок, и двигать их нельзя.
+            /// </summary>
+            public bool EndsInRings;
+
+            /// <summary>
             /// Сколько вершин краски легло за всё задание. Ноль у круга - это «краска не
             /// легла никуда», и отличить его от «легла, но не доехала до клиента» иначе
             /// нечем: 23.09.2026 мощения у спавна не было три укладки подряд, а задание
@@ -641,7 +650,9 @@ namespace AstvardServerMod
                     if (complete && job.Bend)
                     {
                         float cutAt;
-                        var bent = BendRoadPiece(job, piece, found, out cutAt);
+                        var opens = first == 0;
+                        var bent = BendRoadPiece(job, piece, found, out cutAt,
+                                                 opens, last == job.Path.Count - 1);
                         if (cutAt > 0f)
                         {
                             // Что-то стоит у самого конца куска: обойти и вернуться на
@@ -650,7 +661,11 @@ namespace AstvardServerMod
                             // та же вещь встретится сначала, когда места будет вдоволь.
                             while (last > first + 2 && along[last] - along[first] > cutAt) last--;
                             piece = job.Path.GetRange(first, last - first + 1);
-                            bent = BendRoadPiece(job, piece, found, out cutAt);
+
+                            // Кусок стал короче, и теперь он кончается не там, где дорога:
+                            // свободы у дальнего конца больше нет, у ближнего она прежняя.
+                            bent = BendRoadPiece(job, piece, found, out cutAt,
+                                                 opens, last == job.Path.Count - 1);
                         }
 
                         if (cutAt > 0f) job.Unbent++;

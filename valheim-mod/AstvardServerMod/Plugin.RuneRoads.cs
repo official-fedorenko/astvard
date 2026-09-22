@@ -604,6 +604,9 @@ namespace AstvardServerMod
             {
                 Id = Random.Range(1, int.MaxValue),
                 Path = path,
+                // Оба конца этой дороги - середины меток, и вокруг каждой ляжет круг,
+                // так что концу есть куда сдвинуться, и этого никто не увидит.
+                EndsInRings = true,
                 Radius = radius,
                 Width = width,
                 Paint = paved ? Heightmap.m_paintMaskPaved : Heightmap.m_paintMaskDirt,

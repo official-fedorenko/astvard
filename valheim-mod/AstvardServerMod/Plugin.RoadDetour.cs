@@ -44,6 +44,22 @@ namespace AstvardServerMod
         private const float DetourLeastPiece = 24f;
 
         /// <summary>
+        /// How far an end of a whole road may move aside to get round something.
+        ///
+        /// A road of the network begins and ends in the middle of a mark, and that middle
+        /// is a paved circle of `RingMin` at the very least. Beginning a few metres off it
+        /// is invisible; what would be visible is the thing still standing in the road,
+        /// which is what this buys. Kept well inside the smallest circle so the road's own
+        /// paint stays on the disc.
+        ///
+        /// Before this, 63 things a lay round stood their ground at the ends of pieces
+        /// (23.09.2026, and the same 63 in three layings running): a thing near the far
+        /// end is met again by cutting the piece short, but a thing near the near end has
+        /// nowhere to go, and the near end of the first piece is the mark itself.
+        /// </summary>
+        private const float DetourEndSlack = 6f;
+
+        /// <summary>
         /// How far short of the easing a piece is cut when it is cut at all.
         ///
         /// Stopping exactly where the easing would begin gains nothing: the next piece
@@ -201,10 +217,18 @@ namespace AstvardServerMod
         /// as they were before any of this.
         /// </summary>
         private static List<Vector3> BendRoadPiece(RoadJob job, List<Vector3> piece,
-                                                   Dictionary<string, int> found, out float cutAt)
+                                                   Dictionary<string, int> found, out float cutAt,
+                                                   bool opens = false, bool closes = false)
         {
             cutAt = -1f;
             if (piece.Count < 3) return piece;
+
+            // Сдвинуть конец дороги можно ровно настолько, чтобы он остался внутри
+            // самого малого круга и краска дороги не вылезла из него: круг у метки не
+            // меньше `RingMin`, а дорога занимает свой радиус.
+            var slack = job.EndsInRings
+                ? Mathf.Max(0f, Mathf.Min(DetourEndSlack, RingMin - job.Radius))
+                : 0f;
 
             var blockers = RoadBlockers(RoadArea(piece, job.Radius), job.Path[0],
                                         job.Path[job.Path.Count - 1], found);
@@ -214,7 +238,8 @@ namespace AstvardServerMod
             foreach (var point in piece) flat.Add(new Vec2(point.x, point.z));
 
             var plan = Geometry.Detour(flat, blockers, job.Radius, DetourClearance,
-                                       DetourMinRamp, DetourRampPerStep, DetourMaxStep);
+                                       DetourMinRamp, DetourRampPerStep, DetourMaxStep,
+                                       opens ? slack : 0f, closes ? slack : 0f);
 
             foreach (var bend in plan.Bends)
             {

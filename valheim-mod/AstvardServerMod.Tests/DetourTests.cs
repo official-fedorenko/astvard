@@ -197,6 +197,56 @@ public class DetourTests
         Assert.Equal(0f, plan.Path[0].Z, 4);
     }
 
+    /// <summary>
+    /// The end of a whole road finishes inside a paved circle, so it may begin a few
+    /// metres off the middle of it - and then the thing at the very start is gone round
+    /// instead of left standing.
+    /// </summary>
+    [Fact]
+    public void AnEndAllowedToMoveGoesRoundWhatStandsAtIt()
+    {
+        var thing = new Geometry.Blocker(new Vec2(2f, 0f), 3f);
+        var path = Straight(100f);
+
+        var plan = Geometry.Detour(path, new[] { thing }, HalfWidth, Clearance,
+                                   MinRamp, RampPerStep, MaxStep, startSlack: 6f);
+
+        Assert.Equal(1, plan.Taken);
+        Assert.Equal(Geometry.BendRefusal.None, plan.Bends[0].Refused);
+
+        // Moved, but no further than it was allowed, and clear of the thing.
+        Assert.NotEqual(0f, plan.Path[0].Z, 2);
+        Assert.True(Math.Abs(plan.Path[0].Z) <= 6f);
+        Assert.True(Clears(plan.Path, thing) >= thing.Radius + HalfWidth + Clearance - 0.01f);
+    }
+
+    [Fact]
+    public void TheOtherEndStaysPutWhenOnlyTheFirstMayMove()
+    {
+        var path = Straight(100f);
+        var plan = Geometry.Detour(path, new[] { new Geometry.Blocker(new Vec2(98f, 0f), 3f) },
+                                   HalfWidth, Clearance, MinRamp, RampPerStep, MaxStep,
+                                   startSlack: 6f);
+
+        Assert.Equal(0, plan.Taken);
+        Assert.Equal(Geometry.BendRefusal.PastTheEnd, plan.Bends[0].Refused);
+        Assert.Equal(0f, plan.Path[100].Z, 4);
+    }
+
+    [Fact]
+    public void AnEndWillNotMoveFurtherThanItWasAllowed()
+    {
+        // Needs about six metres of step, and is given two.
+        var plan = Geometry.Detour(Straight(100f),
+                                   new[] { new Geometry.Blocker(new Vec2(2f, 0f), 3f) },
+                                   HalfWidth, Clearance, MinRamp, RampPerStep, MaxStep,
+                                   startSlack: 2f);
+
+        Assert.Equal(0, plan.Taken);
+        Assert.Equal(Geometry.BendRefusal.PastTheEnd, plan.Bends[0].Refused);
+        Assert.Equal(0f, plan.Path[0].Z, 4);
+    }
+
     [Fact]
     public void TheBendIsSmoothEnoughToBeARoad()
     {
