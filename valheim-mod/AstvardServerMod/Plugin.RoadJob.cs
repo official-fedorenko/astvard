@@ -334,6 +334,15 @@ namespace AstvardServerMod
             /// </summary>
             public bool EndsInRings;
 
+            /// <summary>Из оставшихся стоять - сколько упёрлось в стык между кусками.</summary>
+            public int UnbentNear;
+
+            /// <summary>А сколько - в конец самой дороги, которому запаса не хватило.</summary>
+            public int UnbentAtRoadEnd;
+
+            /// <summary>Самый широкий шаг, которого не хватило места взять, в метрах.</summary>
+            public float UnbentWidest;
+
             /// <summary>
             /// Сколько вершин краски легло за всё задание. Ноль у круга - это «краска не
             /// легла никуда», и отличить его от «легла, но не доехала до клиента» иначе

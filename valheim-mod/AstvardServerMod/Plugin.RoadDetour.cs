@@ -250,7 +250,28 @@ namespace AstvardServerMod
                     // what is left is still worth laying.
                     var cut = bend.From - DetourCutBack;
                     if (cut >= DetourLeastPiece && (cutAt < 0f || cut < cutAt)) cutAt = cut;
-                    else job.Unbent++;
+                    else
+                    {
+                        job.Unbent++;
+
+                        // Отказ бывает двух родов, и лечатся они по-разному: у ближнего
+                        // конца разгону негде начаться, у дальнего - кусок кончается
+                        // слишком рано, чтобы его резать. А ширина говорит, хватило бы
+                        // конца посвободнее: 23.09.2026 запас в 6 м не взял почти ни
+                        // одного гнезда, и число в логе - единственный способ узнать,
+                        // насколько он мал, не гадая.
+                        // И отдельно: конец куска - это стык с соседним куском или
+                        // всё-таки начало самой дороги? Первое не лечится ничем, второе
+                        // лечится запасом, и пока они в одном числе, выбирать не из чего.
+                        if (bend.From < 0f)
+                        {
+                            if (opens) job.UnbentAtRoadEnd++;
+                            else job.UnbentNear++;
+                        }
+                        else if (bend.To > 0f && closes) job.UnbentAtRoadEnd++;
+
+                        job.UnbentWidest = Mathf.Max(job.UnbentWidest, Mathf.Abs(bend.Step));
+                    }
                 }
             }
 
@@ -384,7 +405,13 @@ namespace AstvardServerMod
             var note = $", went round {job.Bends}";
             if (found.Count > 0) note += $" of {Listing(found)}";
             if (job.TooWide > 0) note += $", {job.TooWide} too big to get round";
-            if (job.Unbent > 0) note += $", {job.Unbent} left standing at a join";
+            if (job.Unbent > 0)
+            {
+                note += $", {job.Unbent} left standing at a join";
+                note += $" ({job.UnbentNear} at a join between pieces, {job.UnbentAtRoadEnd}"
+                        + $" at an end of the road itself, widest wanted {job.UnbentWidest:F1} m)";
+            }
+
             return note;
         }
     }
