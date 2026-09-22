@@ -231,8 +231,15 @@ namespace AstvardServerMod
 
             var mine = RuleAllows("brewing");
 
+            // «Из скольких» дописывается только когда числа разошлись — то есть когда
+            // часть заказов сделана персонажем, знавшим больше рецептов, чем этот.
+            // Без этого «заказов 4» на месте вчерашних восьми выглядит потерей заказов.
+            var mineCount = BrewWishesHere();
+            var all = BrewWishes().Count;
             SetLabel(BrewButton, BrewEnabled
-                ? $"Медовухи: заказов {BrewWishes().Count}"
+                ? (all > mineCount
+                    ? $"Медовухи: заказов {mineCount} из {all}"
+                    : $"Медовухи: заказов {mineCount}")
                 : "Медовухи: выкл");
             SetLabel(BrewToggleButton, BrewEnabled ? "Варка: вкл" : "Варка: выкл");
 

@@ -56,6 +56,35 @@ namespace AstvardServerMod
             return BrewWishes().TryGetValue(baseName, out keep) ? keep : 0;
         }
 
+        /// <summary>
+        /// Сколько из заказанного этот персонаж вообще умеет сварить.
+        ///
+        /// The order lives in the mod's own config, which belongs to the game as
+        /// installed - not to the character and not to the account. Order eight meads on
+        /// a character who has unlocked eight recipes, then come back on a new one who
+        /// has four, and four of those orders are for drinks this one has never seen.
+        ///
+        /// The list has always shown only what the character knows (KnownBrews asks
+        /// IsRecipeKnown), and the brewing has always brewed only that. It was the count
+        /// on the button that counted all eight, and that is the whole of it: nothing
+        /// was being brewed behind the page's back, the number was simply the wrong one.
+        ///
+        /// The orders the character cannot make are left exactly where they are. They
+        /// are not this one's to throw away - the character who placed them will want
+        /// them when it comes back.
+        /// </summary>
+        internal static int BrewWishesHere()
+        {
+            var wishes = BrewWishes();
+            if (wishes.Count == 0) return 0;
+
+            var count = 0;
+            foreach (var brew in KnownBrews())
+                if (wishes.ContainsKey(brew.Base)) count++;
+
+            return count;
+        }
+
         internal static void SetBrewWish(string baseName, int keep)
         {
             if (_brewWishes == null || string.IsNullOrEmpty(baseName)) return;
