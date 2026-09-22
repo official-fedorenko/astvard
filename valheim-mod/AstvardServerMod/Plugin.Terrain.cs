@@ -480,10 +480,12 @@ namespace AstvardServerMod
         /// to ask, and with none every ward answers no.
         /// </summary>
         /// <summary>
-        /// Докуда растение считается подлеском. Молодой бук метра два-три, куст и того
-        /// ниже; взрослый бук за десять, ель за пятнадцать.
+        /// Докуда растение считается подлеском. Молодой бук метров пять, куст и того
+        /// ниже; взрослый бук за десять, ель за пятнадцать, дуб выше всех. Три метра,
+        /// стоявшие тут сначала, не брали ни одного молодого бука: по логу укладки
+        /// 22.09.2026 под эту мерку не прошло ничего вообще.
         /// </summary>
-        private const float UndergrowthTall = 3f;
+        private const float UndergrowthTall = 6f;
 
         /// <summary>
         /// Подлесок: мелочь, которую дорога убирает **всегда**, даже со снесением
@@ -500,10 +502,15 @@ namespace AstvardServerMod
         ///
         /// Ягодный куст исключён: его дорога обходит, а не рубит.
         /// </summary>
-        private static bool IsUndergrowth(GameObject go)
+        private static bool IsUndergrowth(GameObject go, out float tall)
         {
+            tall = 0f;
             if (go == null) return false;
-            if (go.GetComponent<Pickable>() != null) return false;
+
+            // Мелочь, лежащая на земле: гриб, ветка, кремень, цветок. Ягодный куст сюда
+            // не попадает вовсе - он приходит со своим отказом, а отказ проверяется до
+            // этого вопроса.
+            if (go.GetComponent<Pickable>() != null) return true;
 
             var plant = go.GetComponent<TreeBase>() != null;
             if (!plant)
@@ -514,16 +521,44 @@ namespace AstvardServerMod
 
             if (!plant) return false;
 
-            var tall = 0f;
+            tall = Tall(go);
+
+            // Без роста гадать нельзя: промах в эту сторону валит взрослое дерево у того,
+            // кто снос выключил.
+            return tall > 0f && tall <= UndergrowthTall;
+        }
+
+        /// <summary>
+        /// Насколько высоко вещь поднимается над своей точкой.
+        ///
+        /// Спрашивается и у коллайдеров, и у рисунка, и вот почему: у куста коллайдера
+        /// нет вовсе - сквозь него ходят, - и мерка по одним коллайдерам отвечала про
+        /// него нулём, то есть «не мерится», то есть «не трогать». Ровно это и вышло
+        /// 22.09.2026: подлесок не убрался ни один. Рисунок есть у всего, что видно,
+        /// и он же берёт крону целиком, а не один ствол.
+        ///
+        /// Ошибка этой мерки безопасна в одну сторону: завысив, она оставит подлесок
+        /// стоять, а свалить лишнее может, только занизив, чего от кроны не бывает.
+        /// </summary>
+        private static float Tall(GameObject go)
+        {
+            var top = float.MinValue;
+
             foreach (var col in go.GetComponentsInChildren<Collider>())
             {
                 if (col == null || !col.enabled || col.isTrigger) continue;
-                tall = Mathf.Max(tall, col.bounds.max.y - go.transform.position.y);
+                top = Mathf.Max(top, col.bounds.max.y);
             }
 
-            // Без коллайдеров рост не измерить, и гадать тут нельзя: промах в эту сторону
-            // валит взрослое дерево у того, кто снос выключил.
-            return tall > 0f && tall <= UndergrowthTall;
+            // Выключенный рисунок считается наравне: на выделенном сервере рисовать
+            // некому, и судить по `enabled` тут не о чем.
+            foreach (var art in go.GetComponentsInChildren<Renderer>())
+            {
+                if (art == null) continue;
+                top = Mathf.Max(top, art.bounds.max.y);
+            }
+
+            return top > float.MinValue ? Mathf.Max(0f, top - go.transform.position.y) : 0f;
         }
 
         private static int ClearAlongPath(List<Vector3> path, float radius, bool admin,
@@ -713,7 +748,11 @@ namespace AstvardServerMod
                 {
                     // A sapling somebody planted is a Piece until it grows up.
                     if (go.GetComponentInParent<Piece>() != null) refusal = "built";
-                    else if (_small && !IsUndergrowth(go)) refusal = "not undergrowth";
+                    else if (_small && !IsUndergrowth(go, out var tall))
+                        // Рост в отказе не для красоты: вся мерка подлеска - одно число,
+                        // и подправить его без роста было бы гаданием. Метры целые, иначе
+                        // каждое дерево заводит в перечне свою строку.
+                        refusal = $"not undergrowth, {tall:0} m";
                     else if (IsProtectedFromDelete(go)) refusal = "protected";
                     else if (Location.IsInsideLocation(at, 0f)) refusal = "inside a location";
                 }

@@ -98,7 +98,7 @@ namespace AstvardServerMod
             var at = player.transform.position;
             ZRoutedRpc.instance?.InvokeRoutedRPC(RpcRunesAsk, at.x, at.z);
 
-            player.Message(MessageHud.MessageType.Center, "Считаю камни. Нажми ещё раз, чтобы класть");
+            player.Message(MessageHud.MessageType.Center, "Считаю сеть. Нажми ещё раз, чтобы класть");
             RefreshMenu();
         }
 
@@ -316,7 +316,7 @@ namespace AstvardServerMod
             foreach (var pair in mine)
                 said.Append($" | {pair.Key}: {pair.Value}, круг {rings[pair.Key]:0.#} м");
 
-            Log.LogInfo($"[AstvardServerMod] Runes: {said}");
+            Log.LogInfo($"[AstvardServerMod] Road net: {said}");
 
             if (census.Count == 0) return;
 
@@ -329,7 +329,7 @@ namespace AstvardServerMod
                 all.Append(pair.Key).Append(' ').Append(pair.Value);
             }
 
-            Log.LogInfo($"[AstvardServerMod] Runes: this land holds — {all}");
+            Log.LogInfo($"[AstvardServerMod] Road net: this land holds — {all}");
         }
 
         /// <summary>
@@ -398,7 +398,7 @@ namespace AstvardServerMod
             _runeJob.Stop = true;
             if (_roadJob != null) _roadJob.Stop = true;
 
-            Log.LogInfo($"[AstvardServerMod] Runes: stop asked by {SenderName(sender)}.");
+            Log.LogInfo($"[AstvardServerMod] Road net: stop asked by {SenderName(sender)}.");
         }
 
         private static void OnRunesLay(long sender, ZPackage pkg)
@@ -406,7 +406,7 @@ namespace AstvardServerMod
             if (ZNet.instance == null || !ZNet.instance.IsServer()) return;
             if (!ServerAllows(sender))
             {
-                SayAboutZone(sender, "Дороги по камням кладёт сервер только админам.");
+                SayAboutZone(sender, "Сеть дорог кладёт сервер только админам.");
                 return;
             }
 
@@ -443,7 +443,7 @@ namespace AstvardServerMod
             }
             catch (System.Exception bad)
             {
-                Log.LogWarning($"[AstvardServerMod] Runes: unreadable request from "
+                Log.LogWarning($"[AstvardServerMod] Road net: unreadable request from "
                                + $"{SenderName(sender)}: {bad.Message}");
                 return;
             }
@@ -501,7 +501,7 @@ namespace AstvardServerMod
                        + (net.Shortcuts > 0 ? $" (срезок {net.Shortcuts})" : "")
                        + $", заданий {job.Queue.Count}. Начал.";
             SayAboutZone(sender, said);
-            Log.LogInfo($"[AstvardServerMod] Runes: {said} Asked by {SenderName(sender)}.");
+            Log.LogInfo($"[AstvardServerMod] Road net: {said} Asked by {SenderName(sender)}.");
         }
 
         /// <summary>
@@ -542,18 +542,18 @@ namespace AstvardServerMod
                 // никто не читает, а по одной в минуту видно, что дело идёт.
                 if (job.Done % 10 == 0 || job.Done == job.Queue.Count)
                 {
-                    var said = $"Камни: сделано {job.Done} из {job.Queue.Count}, "
+                    var said = $"Сеть: сделано {job.Done} из {job.Queue.Count}, "
                                + $"{Time.realtimeSinceStartup - began:0} с.";
                     SayAboutZone(job.Sender, said);
-                    Log.LogInfo($"[AstvardServerMod] Runes: {said}");
+                    Log.LogInfo($"[AstvardServerMod] Road net: {said}");
                 }
             }
 
             var how = job.Stop ? "остановлено" : "готово";
             var doused = job.Doused > 0 ? $", погашено под кругами: {job.Doused}" : "";
-            SayAboutZone(job.Sender, $"Камни: {how}, {job.Done} из {job.Queue.Count} за "
+            SayAboutZone(job.Sender, $"Сеть: {how}, {job.Done} из {job.Queue.Count} за "
                                      + $"{(Time.realtimeSinceStartup - began) / 60f:0.#} мин{doused}.");
-            Log.LogInfo($"[AstvardServerMod] Runes: {how}, {job.Done} of {job.Queue.Count}"
+            Log.LogInfo($"[AstvardServerMod] Road net: {how}, {job.Done} of {job.Queue.Count}"
                         + (job.Doused > 0 ? $", {job.Doused} torches doused under rings" : "") + ".");
 
             _runeJob = null;
@@ -696,7 +696,7 @@ namespace AstvardServerMod
             piece.Torch = was;
 
             if (skipped > 0)
-                Log.LogInfo($"[AstvardServerMod] Runes: ring at {piece.Centre.x:F0},"
+                Log.LogInfo($"[AstvardServerMod] Road net: ring at {piece.Centre.x:F0},"
                             + $"{piece.Centre.z:F0} — {placed} torches, {skipped} skipped.");
         }
 

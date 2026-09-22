@@ -43,7 +43,7 @@ namespace AstvardServerMod
 
             // Останавливать 31 км нечем, если кнопки нет: задание живёт на сервере и
             // переживёт выход игрока из игры.
-            RuneStonesStopButton = MakeButton(gui, "Остановить камни", StopRunes);
+            RuneStonesStopButton = MakeButton(gui, "Остановить сеть", StopRunes);
 
             TimeSkipButton = MakeButton(gui, "Сдвинуть время", () =>
             {
@@ -185,7 +185,7 @@ namespace AstvardServerMod
         {
             SetActive(TimeSkipButton, admin && MenuState == StateCheats);
             SetActive(RuneStonesButton, admin && MenuState == StateCheats);
-            SetLabel(RuneStonesButton, RunesArmed ? "Класть? Нажми ещё раз" : "Камни с надписями");
+            SetLabel(RuneStonesButton, RunesArmed ? "Класть? Нажми ещё раз" : "Сеть дорог");
             SetActive(RuneStonesStopButton, admin && MenuState == StateCheats && RunesAsked);
 
             var page = admin && MenuState == StateTimeSkip;
