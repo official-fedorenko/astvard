@@ -465,6 +465,28 @@ namespace AstvardServerMod
         }
     }
 
+    /// <summary>
+    /// Весть в середине экрана переносится по словам.
+    ///
+    /// Игра рисует её одной строкой и за край не переносит, а наши вести длиннее её
+    /// собственных: «Дорожка 258 м готова, ширина 3,0 м, сглажена, снесено: 74, факелов:
+    /// 38, обойдено: 2» - 84 знака, и уезжает за оба края экрана.
+    ///
+    /// Патч стоит на показе, а не на 178 местах, где мы эти вести шлём: там его пришлось
+    /// бы не забыть в каждом новом. Чужие вести короткие, и перенос их не касается -
+    /// строка, которая влезает, возвращается как была.
+    /// </summary>
+    [HarmonyPatch(typeof(MessageHud), nameof(MessageHud.ShowMessage),
+                  new[] { typeof(MessageHud.MessageType), typeof(string), typeof(int),
+                          typeof(Sprite), typeof(bool), typeof(bool) })]
+    public static class MessageWrapPatch
+    {
+        private static void Prefix(MessageHud.MessageType type, ref string text)
+        {
+            if (type == MessageHud.MessageType.Center) text = AstvardServerMod.Say.Wrap(text);
+        }
+    }
+
     [HarmonyPatch(typeof(InventoryGui), "Hide")]
     public static class InventoryHidePatch
     {
