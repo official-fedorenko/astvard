@@ -143,6 +143,7 @@ namespace AstvardServerMod
             // Высоты берём один раз: они нужны и для воды, и для уклона.
             var water = zones.m_waterLevel;
             PlanWet.Clear();
+            PlanSteep.Clear();
             var height = new float[wide * high];
             for (var z = 0; z < high; z++)
             for (var x = 0; x < wide; x++)
@@ -166,6 +167,7 @@ namespace AstvardServerMod
                 if (grade >= PlanCliff)
                 {
                     field.Cost[i] = RoadPlan.Blocked;
+                    PlanSteep.Add(i);
                     continue;
                 }
 
@@ -273,9 +275,32 @@ namespace AstvardServerMod
         /// <summary>Память о том, что было непроходимо из-за воды, а не из-за вещи.</summary>
         private static readonly HashSet<int> PlanWet = new HashSet<int>();
 
+        /// <summary>То же про обрыв: вода, обрыв и круг вещи лечатся по-разному.</summary>
+        private static readonly HashSet<int> PlanSteep = new HashSet<int>();
+
         private static bool Wet(RoadPlan.Field field, int x, int z)
         {
             return PlanWet.Contains(field.At(x, z));
+        }
+
+        /// <summary>
+        /// Чем именно заперта клетка под концом дороги.
+        ///
+        /// «Прохода нет» покрывало три разные беды разом, и по одному слову нельзя было
+        /// понять, метку ли не открыли или материк расколот. Вода у конца значит, что
+        /// метка стоит на островке или у самой воды; обрыв - что её обнесло скалой;
+        /// круг вещи - что рядом жила или валун, и открывать надо шире.
+        /// </summary>
+        private static string WhyShut(RoadPlan.Field field, Vector3 at)
+        {
+            int x, z;
+            if (!field.Cell(new Vec2(at.x, at.z), out x, out z)) return "вне поля";
+
+            var i = field.At(x, z);
+            if (field.Cost[i] < RoadPlan.Blocked) return "открыт";
+            if (PlanWet.Contains(i)) return "вода";
+            if (PlanSteep.Contains(i)) return "обрыв";
+            return "круг вещи";
         }
 
         /// <summary>Что проверка сказала о найденном пути.</summary>
@@ -388,8 +413,9 @@ namespace AstvardServerMod
                 var route = RoadPlan.Find(field, new Vec2(from.x, from.z), new Vec2(to.x, to.z));
                 if (!route.Found)
                 {
-                    Log.LogWarning($"[AstvardServerMod] Road plan {road.Id}: {route.Why} from "
-                                   + $"{from.x:F0} {from.z:F0} to {to.x:F0} {to.z:F0} — laying it straight.");
+                    Log.LogWarning($"[AstvardServerMod] Road plan {road.Id}: {route.Why}; from "
+                                   + $"{from.x:F0} {from.z:F0} ({WhyShut(field, from)}) to "
+                                   + $"{to.x:F0} {to.z:F0} ({WhyShut(field, to)}) — laying it straight.");
                     return false;
                 }
 

@@ -146,6 +146,12 @@ namespace AstvardServerMod
 
             /// <summary>Почему не нашлось, когда не нашлось.</summary>
             internal string Why = "";
+
+            /// <summary>Сколько клеток поиск успел обойти, прежде чем упереться.</summary>
+            internal int Reached;
+
+            /// <summary>Сколько клеток поля проходимо вообще: с чем сравнивать `Reached`.</summary>
+            internal int Open;
         }
 
         /// <summary>
@@ -176,6 +182,23 @@ namespace AstvardServerMod
             {
                 route.Found = true;
                 route.Path.Add(field.World(sx, sz));
+                return route;
+            }
+
+            // Три разные беды под одним словом «прохода нет» - это три разных лечения, и
+            // с одним словом их не различить ни в логе, ни в игре. Конец, который не
+            // удалось открыть, лечится открытием; расколотый материк - порогом по обрыву
+            // или мостом. Поэтому концы судятся до поиска, а сам поиск, не дойдя, говорит,
+            // в каком кармане он заперт.
+            if (field.Cost[start] >= Blocked)
+            {
+                route.Why = "начало в непроходимом";
+                return route;
+            }
+
+            if (field.Cost[goal] >= Blocked)
+            {
+                route.Why = "конец в непроходимом";
                 return route;
             }
 
@@ -241,7 +264,20 @@ namespace AstvardServerMod
 
             if (came[goal] < 0 && start != goal)
             {
-                route.Why = "прохода нет";
+                // Сколько клеток поиск обошёл против того, сколько их проходимо, и
+                // отвечает на вопрос «а карман ли это»: три десятка - метка заперта в
+                // пятачке, половина поля - материк расколот надвое.
+                var reached = 0;
+                for (var i = 0; i < cells; i++)
+                    if (done[i]) reached++;
+
+                var open = 0;
+                for (var i = 0; i < cells; i++)
+                    if (field.Cost[i] < Blocked) open++;
+
+                route.Reached = reached;
+                route.Open = open;
+                route.Why = $"прохода нет, обойдено {reached} клеток из {open} проходимых";
                 return route;
             }
 

@@ -122,7 +122,33 @@ public class RoadPlanTests
         var route = RoadPlan.Find(field, new Vec2(-80f, 0f), new Vec2(80f, 0f));
 
         Assert.False(route.Found);
-        Assert.Equal("прохода нет", route.Why);
+        Assert.StartsWith("прохода нет", route.Why);
+
+        // И сколько клеток поиск обошёл: по этому числу видно, заперта ли метка в
+        // пятачке или материк расколот надвое. Одним словом «прохода нет» три разные
+        // беды не различить, а лечатся они по-разному.
+        Assert.True(route.Reached > 0 && route.Reached < route.Open,
+            $"обошёл {route.Reached} из {route.Open}");
+    }
+
+    [Fact]
+    public void AnEndStuckInsideSomethingIsSaidToBeStuck()
+    {
+        // Метка на островке или обнесённая скалой - это не расколотый материк, и лечится
+        // она другим. Поиск судит концы до того, как пойдёт искать.
+        var field = Ground(60f);
+        var mid = field.Wide / 2;
+
+        field[mid - 5, mid] = RoadPlan.Blocked;
+        var from = RoadPlan.Find(field, field.World(mid - 5, mid), field.World(mid + 5, mid));
+        Assert.False(from.Found);
+        Assert.Equal("начало в непроходимом", from.Why);
+
+        field[mid - 5, mid] = 1f;
+        field[mid + 5, mid] = RoadPlan.Blocked;
+        var to = RoadPlan.Find(field, field.World(mid - 5, mid), field.World(mid + 5, mid));
+        Assert.False(to.Found);
+        Assert.Equal("конец в непроходимом", to.Why);
     }
 
     [Fact]
