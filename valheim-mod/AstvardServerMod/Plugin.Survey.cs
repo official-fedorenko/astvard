@@ -60,13 +60,51 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Потолок меток. Деревьев в километре вокруг спавна 45 209, и ими карту не
-        /// метят вовсе; обходимого там около трёх тысяч, так что это защита от нелепого,
-        /// а не от обычного.
+        /// Потолок меток: защита от нелепого, а не от обычного. Материк 4,2 км² дал
+        /// шесть тысяч помечаемых, так что запас втрое.
         /// </summary>
-        private const int SurveyMarksMost = 6000;
+        private const int SurveyMarksMost = 20000;
 
         private const int SurveyMarksPerPacket = 800;
+
+        /// <summary>
+        /// С какого радиуса каменное образование считается валуном.
+        ///
+        /// **Число из промежутка в измерениях, а не с потолка.** Перепись материка
+        /// 23.09.2026 намерила: мелочь `Rock_4` 0,8..3,6, `Rock_3` 1,6..6,2, `Rock_7`
+        /// 1,1..4,5 - и дальше пусто до **12,5**, где начинается `rock3_mountain`;
+        /// `rock4_forest` 16,7..27,6, `rock1_mountain` 18,2..34,8, `rock4_coast`
+        /// 16,0..32,2, а медная жила `rock4_copper` 20,3..28,2. Черта проведена в пустом
+        /// промежутке, и по ней выходит 912 больших образований против двадцати восьми
+        /// тысяч мелких.
+        ///
+        /// Хозяин просил ровно это: «большие валуны как те что с рудой только без него,
+        /// маленькие с камнем я буду потом сносить или оставлять».
+        ///
+        /// Заодно черта выметает из меток то, чему там делать нечего: сосульки в пещерах
+        /// (933 штуки), ворон (201), жаровни и занавеси - всё это `Destructible`, который
+        /// снос не берёт, и всё это меньше двух метров.
+        /// </summary>
+        private const float BoulderLeast = 8f;
+
+        /// <summary>
+        /// Что метится на карте и в каком порядке показано на странице «Метки».
+        ///
+        /// Список хозяина, слово в слово: «руны с надписями, спавны босов, спавн не нужно
+        /// он и так отмечен, руды, просто большие валуны, деревни и строения из
+        /// процедурной генерации, ягодники, пещеры скелетов и тролей, спавнеры». Камни с
+        /// надписями, алтари, деревни, руины и пещеры - **все локации**, оттого их один
+        /// род на всех.
+        /// </summary>
+        private static readonly string[] MarkKinds = { "location", "ore", "boulder", "nest", "berries" };
+
+        /// <summary>
+        /// Что включено по умолчанию. Гнёзда и ягодники - нет: их на материке 1 304 и
+        /// 2 591, а значок на карте Valheim не уменьшается при отдалении, так что тысячи
+        /// меток сливаются в ковёр. Включаются одной кнопкой, без повторной переписи.
+        /// </summary>
+        private static readonly HashSet<string> MarksShown =
+            new HashSet<string> { "location", "ore", "boulder" };
 
         /// <summary>Файл переписи: рядом с прочими файлами мода, у сервера.</summary>
         private const string SurveyFile = "astvard-survey.txt";
@@ -77,6 +115,10 @@ namespace AstvardServerMod
         internal static GameObject SurveyButton;
 
         internal static GameObject SurveyClearButton;
+
+        internal static GameObject SurveyMarksButton;
+
+        internal static GameObject[] SurveyKindButtons;
 
         private static bool _surveying;
 
@@ -110,9 +152,41 @@ namespace AstvardServerMod
         /// <summary>Метки, поставленные переписью. Не сохраняются: их ставят заново.</summary>
         private static readonly List<Minimap.PinData> SurveyPins = new List<Minimap.PinData>();
 
+        /// <summary>
+        /// Всё, что прислала перепись, - и выключенное тоже.
+        ///
+        /// Держится оно здесь, а не выбрасывается по дороге, ровно ради того, чтобы
+        /// включить ягодники можно было кнопкой, а не четырьмя минутами новой переписи.
+        /// </summary>
+        private static readonly List<SurveyMark> SurveyFound = new List<SurveyMark>();
+
         internal static int SurveyPinCount
         {
             get { return SurveyPins.Count; }
+        }
+
+        internal static int SurveyFoundCount
+        {
+            get { return SurveyFound.Count; }
+        }
+
+        internal static int SurveyFoundOf(string kind)
+        {
+            var n = 0;
+            foreach (var mark in SurveyFound)
+                if (mark.Kind == kind) n++;
+            return n;
+        }
+
+        internal static bool MarkShown(string kind)
+        {
+            return MarksShown.Contains(kind);
+        }
+
+        internal static void ToggleMarkKind(string kind)
+        {
+            if (!MarksShown.Remove(kind)) MarksShown.Add(kind);
+            RepinSurvey();
         }
 
         internal static void ClearSurveyPins()
@@ -123,6 +197,32 @@ namespace AstvardServerMod
                     if (pin != null) map.RemovePin(pin);
 
             SurveyPins.Clear();
+            RefreshMenu();
+        }
+
+        internal static void ForgetSurvey()
+        {
+            SurveyFound.Clear();
+            ClearSurveyPins();
+        }
+
+        /// <summary>Заново раскладывает метки по карте из того, что прислала перепись.</summary>
+        private static void RepinSurvey()
+        {
+            ClearSurveyPins();
+
+            var map = Minimap.instance;
+            if (map == null) return;
+
+            foreach (var mark in SurveyFound)
+            {
+                if (!MarksShown.Contains(mark.Kind)) continue;
+                SurveyPins.Add(map.AddPin(new Vector3(mark.X, 0f, mark.Z), PinFor(mark.Kind),
+                    $"{MarkTitle(mark.Kind)}: {mark.Name}", false, false));
+            }
+
+            Log.LogInfo($"[AstvardServerMod] Survey pins: {SurveyPins.Count} of "
+                        + $"{SurveyFound.Count} on the map.");
             RefreshMenu();
         }
 
@@ -149,49 +249,45 @@ namespace AstvardServerMod
                 return;
             }
 
-            if (first) ClearSurveyPins();
-
-            var map = Minimap.instance;
-            if (map == null) return;
+            // Первая пачка - это новая перепись, а не добавка к прежней.
+            if (first) ForgetSurvey();
 
             for (var i = 0; i < count; i++)
             {
-                string kind, name;
-                float x, z;
                 try
                 {
-                    kind = pkg.ReadString();
-                    name = pkg.ReadString();
-                    x = pkg.ReadSingle();
-                    z = pkg.ReadSingle();
+                    SurveyFound.Add(new SurveyMark
+                    {
+                        Kind = pkg.ReadString(),
+                        Name = pkg.ReadString(),
+                        X = pkg.ReadSingle(),
+                        Z = pkg.ReadSingle(),
+                    });
                 }
                 catch (System.Exception e)
                 {
-                    Log.LogWarning($"[AstvardServerMod] Survey pin {i} unreadable: {e.Message}");
+                    Log.LogWarning($"[AstvardServerMod] Survey mark {i} unreadable: {e.Message}");
                     break;
                 }
-
-                SurveyPins.Add(map.AddPin(new Vector3(x, 0f, z), PinFor(kind),
-                    $"{MarkTitle(kind)}: {name}", false, false));
             }
 
-            Log.LogInfo($"[AstvardServerMod] Survey pins: {SurveyPins.Count} on the map.");
-            RefreshMenu();
+            RepinSurvey();
         }
 
         private static Minimap.PinType PinFor(string kind)
         {
             if (kind == "location") return Minimap.PinType.Icon0;
             if (kind == "ore") return Minimap.PinType.Icon1;
-            if (kind == "rock") return Minimap.PinType.Icon2;
+            if (kind == "boulder") return Minimap.PinType.Icon2;
+            if (kind == "berries") return Minimap.PinType.Icon3;
             return Minimap.PinType.Icon4;
         }
 
-        private static string MarkTitle(string kind)
+        internal static string MarkTitle(string kind)
         {
             if (kind == "location") return "Локация";
             if (kind == "ore") return "Руда";
-            if (kind == "rock") return "Не сносится";
+            if (kind == "boulder") return "Валун";
             if (kind == "nest") return "Гнездо";
             if (kind == "berries") return "Ягодник";
             return kind;
@@ -302,6 +398,10 @@ namespace AstvardServerMod
                     file.WriteLine($"location\t{where.m_location.m_name}\t{Num(where.m_position.x)}\t"
                                    + $"{Num(where.m_position.z)}\t{Num(where.m_location.m_exteriorRadius)}\t0");
                     places++;
+
+                    // Спавн игра метит сама, и второй значок поверх её собственного -
+                    // мусор. Просьба хозяина: «спавн не нужно, он и так отмечен».
+                    if (where.m_location.m_name == "StartTemple") continue;
 
                     if (marks.Count < SurveyMarksMost)
                         marks.Add(new SurveyMark
@@ -514,10 +614,11 @@ namespace AstvardServerMod
             if (!seen.Add(go.GetInstanceID())) return false;
 
             float tall;
-            var kind = SurveyKind(go, out tall);
+            var radius = FlatRadius(go);
+            var kind = SurveyKind(go, radius, out tall);
             var name = Utils.GetPrefabName(go);
             file.WriteLine($"{kind}\t{name}\t{Num(at.x)}\t{Num(at.z)}\t"
-                           + $"{Num(FlatRadius(go))}\t{tall:F0}");
+                           + $"{Num(radius)}\t{tall:F0}");
 
             if (WorthAMark(kind) && marks.Count < SurveyMarksMost)
                 marks.Add(new SurveyMark { Kind = kind, Name = name, X = at.x, Z = at.z });
@@ -526,20 +627,17 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// Метить ли это на карте игрока.
+        /// Метить ли это на карте игрока: ровно <see cref="MarkKinds"/> и ничего сверх.
         ///
-        /// Ровно то, что просил хозяин, и ровно то, что делает дорога: круг вокруг метки
-        /// и обход того, что не снести. Деревья, подлесок и мелочь на землю карты не
-        /// идут - их за километр вокруг спавна восемьдесят пять тысяч, и карта из них
-        /// была бы зелёным пятном, а не ответом.
-        ///
-        /// `bare` сюда не попадает нарочно, хотя со снесением выключенным дорога его
-        /// обходит: таких камней там двадцать тысяч, и это отдельный разговор, а не
-        /// метка.
+        /// Деревья, подлесок, мелочь на земле и мелкий камень сюда не идут - их на
+        /// материке сто восемьдесят тысяч из ста девяноста четырёх, и карта из них была
+        /// бы пятном, а не ответом.
         /// </summary>
         private static bool WorthAMark(string kind)
         {
-            return kind == "ore" || kind == "rock" || kind == "nest" || kind == "berries";
+            for (var i = 0; i < MarkKinds.Length; i++)
+                if (MarkKinds[i] == kind) return true;
+            return false;
         }
 
         /// <summary>
@@ -549,18 +647,23 @@ namespace AstvardServerMod
         /// перепись и дорога когда-нибудь разойдутся в ответе об одном валуне, разбор
         /// пойдёт искать беду там, где её нет.
         /// </summary>
-        private static string SurveyKind(GameObject go, out float tall)
+        private static string SurveyKind(GameObject go, float radius, out float tall)
         {
             tall = 0f;
 
             // Чужая постройка: ни снос, ни обход её не касаются вовсе.
             if (go.GetComponentInParent<Piece>() != null) return "piece";
 
+            // Руда - в любом размере: олово и обсидиан меньше двух метров, а медная жила
+            // за двадцать, и хозяину нужны все. Спрашивается цепочкой, потому что целая
+            // жила до первого удара `MineRock` не носит вовсе.
+            if (IsOreVein(go)) return "ore";
+
             var mine = go.GetComponent<MineRock>();
-            if (mine != null) return DropsOnly(mine.m_dropItems, StoneOnly) ? "stone" : "ore";
+            if (mine != null) return radius >= BoulderLeast ? "boulder" : "stone";
 
             var mine5 = go.GetComponent<MineRock5>();
-            if (mine5 != null) return DropsOnly(mine5.m_dropItems, StoneOnly) ? "stone" : "ore";
+            if (mine5 != null) return radius >= BoulderLeast ? "boulder" : "stone";
 
             if (go.GetComponent<CreatureSpawner>() != null) return "nest";
 
@@ -585,6 +688,11 @@ namespace AstvardServerMod
             if (IsUndergrowth(go, out tall)) return "undergrowth";
 
             tall = Tall(go);
+
+            // Большое каменное образование - то же, что медная жила, только без руды:
+            // `rock4_forest`, `rock1_mountain`, `rock4_coast` и родня. Хозяин просил
+            // метить именно их, а мелкие камни - «я их потом снесу или оставлю».
+            if (radius >= BoulderLeast) return "boulder";
 
             // То самое различие, на котором всё и держится: «снос это уберёт» против
             // «это останется стоять». Со снесением выключенным первое тоже остаётся.

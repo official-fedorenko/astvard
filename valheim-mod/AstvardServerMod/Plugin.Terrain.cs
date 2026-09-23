@@ -841,6 +841,35 @@ namespace AstvardServerMod
         /// made the same way, and following the chain is also what keeps them: their copy
         /// drops ore.
         /// </summary>
+        /// <summary>
+        /// Рудная жила: то, что в конце концов даёт не только камень.
+        ///
+        /// Спрашивать это приходится **цепочкой**, и вот почему: целая медная жила - это
+        /// `Destructible` без своей добычи, а руда лежит в `rock4_copper_frac`, куда она
+        /// превращается от первого удара. До удара `MineRock5` на ней нет вовсе, так что
+        /// вопрос «есть ли у тебя руда» первому звену отвечают все камни мира одинаково:
+        /// «нет». Оттого в первой переписи 151 медная жила и стояла среди «камней»,
+        /// а хозяин просил отличать руду.
+        ///
+        /// Олово и обсидиан, наоборот, лежат `MineRock`-ом сразу, без целого звена, - им
+        /// хватает первой же проверки.
+        /// </summary>
+        private static bool IsOreVein(GameObject go, int depth = 0)
+        {
+            if (go == null || depth > 3) return false;
+
+            var mine = go.GetComponent<MineRock>();
+            if (mine != null) return !DropsOnly(mine.m_dropItems, StoneOnly);
+
+            var mine5 = go.GetComponent<MineRock5>();
+            if (mine5 != null) return !DropsOnly(mine5.m_dropItems, StoneOnly);
+
+            var broken = go.GetComponent<Destructible>();
+            if (broken == null || broken.m_spawnWhenDestroyed == null) return false;
+
+            return IsOreVein(broken.m_spawnWhenDestroyed, depth + 1);
+        }
+
         private static bool BreaksDownTo(GameObject go, string[] allowed, int depth)
         {
             // The game's chains are one link long; the bound only guards against a

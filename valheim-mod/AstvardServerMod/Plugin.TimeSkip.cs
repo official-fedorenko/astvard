@@ -49,7 +49,16 @@ namespace AstvardServerMod
             SurveyButton = MakeButton(gui, "", AskSurvey);
 
             // Метки переписи не сохраняются в карту игрока, но висят до перезахода.
-            SurveyClearButton = MakeButton(gui, "", ClearSurveyPins);
+            SurveyClearButton = MakeButton(gui, "", ForgetSurvey);
+
+            // Страница «Метки»: по кнопке на род, как принято в этой панели.
+            SurveyMarksButton = MakeButton(gui, "", () => { MenuState = StateSurveyMarks; RefreshMenu(); });
+            SurveyKindButtons = new GameObject[MarkKinds.Length];
+            for (var i = 0; i < MarkKinds.Length; i++)
+            {
+                var kind = MarkKinds[i];
+                SurveyKindButtons[i] = MakeButton(gui, "", () => ToggleMarkKind(kind));
+            }
 
             TimeSkipButton = MakeButton(gui, "Сдвинуть время", () =>
             {
@@ -194,8 +203,22 @@ namespace AstvardServerMod
             SetLabel(RuneStonesButton, RunesArmed ? "Класть? Нажми ещё раз" : "Сеть дорог");
             SetActive(RuneStonesStopButton, admin && MenuState == StateCheats && RunesAsked);
             SetActive(SurveyButton, admin && MenuState == StateCheats);
-            SetActive(SurveyClearButton, admin && MenuState == StateCheats && SurveyPinCount > 0);
+            SetActive(SurveyClearButton, admin && MenuState == StateCheats && SurveyFoundCount > 0);
             SetLabel(SurveyClearButton, $"Снять метки ({SurveyPinCount})");
+            SetActive(SurveyMarksButton, admin && MenuState == StateCheats && SurveyFoundCount > 0);
+            SetLabel(SurveyMarksButton, $"Метки: что показывать ({SurveyPinCount} из {SurveyFoundCount})");
+
+            // На сервере виджетов нет вовсе: `CreateTimeSkipWidgets` там не бежит.
+            var marks = admin && MenuState == StateSurveyMarks;
+            for (var i = 0; SurveyKindButtons != null && i < SurveyKindButtons.Length; i++)
+            {
+                SetActive(SurveyKindButtons[i], marks);
+                if (!marks) continue;
+
+                var kind = MarkKinds[i];
+                SetLabel(SurveyKindButtons[i], $"{MarkTitle(kind)}: "
+                    + (MarkShown(kind) ? "вкл" : "выкл") + $" ({SurveyFoundOf(kind)})");
+            }
             SetLabel(SurveyButton, "Перепись материка");
 
             var page = admin && MenuState == StateTimeSkip;
