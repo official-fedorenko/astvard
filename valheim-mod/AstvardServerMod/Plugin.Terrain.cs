@@ -564,6 +564,37 @@ namespace AstvardServerMod
         }
 
         /// <summary>
+        /// Лес, выросший внутри круга локации: дерево, бревно, пень или куст.
+        ///
+        /// Внутри локации снос не трогает **ничего** - там стены крипты, камни дольмена,
+        /// дома деревни, и снести их значит испортить ровно то, к чему дорога и шла. Но
+        /// сеть соединяет локации, то есть круг каждой метки и последние метры каждой
+        /// дороги лежат внутри локаций, и правило выключало там снос целиком: на укладке
+        /// 23.09.2026 из 157 оставленных вещей **112 были «inside a location»**, и среди
+        /// них 34 бревна, 21 бук и 10 сосен - прямо на свежем мощении. Хозяин прислал
+        /// два снимка: бревно поперёк дороги и сосну на её краю.
+        ///
+        /// Лес внутри круга - это не локация, а лес. Он и вырастет там снова сам, и ни
+        /// одна локация на нём не держится.
+        ///
+        /// **Ослаблено ровно на дерево, и только потому, что дерево отрастает.** Камень,
+        /// жила, всё построенное и всё прочее внутри локации остаются под защитой - в том
+        /// числе `Pickable`, потому что подставка с ядрами сурта в склепе тоже `Pickable`,
+        /// а это не мелочь на земле, а добыча.
+        /// </summary>
+        private static bool IsWoodInTheWay(GameObject go)
+        {
+            if (go == null) return false;
+            if (go.GetComponent<TreeBase>() != null) return true;
+            if (go.GetComponent<TreeLog>() != null) return true;
+
+            var broken = go.GetComponent<Destructible>();
+            if (broken == null) return false;
+
+            return broken.m_destructibleType == DestructibleType.Tree || IsBrush(go, broken);
+        }
+
+        /// <summary>
         /// Куст: то, что разбирается в дерево и ни во что больше.
         ///
         /// **Спрашивать это через `BreaksDownTo` нельзя, и на этом я обжёгся.** Та
@@ -818,7 +849,8 @@ namespace AstvardServerMod
                         // каждое дерево заводит в перечне свою строку.
                         refusal = $"not undergrowth, {tall:0} m";
                     else if (IsProtectedFromDelete(go)) refusal = "protected";
-                    else if (Location.IsInsideLocation(at, 0f)) refusal = "inside a location";
+                    else if (Location.IsInsideLocation(at, 0f) && !IsWoodInTheWay(go))
+                        refusal = "inside a location";
                 }
 
                 if (!_inWay(go)) return;
