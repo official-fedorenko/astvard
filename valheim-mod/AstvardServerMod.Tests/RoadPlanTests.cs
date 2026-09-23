@@ -12,6 +12,11 @@ public class RoadPlanTests
 {
     private const float Step = 8f;
 
+    /// <summary>Те же, что у прокладки: проверять надо на том, чем кладут.</summary>
+    private const int Passes = 600;
+
+    private const float Pull = 0.5f;
+
     /// <summary>Поле в метрах вокруг нуля: клетки по 8 м, середина в (0, 0).</summary>
     private static RoadPlan.Field Ground(float reach)
     {
@@ -32,6 +37,19 @@ public class RoadPlanTests
         }
 
         return best;
+    }
+
+    /// <summary>Ни одной точки в непроходимой клетке — то самое, что обещает сглаживание.</summary>
+    private static bool Clear(RoadPlan.Field field, IList<Vec2> path)
+    {
+        foreach (var point in path)
+        {
+            int x, z;
+            if (!field.Cell(point, out x, out z)) return false;
+            if (field[x, z] >= RoadPlan.Blocked) return false;
+        }
+
+        return true;
     }
 
     [Fact]
@@ -164,32 +182,49 @@ public class RoadPlanTests
     }
 
     [Fact]
-    public void RoundingLeavesBothEndsWhereTheyWere()
+    public void SmoothingRoundsTheCornerAndLeavesTheEndsAlone()
     {
-        // Концы дороги - это середины меток, и двигать их поиску нечем.
-        var path = new List<Vec2>
-        {
-            new Vec2(0f, 0f), new Vec2(40f, 0f), new Vec2(40f, 40f), new Vec2(80f, 40f),
-        };
+        // Концы дороги - это середины меток, и двигать их сглаживанию нечем. А угол
+        // между ними обязан стать дугой: излом на стыке с кругом хозяин увидел в игре
+        // первым же вечером - «от круга бывают сильно резкие дорожки».
+        var field = Ground(200f);
+        var corner = new Vec2(0f, 0f);
+        var walk = RoadPlan.Walk(
+            new List<Vec2> { new Vec2(-60f, 0f), corner, new Vec2(0f, 60f) }, 1f);
 
-        var round = RoadPlan.Round(path, 4, 0.5f);
+        var easy = RoadPlan.Ease(field, walk, Passes, Pull);
 
-        Assert.Equal(path[0].X, round[0].X, 3);
-        Assert.Equal(path[0].Z, round[0].Z, 3);
-        Assert.Equal(path[3].X, round[3].X, 3);
-        Assert.Equal(path[3].Z, round[3].Z, 3);
+        Assert.Equal(walk[0].X, easy[0].X, 3);
+        Assert.Equal(walk[0].Z, easy[0].Z, 3);
+        Assert.Equal(walk[walk.Count - 1].X, easy[easy.Count - 1].X, 3);
+        Assert.Equal(walk[walk.Count - 1].Z, easy[easy.Count - 1].Z, 3);
+
+        // Срез прямого угла - около 9,7 м, то есть дуга радиусом метров двадцать пять.
+        // Прежние три прохода по редкой ломаной оставляли здесь ноль.
+        Assert.True(Nearest(easy, corner) > 8f,
+            $"угол остался изломом: до него {Nearest(easy, corner):F1} м");
+        Assert.True(RoadPlan.Length(easy) < RoadPlan.Length(walk) - 5f,
+            $"дорога не срезала угла: было {RoadPlan.Length(walk):F0}, стало {RoadPlan.Length(easy):F0}");
     }
 
     [Fact]
-    public void RoundingTakesTheCornerOff()
+    public void SmoothingNeverCutsThroughWhatTheSearchWentRound()
     {
-        var path = new List<Vec2> { new Vec2(0f, 0f), new Vec2(40f, 0f), new Vec2(40f, 40f) };
+        // Сглаживание тянет путь к хорде, то есть срезает углы, - а срезанный угол у
+        // валуна это дорога сквозь валун. Обход, найденный поиском, оно портить не вправе.
+        var walk = RoadPlan.Walk(
+            new List<Vec2> { new Vec2(-20f, 0f), new Vec2(0f, -30f), new Vec2(20f, 0f) }, 1f);
 
-        var round = RoadPlan.Round(path, 6, 0.5f);
+        var field = Ground(200f);
+        field.Circle(new Vec2(0f, 0f), 12f, RoadPlan.Blocked);
 
-        // Угол уехал к середине между соседями, то есть срезался.
-        Assert.True(round[1].X < 39f && round[1].Z > 1f,
-            $"угол остался на {round[1].X:F1} {round[1].Z:F1}");
+        Assert.True(Clear(field, walk), "сам обход задевает валун — проверять было бы нечего");
+        Assert.True(Clear(field, RoadPlan.Ease(field, walk, Passes, Pull)),
+            "сглаживание срезало угол и завело дорогу в валун");
+
+        // И проверка не пуста: без валуна то же сглаживание идёт ровно в те клетки.
+        Assert.False(Clear(field, RoadPlan.Ease(Ground(200f), walk, Passes, Pull)),
+            "без валуна сглаживание туда и не шло — проверять было нечего");
     }
 
     [Fact]

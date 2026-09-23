@@ -497,6 +497,7 @@ namespace AstvardServerMod
 
             var planned = 0;
             var straightened = 0;
+            var began = Time.realtimeSinceStartup;
 
             foreach (var step in Steps(marks, net, new Vector3(x, 0f, z)))
             {
@@ -536,6 +537,13 @@ namespace AstvardServerMod
                 job.Metres += Flat(from, to);
                 job.Queue.Add(road);
             }
+
+            // Вся прокладка идёт разом, до укладки и в одном кадре: сетка цены, поиск по
+            // каждой дороге и сглаживание. Сколько это стоит, должно быть числом в логе,
+            // а не догадкой - сервер на это время стоит.
+            if (field != null)
+                Log.LogInfo($"[AstvardServerMod] Road net: planning {planned + straightened} roads "
+                            + $"took {Time.realtimeSinceStartup - began:F1} s.");
 
             _runeJob = job;
             Instance.StartCoroutine(RunRuneJob(job));

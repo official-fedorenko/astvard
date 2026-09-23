@@ -61,6 +61,30 @@ namespace AstvardServerMod
         private const float PlanRoadCost = 0.45f;
 
         /// <summary>
+        /// Сколько раз сглаживать найденный путь.
+        ///
+        /// **Число намерено, а не взято с потолка.** На точках через метр прямой угол
+        /// срезается на 5,6 м при двухстах проходах, а срез растёт как корень: шестьсот
+        /// дают 9,7 м, то есть дугу радиусом метров двадцать пять. Это поворот, который
+        /// видно поворотом; прежние три прохода по редкой ломаной не давали ничего, и
+        /// хозяин увидел это на первой же сети - «от круга бывают сильно резкие дорожки».
+        ///
+        /// Дороже это почти ничего не стоит: дорога сети - метров двести, то есть двести
+        /// точек, и весь счёт на восемь десятков дорог укладывается в десяток миллионов
+        /// сложений один раз, до укладки.
+        /// </summary>
+        private const int PlanEasePasses = 600;
+
+        /// <summary>
+        /// Насколько точка съезжает к середине между соседями за один проход.
+        ///
+        /// Половина, и больше нельзя: на единице точка встаёт ровно в середину, а такой
+        /// шаг не гасит дрожь через точку - путь, вильнувший на метр туда-сюда, так и
+        /// будет вилять, сколько проходов ни делай.
+        /// </summary>
+        private const float PlanEasePull = 0.5f;
+
+        /// <summary>
         /// Что перепись нашла на материке - остаётся у сервера для прокладки.
         ///
         /// Держится оно здесь, а не перечитывается из файла: файл писан для человека и
@@ -210,8 +234,16 @@ namespace AstvardServerMod
         /// почему: поиск честно ответит «прохода нет».
         ///
         /// Открывается ровно круг метки, не больше: остальное непроходимое остаётся.
+        ///
+        /// **И закрывается обратно, когда дорога проложена.** Сетка цены одна на всю сеть,
+        /// а открытое ничем не закрывалось: каждая из восьмидесяти дорог пробивала у своих
+        /// концов по дыре метров в двенадцать, и дыры эти оставались навсегда. Валун или
+        /// жила, стоявшие рядом с камнем, переставали быть препятствием для всех следующих
+        /// дорог - и сеть спокойно шла сквозь них. Поэтому вызывающий получает список
+        /// того, что открыл, и обязан вернуть его на место.
         /// </summary>
-        private static void OpenEnd(RoadPlan.Field field, Vector3 at, float radius)
+        private static void OpenEnd(RoadPlan.Field field, Vector3 at, float radius,
+                                    List<KeyValuePair<int, float>> was)
         {
             int cx, cz;
             field.Cell(new Vec2(at.x, at.z), out cx, out cz);
@@ -231,7 +263,10 @@ namespace AstvardServerMod
 
                 // Воду не открываем даже у метки: храм на берегу не повод класть дорогу
                 // по дну.
-                if (field.Cost[i] >= RoadPlan.Blocked && !Wet(field, x, z)) field.Cost[i] = 2f;
+                if (field.Cost[i] < RoadPlan.Blocked || Wet(field, x, z)) continue;
+
+                was.Add(new KeyValuePair<int, float>(i, field.Cost[i]));
+                field.Cost[i] = 2f;
             }
         }
 
@@ -343,43 +378,55 @@ namespace AstvardServerMod
         {
             // Концы дороги - середины меток, а метка это непроходимый круг. Открываем
             // ровно их, иначе поиск честно ответит «прохода нет» у каждой дороги сети.
-            OpenEnd(field, from, fromRing + road.Radius + 2f);
-            OpenEnd(field, to, toRing + road.Radius + 2f);
-
-            var route = RoadPlan.Find(field, new Vec2(from.x, from.z), new Vec2(to.x, to.z));
-            if (!route.Found)
+            // Что открыли - вернём: сетка одна на всю сеть, и дыра в ней живёт до конца.
+            var opened = new List<KeyValuePair<int, float>>();
+            try
             {
-                Log.LogWarning($"[AstvardServerMod] Road plan {road.Id}: {route.Why} from "
-                               + $"{from.x:F0} {from.z:F0} to {to.x:F0} {to.z:F0} — laying it straight.");
-                return false;
+                OpenEnd(field, from, fromRing + road.Radius + 2f, opened);
+                OpenEnd(field, to, toRing + road.Radius + 2f, opened);
+
+                var route = RoadPlan.Find(field, new Vec2(from.x, from.z), new Vec2(to.x, to.z));
+                if (!route.Found)
+                {
+                    Log.LogWarning($"[AstvardServerMod] Road plan {road.Id}: {route.Why} from "
+                                   + $"{from.x:F0} {from.z:F0} to {to.x:F0} {to.z:F0} — laying it straight.");
+                    return false;
+                }
+
+                // Ступеньки сетки - не повороты дороги: путь по восьми направлениям на
+                // километр даёт сто двадцать пять одинаковых углов. Убираем лишнее,
+                // расставляем точки через метр, как ждёт укладка, и только на них
+                // скругляем: на редкой ломаной то же сглаживание не скругляет, а двигает.
+                var thin = RoadPlan.Simplify(route.Path, PlanStep * 0.35f);
+                var walk = RoadPlan.Walk(thin, 1f);
+                var easy = RoadPlan.Ease(field, walk, PlanEasePasses, PlanEasePull);
+
+                var check = CheckRoute(field, easy);
+
+                var world = WorldGenerator.instance;
+                var path = new List<Vector3>(easy.Count);
+                foreach (var point in easy)
+                    path.Add(new Vector3(point.X,
+                        world != null ? world.GetHeight(point.X, point.Z) : 0f, point.Z));
+
+                // Концы обязаны остаться в серединах меток: круг там и ляжет.
+                path[0] = from;
+                path[path.Count - 1] = to;
+
+                road.Path = path;
+                RememberRoad(field, easy, road.Radius);
+
+                Log.LogInfo($"[AstvardServerMod] Road plan {road.Id}: {route.Metres:F0} m over "
+                            + $"{route.Cost:F0} of cost, {check.Say}"
+                            + (check.Good ? "." : " — ПРОВЕРКА НЕ ПРОШЛА."));
+                return true;
             }
-
-            // Ступеньки сетки - не повороты дороги: путь по восьми направлениям на
-            // километр даёт сто двадцать пять одинаковых углов. Убираем лишнее, срезаем
-            // углы сетки и расставляем точки через метр, как ждёт укладка.
-            var thin = RoadPlan.Simplify(route.Path, PlanStep * 0.35f);
-            var round = RoadPlan.Round(thin, 3, 0.5f);
-            var walk = RoadPlan.Walk(round, 1f);
-
-            var check = CheckRoute(field, walk);
-
-            var world = WorldGenerator.instance;
-            var path = new List<Vector3>(walk.Count);
-            foreach (var point in walk)
-                path.Add(new Vector3(point.X,
-                    world != null ? world.GetHeight(point.X, point.Z) : 0f, point.Z));
-
-            // Концы обязаны остаться в серединах меток: круг там и ляжет.
-            path[0] = from;
-            path[path.Count - 1] = to;
-
-            road.Path = path;
-            RememberRoad(field, walk, road.Radius);
-
-            Log.LogInfo($"[AstvardServerMod] Road plan {road.Id}: {route.Metres:F0} m over "
-                        + $"{route.Cost:F0} of cost, {check.Say}"
-                        + (check.Good ? "." : " — ПРОВЕРКА НЕ ПРОШЛА."));
-            return true;
+            finally
+            {
+                // Строго после `RememberRoad`: та дешевит клетки под дорогой, и клетки
+                // внутри круга метки она тоже успевает задеть, пока они открыты.
+                foreach (var was in opened) field.Cost[was.Key] = was.Value;
+            }
         }
     }
 }
