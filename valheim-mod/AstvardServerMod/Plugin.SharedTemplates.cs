@@ -81,6 +81,7 @@ namespace AstvardServerMod
             RegisterTimeSkipRpcs(rpc);
             RegisterSkyRpcs(rpc);
             RegisterRuneRoadRpcs(rpc);
+            RegisterSurveyRpcs(rpc);
             RegisterWorldRateRpcs(rpc);
             RegisterSharedZoneRpcs(rpc);
             RegisterSiteSortingRpcs(rpc);

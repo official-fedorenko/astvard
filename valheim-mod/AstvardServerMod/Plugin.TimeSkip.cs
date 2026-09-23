@@ -45,6 +45,9 @@ namespace AstvardServerMod
             // переживёт выход игрока из игры.
             RuneStonesStopButton = MakeButton(gui, "Остановить сеть", StopRunes);
 
+            // Перепись: глаза для разбора, а не функция мода. Рельефа она не трогает.
+            SurveyButton = MakeButton(gui, "", AskSurvey);
+
             TimeSkipButton = MakeButton(gui, "Сдвинуть время", () =>
             {
                 SetFieldText(TimeSkipInput, "2");
@@ -187,6 +190,8 @@ namespace AstvardServerMod
             SetActive(RuneStonesButton, admin && MenuState == StateCheats);
             SetLabel(RuneStonesButton, RunesArmed ? "Класть? Нажми ещё раз" : "Сеть дорог");
             SetActive(RuneStonesStopButton, admin && MenuState == StateCheats && RunesAsked);
+            SetActive(SurveyButton, admin && MenuState == StateCheats);
+            SetLabel(SurveyButton, $"Перепись вокруг спавна ({SurveyReach:F0} м)");
 
             var page = admin && MenuState == StateTimeSkip;
             SetActive(TimeSkipHint, page);
