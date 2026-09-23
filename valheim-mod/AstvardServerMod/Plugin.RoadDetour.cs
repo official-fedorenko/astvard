@@ -18,11 +18,12 @@ namespace AstvardServerMod
         ///
         /// So the road goes round instead. What stands fast is read off as flat circles
         /// and handed to <see cref="Geometry.Detour"/>, which steps the road aside by the
-        /// short way round and brings it back on its line before the piece ends.
+        /// short way round and brings it back on its line.
         ///
         /// Read once per piece, after its zones have built their objects - before that
         /// there is nothing in the scene to find, and a location without its prefab has
-        /// no radius to ask for.
+        /// no radius to ask for. But what is read in a piece bends the whole road ahead
+        /// of it, not that piece alone: см. <see cref="BendRoadAhead"/>.
         /// </summary>
         private const float DetourClearance = 1f;
 
@@ -35,11 +36,11 @@ namespace AstvardServerMod
         /// <summary>
         /// How far the road may stray from its line at all.
         ///
-        /// The job holds the zones within <see cref="RoadJobMargin"/> = 40 m of the path
+        /// The job holds the zones within <see cref="RoadJobMargin"/> = 64 m of the path
         /// it was given, and paint outside them would be written to compilers nobody
         /// loaded. The bent road sits at most this far out, and its paint reaches its own
         /// radius plus the smoothing blend beyond that - about 10 m for a road of two -
-        /// so thirty is the true ceiling and this is kept well inside it.
+        /// so the margin is what sets the ceiling, and this is kept inside it.
         ///
         /// Sixteen stood here until 23.09.2026, and twenty things a lay were refused as
         /// too big to get round: dolmens, whose own radius the road must clear, ask for
@@ -54,9 +55,6 @@ namespace AstvardServerMod
         /// </summary>
         private const float DetourMaxStep = 50f;
 
-        /// <summary>A piece is never cut shorter than this to make room for a way round.</summary>
-        private const float DetourLeastPiece = 24f;
-
         /// <summary>
         /// How far an end of a whole road may move aside to get round something.
         ///
@@ -67,22 +65,12 @@ namespace AstvardServerMod
         /// paint stays on the disc.
         ///
         /// Before this, 63 things a lay round stood their ground at the ends of pieces
-        /// (23.09.2026, and the same 63 in three layings running): a thing near the far
-        /// end is met again by cutting the piece short, but a thing near the near end has
-        /// nowhere to go, and the near end of the first piece is the mark itself.
+        /// (23.09.2026, and the same 63 in three layings running), and the near end of
+        /// the first piece is the mark itself. С того же дня дорога гнётся целиком (см.
+        /// <see cref="BendRoadAhead"/>), так что стыков между кусками этот запас больше
+        /// не касается - только двух концов самой дороги.
         /// </summary>
         private const float DetourEndSlack = 12f;
-
-        /// <summary>
-        /// How far short of the easing a piece is cut when it is cut at all.
-        ///
-        /// Stopping exactly where the easing would begin gains nothing: the next piece
-        /// would start at that same metre, and the way round would need to begin at its
-        /// very first point - which is the one point that may not move, because it is
-        /// where this piece ended. A few metres of lead-in is what makes the second
-        /// attempt work.
-        /// </summary>
-        private const float DetourCutBack = 8f;
 
         /// <summary>
         /// The ground a road covers, with room to spare: anything outside this cannot be
@@ -104,9 +92,19 @@ namespace AstvardServerMod
             return Rect.MinMaxRect(minX - slack, minZ - slack, maxX + slack, maxZ + slack);
         }
 
-        /// <summary>Whatever stands fast in an area, as flat circles.</summary>
+        /// <summary>
+        /// Whatever stands fast in an area, as flat circles.
+        ///
+        /// <paramref name="clearing"/> is what makes the answer honest: the question is
+        /// not "would the clearing take this out" but "will it". With the clearing off it
+        /// takes out nothing but undergrowth, and "the clearing will see to it" becomes
+        /// "nobody will see to it" - the boulder stands in the middle of the paving. The
+        /// eighth laying left 1325 of them on 15,9 km, one every dozen metres, and the
+        /// owner sent a picture of himself standing on one (23.09.2026).
+        /// </summary>
         private static List<Geometry.Blocker> RoadBlockers(Rect area, Vector3 from, Vector3 to,
-                                                           Dictionary<string, int> found)
+                                                           Dictionary<string, int> found,
+                                                           bool clearing, bool structures)
         {
             var blockers = new List<Geometry.Blocker>();
             if (ZNetScene.instance == null) return blockers;
@@ -123,12 +121,6 @@ namespace AstvardServerMod
             {
                 if (thing == null) continue;
 
-                // The same question the clearing asks, the other way up: what it would
-                // take out needs no going round, and what it would leave does. Asked of
-                // the same fields, so the two can never disagree about one boulder.
-                var bare = thing.m_destructibleType == DestructibleType.Tree
-                           || BreaksDownTo(thing.gameObject, WoodAndStone, 0);
-
                 // Чужой саженец - его хозяину и двигать.
                 var go = thing.gameObject;
                 if (go.GetComponentInParent<Piece>() != null) continue;
@@ -142,7 +134,20 @@ namespace AstvardServerMod
                     continue;
                 }
 
-                if (bare) continue;
+                // Дерево не обходится никогда, чем бы ни кончился снос: их в восьмой
+                // укладке осталось стоять 3815 на одной дороге в 15,9 км, и дорога,
+                // шагающая в сторону от каждого, дорогой быть перестанет. Его берёт
+                // снос или не берёт никто.
+                if (thing.m_destructibleType == DestructibleType.Tree) continue;
+
+                // Ровно тот же вопрос, что задаёт снос, и теми же словами - иначе они
+                // разойдутся в суждении об одном валуне. Со снесением выключенным
+                // спрашивается то, что снос в этом случае и делает: убирает подлесок и
+                // больше ничего.
+                var goes = clearing
+                    ? BreaksDownTo(go, WoodAndStone, 0)
+                    : IsUndergrowth(go, out _);
+                if (goes) continue;
 
                 Note(blockers, found, area, go, 0f, "rock");
             }
@@ -153,10 +158,16 @@ namespace AstvardServerMod
             foreach (var nest in Object.FindObjectsByType<CreatureSpawner>(FindObjectsSortMode.None))
                 if (nest != null) Note(blockers, found, area, nest.gameObject, 4f, "nest");
 
-            // And the structures: everything a location covers, read from the location
-            // itself now that its prefab is in the scene. The two ends of the whole road
-            // are let off - the network's roads run between markers, and a road that
-            // went round the one it was going to would never arrive.
+            // Структуры: деревни, руины, дольмены, входы в пещеры. Серверной укладке их
+            // тут читать поздно - она обходит их заранее и всей дорогой сразу
+            // (<see cref="BendRoadRoundLocations"/>), и спрашивать второй раз значило бы
+            // посчитать их дважды.
+            //
+            // А дорожке, которую кладут руками, только так их и прочесть: список локаций
+            // мира живёт у сервера, у клиента он пуст - локации порождает не он. Зато и
+            // куска у неё нет: она гнётся целиком, и разгону есть где начаться.
+            if (!structures) return blockers;
+
             foreach (var place in Object.FindObjectsByType<Location>(FindObjectsSortMode.None))
             {
                 if (place == null) continue;
@@ -175,6 +186,109 @@ namespace AstvardServerMod
             }
 
             return blockers;
+        }
+
+        /// <summary>
+        /// Дорога, согнутая вокруг деревень и крипт - вся разом и до того, как лёг первый
+        /// кусок.
+        ///
+        /// **Это единственный способ обойти большое, и восемь укладок показали почему.**
+        /// Разгон изгиба втрое длиннее отступа, значит деревне, просящей 35 м, нужно сто с
+        /// лишним метров дороги ПЕРЕД собой, чтобы плавно с линии сойти. А препятствие в
+        /// сцене видно только тогда, когда зона над ним встала, то есть когда до него
+        /// меньше девяноста метров - и вся дорога позади к этому мигу уже уложена и не
+        /// двигается. Сколько ни гни оставшееся, места под разгон взять негде: в логе это
+        /// `went round 0 of … location x28` у дороги, прошедшей деревню насквозь.
+        ///
+        /// Локации этим не связаны. Где они стоят и какой они ширины, `ZoneSystem` знает с
+        /// генерации мира: весь список лежит в `m_locationInstances`, и **ни одной зоны
+        /// грузить не надо** - тем же словарём сеть находит камни с надписями, не построив
+        /// ни клетки. Значит вся дорога может обойти их ещё до укладки, а куски лягут уже
+        /// по согнутой линии, и разгону есть где начаться.
+        ///
+        /// Ширина берётся у самой локации - `m_exteriorRadius`, то, насколько широко
+        /// генератор расчищал под неё землю. Не `m_noBuildRadiusOverride`: тот лежит на
+        /// префабе, до сцены его не спросить, а запрет стройки бывает шире самой деревни -
+        /// уводить дорогу за него значит уводить её дальше, чем нужно.
+        ///
+        /// Жилы, гнёзда и валуны так не прочитать, их нет нигде, кроме сцены. Им столько
+        /// разгона и не нужно: шаг у них метры, а не десятки метров, и он укладывается
+        /// внутри куска. Их берёт <see cref="BendRoadAhead"/>.
+        /// </summary>
+        private static bool BendRoadRoundLocations(RoadJob job, Dictionary<string, int> found)
+        {
+            var zones = ZoneSystem.instance;
+            if (zones == null || job.Path.Count < 3) return false;
+
+            var reach = job.Smooth ? job.Radius + SmoothBlend(job.Radius) : job.Radius;
+            var area = RoadArea(job.Path, reach);
+
+            var blockers = new List<Geometry.Blocker>();
+            foreach (var pair in zones.m_locationInstances)
+            {
+                var where = pair.Value;
+                if (where.m_location == null) continue;
+
+                var radius = where.m_location.m_exteriorRadius;
+                if (radius <= 0f) continue;
+
+                var at = where.m_position;
+                if (!area.Contains(new Vector2(at.x, at.z))) continue;
+
+                // Локация, накрывающая конец дороги, - это та метка, к которой дорога и
+                // шла. Обойдя её, дорога не пришла бы никуда.
+                if (Flat(at, job.MeantA) <= radius || Flat(at, job.MeantB) <= radius) continue;
+
+                blockers.Add(new Geometry.Blocker(new Vec2(at.x, at.z), radius));
+                Tally(found, "location");
+            }
+
+            if (blockers.Count == 0) return false;
+
+            var flat = new List<Vec2>(job.Path.Count);
+            foreach (var point in job.Path) flat.Add(new Vec2(point.x, point.z));
+
+            var slack = job.EndsInRings
+                ? Mathf.Max(0f, Mathf.Min(DetourEndSlack, RingMax - job.Radius))
+                : 0f;
+
+            var plan = Geometry.Detour(flat, blockers, job.Radius, DetourClearance,
+                                       DetourMinRamp, DetourRampPerStep, DetourMaxStep,
+                                       slack, slack);
+
+            NoteRefusals(job, plan);
+
+            job.Bends += plan.Taken;
+            if (plan.Taken == 0) return false;
+
+            for (var i = 0; i < job.Path.Count; i++)
+                job.Path[i] = new Vector3(plan.Path[i].X, job.Path[i].y, plan.Path[i].Z);
+
+            return true;
+        }
+
+        /// <summary>Почему изгиб не взяли - в счётчики задания, они же строка лога.</summary>
+        private static void NoteRefusals(RoadJob job, Geometry.DetourPlan plan)
+        {
+            foreach (var bend in plan.Bends)
+            {
+                if (bend.Refused == Geometry.BendRefusal.None) continue;
+
+                if (bend.Refused == Geometry.BendRefusal.TooWide)
+                {
+                    job.TooWide++;
+                    job.TooWideWidest = Mathf.Max(job.TooWideWidest, Mathf.Abs(bend.Step));
+                    continue;
+                }
+
+                // Разгон, не уместившийся за началом, упирается в уже уложенное: та вещь
+                // стоит позади, и двигать под неё нечего. Не уместившийся за концом
+                // упирается в метку, к которой дорога шла.
+                job.Unbent++;
+                if (bend.From < 0f) job.UnbentNear++;
+                else job.UnbentAtRoadEnd++;
+                job.UnbentWidest = Mathf.Max(job.UnbentWidest, Mathf.Abs(bend.Step));
+            }
         }
 
         /// <summary>One thing added to the list, measured by its own colliders.</summary>
@@ -220,22 +334,45 @@ namespace AstvardServerMod
         }
 
         /// <summary>
-        /// A piece of road bent round what it must not pave over.
+        /// Читается кусок, а гнётся вся дорога от него и до конца.
         ///
-        /// <paramref name="cutAt"/> comes back positive when something stands too near
-        /// the far end of the piece to be gone round inside it: there is no room left to
-        /// come back on the line, and the end of a piece may not move, because the next
-        /// piece starts from it. The caller cuts the piece short there and meets the
-        /// same thing again at the start of the next one, with the whole of it to work
-        /// in. Blockers at the near end cannot be helped that way and are left standing,
-        /// as they were before any of this.
+        /// Так с 23.09.2026, и вот почему. Разгон изгиба - три метра на каждый метр
+        /// отступа, значит весь изгиб занимает вшестеро больше отступа плюс саму вещь: у
+        /// деревни, просящей 35 м, это четверть километра. Кусок дороги - 91 м, и оба его
+        /// конца прибиты намертво, потому что с них начинается соседний. В такой кусок
+        /// помещается отступ метров до четырнадцати, и всё, что шире, отказывалось - в
+        /// восьмой укладке `went round 0 of … location x28` стояло у дороги, прошедшей
+        /// деревню насквозь, а в отказах `widest wanted 41,5 m`. Ни один предел тут ни
+        /// при чём: мешала длина куска.
+        ///
+        /// Теперь изгиб пишется в `job.Path` целиком, а кладётся по-прежнему кусками:
+        /// нынешний кусок получает начало разгона, остальное достаётся тем, что придут
+        /// следом. Резать кусок ради места больше не нужно, и той машинерии тут больше
+        /// нет.
+        ///
+        /// **Читать при этом можно только нынешний кусок** - только над его землёй зоны
+        /// встали и в сцене есть объекты. Следующий кусок прочтёт своё и согнёт ещё раз,
+        /// уже поверх согнутого; вещь, которую обошли, к тому времени стоит в стороне от
+        /// дороги, шаг для неё выходит нулевым, и второго изгиба не будет.
+        ///
+        /// Не двигается ровно одна точка - та, где кончился предыдущий кусок: ступенька
+        /// в мощении видна, а начало дороги в трёх метрах от середины метки - нет.
         /// </summary>
-        private static List<Vector3> BendRoadPiece(RoadJob job, List<Vector3> piece,
-                                                   Dictionary<string, int> found, out float cutAt,
-                                                   bool opens = false, bool closes = false)
+        /// <param name="piece">Кусок, над чьей землёй зоны уже встали: только его и читаем.</param>
+        /// <param name="first">Где этот кусок начинается в пути: дальше него всё вольно двигаться.</param>
+        /// <returns>Изменился ли путь.</returns>
+        private static bool BendRoadAhead(RoadJob job, List<Vector3> piece, int first,
+                                          Dictionary<string, int> found)
         {
-            cutAt = -1f;
-            if (piece.Count < 3) return piece;
+            if (piece.Count < 3 || job.Path.Count - first < 3) return false;
+
+            var blockers = RoadBlockers(RoadArea(piece, job.Radius), job.MeantA, job.MeantB,
+                                        found, job.Clear, false);
+            if (blockers.Count == 0) return false;
+
+            var rest = job.Path.GetRange(first, job.Path.Count - first);
+            var flat = new List<Vec2>(rest.Count);
+            foreach (var point in rest) flat.Add(new Vec2(point.x, point.z));
 
             // Сдвинуть конец дороги можно настолько, насколько круг метки сможет за ним
             // дорасти: круг читает, куда отошли её дороги, и накрывает их (23.09.2026,
@@ -249,76 +386,21 @@ namespace AstvardServerMod
                 ? Mathf.Max(0f, Mathf.Min(DetourEndSlack, RingMax - job.Radius))
                 : 0f;
 
-            var blockers = RoadBlockers(RoadArea(piece, job.Radius), job.Path[0],
-                                        job.Path[job.Path.Count - 1], found);
-            if (blockers.Count == 0) return piece;
-
-            var flat = new List<Vec2>(piece.Count);
-            foreach (var point in piece) flat.Add(new Vec2(point.x, point.z));
-
+            // Начало пути свободно только у первого куска: у прочих это стык с уложенным.
             var plan = Geometry.Detour(flat, blockers, job.Radius, DetourClearance,
                                        DetourMinRamp, DetourRampPerStep, DetourMaxStep,
-                                       opens ? slack : 0f, closes ? slack : 0f);
+                                       first == 0 ? slack : 0f, slack);
 
-            // Длина этого куска: по ней видно, попадает ли изгиб в него вообще.
-            var marks = Geometry.Distances(flat);
-            var along = marks[marks.Length - 1];
-
-            foreach (var bend in plan.Bends)
-            {
-                if (bend.Refused == Geometry.BendRefusal.TooWide)
-                {
-                    job.TooWide++;
-                    job.TooWideWidest = Mathf.Max(job.TooWideWidest, Mathf.Abs(bend.Step));
-                }
-                else if (bend.Refused == Geometry.BendRefusal.PastTheEnd)
-                {
-                    // Only the far end can be helped by a shorter piece, and only while
-                    // what is left is still worth laying.
-                    // Разгон начинается уже за концом этого куска - значит вещь лежит
-                    // дальше, и этот кусок её не касается вовсе. Резать нечего, и
-                    // считать её оставшейся стоять нельзя: её встретит следующий кусок.
-                    // Восемь из 44 в седьмой укладке 23.09.2026 были этой ложной
-                    // тревогой.
-                    if (bend.From >= along) continue;
-
-                    var cut = bend.From - DetourCutBack;
-                    if (cut >= DetourLeastPiece && (cutAt < 0f || cut < cutAt)) cutAt = cut;
-                    else
-                    {
-                        job.Unbent++;
-
-                        // Отказ бывает двух родов, и лечатся они по-разному: у ближнего
-                        // конца разгону негде начаться, у дальнего - кусок кончается
-                        // слишком рано, чтобы его резать. А ширина говорит, хватило бы
-                        // конца посвободнее: 23.09.2026 запас в 6 м не взял почти ни
-                        // одного гнезда, и число в логе - единственный способ узнать,
-                        // насколько он мал, не гадая.
-                        // И отдельно: конец куска - это стык с соседним куском или
-                        // всё-таки начало самой дороги? Первое не лечится ничем, второе
-                        // лечится запасом, и пока они в одном числе, выбирать не из чего.
-                        if (bend.From < 0f)
-                        {
-                            if (opens) job.UnbentAtRoadEnd++;
-                            else job.UnbentNear++;
-                        }
-                        else if (bend.To > 0f && closes) job.UnbentAtRoadEnd++;
-
-                        job.UnbentWidest = Mathf.Max(job.UnbentWidest, Mathf.Abs(bend.Step));
-                    }
-                }
-            }
-
-            if (cutAt > 0f) return piece;
+            NoteRefusals(job, plan);
 
             job.Bends += plan.Taken;
-            if (plan.Taken == 0) return piece;
+            if (plan.Taken == 0) return false;
 
-            var bent = new List<Vector3>(piece.Count);
-            for (var i = 0; i < piece.Count; i++)
-                bent.Add(new Vector3(plan.Path[i].X, piece[i].y, plan.Path[i].Z));
+            for (var i = 0; i < rest.Count; i++)
+                job.Path[first + i] = new Vector3(plan.Path[i].X, job.Path[first + i].y,
+                                                  plan.Path[i].Z);
 
-            return bent;
+            return true;
         }
 
         // ---------------- дорожка, которую кладут руками ----------------
@@ -341,6 +423,15 @@ namespace AstvardServerMod
         private static float _handBlockersWhen = float.MinValue;
 
         /// <summary>
+        /// Со снесением или без него было прочитано то, что лежит в <see cref="HandBlockers"/>.
+        ///
+        /// Ответ от этого меняется целиком - выключенный снос добавляет в препятствия все
+        /// валуны, - так что переключатель обязан читаться заново, а не ждать своей
+        /// секунды.
+        /// </summary>
+        private static bool _handBlockersClearing;
+
+        /// <summary>
         /// How long a reading stands before it is taken again.
         ///
         /// Long, because nothing it reads moves on its own and the sweep is not cheap.
@@ -361,8 +452,10 @@ namespace AstvardServerMod
         private static List<Geometry.Blocker> HandBlockersFor(List<Vector3> path, float reach,
                                                               Vector3 from, Vector3 to, bool fresh)
         {
+            var clearing = RoadClearingActive;
             var want = RoadArea(path, reach);
             var kept = !fresh
+                       && clearing == _handBlockersClearing
                        && Time.realtimeSinceStartup - _handBlockersWhen < HandBlockersHold
                        && want.xMin >= _handBlockersFor.xMin && want.xMax <= _handBlockersFor.xMax
                        && want.yMin >= _handBlockersFor.yMin && want.yMax <= _handBlockersFor.yMax;
@@ -373,7 +466,8 @@ namespace AstvardServerMod
 
             HandFound.Clear();
             HandBlockers.Clear();
-            HandBlockers.AddRange(RoadBlockers(area, from, to, HandFound));
+            HandBlockers.AddRange(RoadBlockers(area, from, to, HandFound, clearing, true));
+            _handBlockersClearing = clearing;
             _handBlockersFor = area;
             _handBlockersWhen = Time.realtimeSinceStartup;
             return HandBlockers;
@@ -442,9 +536,9 @@ namespace AstvardServerMod
                 note += $", {job.TooWide} too big to get round (widest wanted {job.TooWideWidest:F1} m)";
             if (job.Unbent > 0)
             {
-                note += $", {job.Unbent} left standing at a join";
-                note += $" ({job.UnbentNear} at a join between pieces, {job.UnbentAtRoadEnd}"
-                        + $" at an end of the road itself, widest wanted {job.UnbentWidest:F1} m)";
+                note += $", {job.Unbent} left standing at an end of the road";
+                note += $" ({job.UnbentNear} behind what was already laid, {job.UnbentAtRoadEnd}"
+                        + $" past the far end, widest wanted {job.UnbentWidest:F1} m)";
             }
 
             return note;

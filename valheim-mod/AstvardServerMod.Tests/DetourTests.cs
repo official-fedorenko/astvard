@@ -276,6 +276,45 @@ public class DetourTests
         var plan = Round(path, new Geometry.Blocker(new Vec2(50f, 0f), 3f));
         Assert.Equal(path.Count, plan.Path.Count);
     }
+
+    [Fact]
+    public void AVillageNeedsMoreRoadThanOnePieceOfIt()
+    {
+        // Это и есть причина, по которой обход переехал с куска на всю дорогу
+        // (23.09.2026). Деревне нужен отступ метров в тридцать пять, разгон - втрое от
+        // него, и весь изгиб занимает четверть километра. В кусок укладки, 91 м, такое
+        // не влезает ничем, и восемь укладок подряд дорога шла сквозь деревню, а в логе
+        // стояло `went round 0 of ... location x28`.
+        var village = new Geometry.Blocker(new Vec2(200f, 0f), 32f);
+        var wide = 60f;
+
+        var inOnePiece = Geometry.Detour(Straight(91f), new[] { new Geometry.Blocker(new Vec2(45f, 0f), 32f) },
+                                         HalfWidth, Clearance, MinRamp, RampPerStep, wide);
+        Assert.Equal(0, inOnePiece.Taken);
+        Assert.Equal(Geometry.BendRefusal.PastTheEnd, inOnePiece.Bends[0].Refused);
+
+        var alongTheRoad = Geometry.Detour(Straight(400f), new[] { village },
+                                           HalfWidth, Clearance, MinRamp, RampPerStep, wide);
+        Assert.Equal(1, alongTheRoad.Taken);
+        Assert.True(Clears(alongTheRoad.Path, village) >= HalfWidth + Clearance - 0.01f,
+            $"the road came within {Clears(alongTheRoad.Path, village):F2} m of the village");
+    }
+
+    [Fact]
+    public void TheRoadIsBackOnItsLineLongBeforeTheEnd()
+    {
+        // Гнётся вся оставшаяся дорога, но следующий кусок начинается там же, где кончился
+        // этот, - значит изгиб обязан сойти на нет сам, а не быть обрезанным по концу.
+        var village = new Geometry.Blocker(new Vec2(200f, 0f), 32f);
+
+        var plan = Geometry.Detour(Straight(400f), new[] { village },
+                                   HalfWidth, Clearance, MinRamp, RampPerStep, 60f);
+
+        Assert.Equal(0f, plan.Path[0].Z, 3);
+        Assert.Equal(0f, plan.Path[400].Z, 3);
+        Assert.True(Math.Abs(plan.Path[200].Z) > 30f,
+            $"at the village the road stood only {Math.Abs(plan.Path[200].Z):F1} m aside");
+    }
 }
 
 /// <summary>

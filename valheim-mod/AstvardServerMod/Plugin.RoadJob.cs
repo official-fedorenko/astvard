@@ -343,6 +343,18 @@ namespace AstvardServerMod
 
             public int MarkB = -1;
 
+            /// <summary>
+            /// Где концы дороги были задуманы.
+            ///
+            /// Нужны потому, что `Path` теперь гнётся на месте: его концы могут отойти в
+            /// обход, и спрашивать у него «а где ты начинался» после этого бесполезно.
+            /// Отсюда и меряется, насколько конец отошёл, и ими же освобождаются от
+            /// обхода те локации, к которым дорога шла.
+            /// </summary>
+            public Vector3 MeantA;
+
+            public Vector3 MeantB;
+
             /// <summary>Метка этого круга.</summary>
             public int Mark = -1;
 
@@ -593,6 +605,18 @@ namespace AstvardServerMod
         /// </summary>
         private static IEnumerator RunRoadJob(RoadJob job)
         {
+            // Снято до укладки: дальше `Path` гнётся на месте, и его концы уже не те,
+            // какими их задумали.
+            job.MeantA = job.Path[0];
+            job.MeantB = job.Path[job.Path.Count - 1];
+
+            var found = new Dictionary<string, int>();
+
+            // Деревни, крипты и дольмены обходятся здесь, до первого куска и всей дорогой
+            // сразу: разгон им нужен длиннее куска, а где они стоят, `ZoneSystem` знает с
+            // генерации мира - ни одной зоны для этого грузить не надо.
+            if (job.Bend) BendRoadRoundLocations(job, found);
+
             var flat = new List<Vec2>(job.Path.Count);
             foreach (var point in job.Path) flat.Add(new Vec2(point.x, point.z));
             var along = Geometry.Distances(flat);
@@ -604,7 +628,6 @@ namespace AstvardServerMod
             // вдоль линии, которой на земле уже нет. Через стык переносится пройденное
             // после последней пары - шаг от этого не сбивается.
             var since = 0f;
-            var found = new Dictionary<string, int>();
 
             var laidTo = 0;
             var cleared = 0;
@@ -680,42 +703,21 @@ namespace AstvardServerMod
                     //
                     // Под своим переключателем, а не под сносом: обход ничего не ломает,
                     // и дорога без сноса тем более обязана не мостить сквозь жилу.
-                    if (complete && job.Bend)
+                    // Гнётся при этом вся дорога от этого куска и до конца, а не кусок:
+                    // разгон изгиба вшестеро длиннее отступа, и в 91 м куска помещается
+                    // отступ метров до четырнадцати. Деревню в такой кусок не обойти
+                    // никак - и не обходило, восемь укладок подряд.
+                    if (complete && job.Bend && BendRoadAhead(job, piece, first, found))
                     {
-                        float cutAt;
-                        var opens = first == 0;
-                        var bent = BendRoadPiece(job, piece, found, out cutAt,
-                                                 opens, last == job.Path.Count - 1);
-                        // Что-то стоит у самого конца куска: обойти и вернуться на линию
-                        // внутри него негде, а конец двигать нельзя - с него начинается
-                        // следующий кусок. Значит кусок кончится раньше, и та же вещь
-                        // встретится сначала, когда места будет вдоволь.
-                        //
-                        // И режется он не один раз, а пока это что-то меняет: укороченный
-                        // кусок встречает у своего нового конца следующую вещь, и бросать
-                        // из-за неё всё, что уже удалось согнуть, - потеря на ровном месте.
-                        // Шесть из 55 оставшихся стоять 23.09.2026 были ровно этим.
-                        for (var tries = 0; cutAt > 0f && tries < 3; tries++)
-                        {
-                            var was = last;
-                            while (last > first + 2 && along[last] - along[first] > cutAt) last--;
+                        // Путь стал другим от `first` и до конца - значит и расстояния по
+                        // нему другие, и кусок надо взять заново.
+                        flat.Clear();
+                        foreach (var point in job.Path) flat.Add(new Vec2(point.x, point.z));
+                        along = Geometry.Distances(flat);
+                        total = along[along.Length - 1];
+                        piece = job.Path.GetRange(first, last - first + 1);
 
-                            // Срез пришёлся за концом куска - резать нечего, и повторять
-                            // тоже: ответ будет тот же самый.
-                            if (last == was) break;
-
-                            piece = job.Path.GetRange(first, last - first + 1);
-
-                            // Кусок стал короче, и теперь он кончается не там, где дорога:
-                            // свободы у дальнего конца больше нет, у ближнего она прежняя.
-                            bent = BendRoadPiece(job, piece, found, out cutAt,
-                                                 opens, last == job.Path.Count - 1);
-                        }
-
-                        if (cutAt > 0f) job.Unbent++;
-                        else piece = bent;
-
-                        NoteRoadEndReach(job, piece, first, last);
+                        NoteRoadEndReach(job);
                     }
 
                     failure = LayRoadJobPiece(job, piece, reach, complete, ref cleared);
@@ -793,15 +795,15 @@ namespace AstvardServerMod
         /// Меряется от исходного пути, а не от согнутого: сдвиг - это и есть разница
         /// между тем, где конец был задуман, и тем, где он лёг.
         /// </summary>
-        private static void NoteRoadEndReach(RoadJob job, List<Vector3> piece, int first, int last)
+        private static void NoteRoadEndReach(RoadJob job)
         {
             if (job.MarkReach == null) return;
 
-            if (first == 0 && job.MarkA >= 0 && job.MarkA < job.MarkReach.Length)
-                Reached(job, job.MarkA, piece[0], job.Path[0]);
+            if (job.MarkA >= 0 && job.MarkA < job.MarkReach.Length)
+                Reached(job, job.MarkA, job.Path[0], job.MeantA);
 
-            if (last == job.Path.Count - 1 && job.MarkB >= 0 && job.MarkB < job.MarkReach.Length)
-                Reached(job, job.MarkB, piece[piece.Count - 1], job.Path[last]);
+            if (job.MarkB >= 0 && job.MarkB < job.MarkReach.Length)
+                Reached(job, job.MarkB, job.Path[job.Path.Count - 1], job.MeantB);
         }
 
         private static void Reached(RoadJob job, int mark, Vector3 laid, Vector3 meant)
