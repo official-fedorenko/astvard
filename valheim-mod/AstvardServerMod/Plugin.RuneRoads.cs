@@ -422,6 +422,14 @@ namespace AstvardServerMod
                 return;
             }
 
+            // Перепись считается тем же `_roadJob`, что и дорожка, но говорить про неё
+            // «кладёт дорожку» нельзя: человек будет ждать не того и не столько.
+            if (_surveying)
+            {
+                SayAboutZone(sender, "Сейчас идёт перепись — дождись её, сеть пойдёт следом.");
+                return;
+            }
+
             if (_roadJob != null)
             {
                 SayAboutZone(sender, "Сервер сейчас кладёт обычную дорожку — дождись её.");
@@ -463,6 +471,93 @@ namespace AstvardServerMod
             var bend = false;
             try { bend = pkg.ReadBool(); }
             catch (System.Exception) { bend = false; }
+
+            // Одной кнопкой. Без переписи сеть кладётся прямыми, а помнить порядок нажатий
+            // человек не обязан: 23.09.2026 сеть так и легла - 163 задания по прямой, - и
+            // сказал об этом только уголок экрана, которого хозяин не заметил.
+            var ask = new NetAsk
+            {
+                X = x, Z = z, Radius = radius, Width = width, Spacing = spacing,
+                Paved = paved, Smooth = smooth, Clear = clear, Forever = forever, Bend = bend,
+                Torch = torch, Creator = creator, Platform = platform,
+            };
+
+            if (PlanReady) LayNet(sender, ask);
+            else Instance.StartCoroutine(SurveyThenLay(sender, ask));
+        }
+
+        /// <summary>
+        /// Разобранная просьба о сети.
+        ///
+        /// Завелась она оттого, что между разбором пакета и укладкой встала перепись, то
+        /// есть минуты ожидания: разобранное надо чем-то донести через корутину.
+        /// </summary>
+        private struct NetAsk
+        {
+            public float X, Z, Radius, Width, Spacing;
+
+            public bool Paved, Smooth, Clear, Forever, Bend;
+
+            public int Torch;
+
+            public long Creator;
+
+            public string Platform;
+        }
+
+        /// <summary>
+        /// Сперва перепись, следом укладка - и всё это по одному нажатию.
+        ///
+        /// Перепись живёт только в памяти сервера и не переживает перезапуска, так что
+        /// «сделай сперва перепись» - это не разовая настройка, а правило, которое надо
+        /// помнить каждый вечер. Помнить его теперь не надо.
+        /// </summary>
+        private static IEnumerator SurveyThenLay(long sender, NetAsk ask)
+        {
+            var zones = ZoneSystem.instance;
+            var world = WorldGenerator.instance;
+            if (zones == null || world == null || !zones.LocationsGenerated)
+            {
+                SayAboutZone(sender, "Мир ещё не готов — попробуй через несколько секунд.");
+                yield break;
+            }
+
+            var land = Continent(world, zones.m_waterLevel, ask.X, ask.Z);
+            if (land.Count == 0)
+            {
+                SayAboutZone(sender, "Ты стоишь не на суше — материк отсюда не обвести.");
+                yield break;
+            }
+
+            SayAboutZone(sender, "Переписи ещё не было — сперва обхожу материк, это минуты. "
+                                 + "Сеть пойдёт сразу за ней, нажимать больше ничего не надо.");
+            _surveying = true;
+            yield return RunSurvey(sender, new Vector3(ask.X, 0f, ask.Z), land);
+
+            // Перепись могли остановить на середине - тогда класть по половине материка
+            // хуже, чем не класть: дороги пойдут в обход того, что успели увидеть, и
+            // напрямик сквозь остальное, и разницы снаружи не видно.
+            if (!PlanReady)
+            {
+                SayAboutZone(sender, "Перепись не удалась — сеть не кладу.");
+                yield break;
+            }
+
+            LayNet(sender, ask);
+        }
+
+        private static void LayNet(long sender, NetAsk ask)
+        {
+            // Тело укладки писалось, когда разобранное лежало прямо здесь, в локальных
+            // переменных. Перепись встала перед ним, а не внутри него, так что и
+            // переписывать его незачем - довольно распаковать запись обратно.
+            float x = ask.X, z = ask.Z, radius = ask.Radius, width = ask.Width;
+            var spacing = ask.Spacing;
+            bool paved = ask.Paved, smooth = ask.Smooth, clear = ask.Clear;
+            bool forever = ask.Forever, bend = ask.Bend;
+            var torch = ask.Torch;
+            var creator = ask.Creator;
+            var platform = ask.Platform;
 
             var zones = ZoneSystem.instance;
             var world = WorldGenerator.instance;
