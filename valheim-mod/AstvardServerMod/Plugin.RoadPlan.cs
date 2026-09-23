@@ -40,6 +40,19 @@ namespace AstvardServerMod
         /// <summary>Дальше этого уклона - обрыв, а не дорога; по нему не ходят вовсе.</summary>
         private const float PlanCliff = 1.0f;
 
+        /// <summary>
+        /// Круче этого не перелезают даже от безысходности.
+        ///
+        /// У запасного прохода не было потолка вовсе, и это видно числом: на укладке
+        /// 23.09.2026 перелезли 34 дороги из 90, медиана уклона поднялась с 63% до 83%, а
+        /// девяностый процентиль - до 726%. Склон, пусть и крутой, дорогой ещё бывает;
+        /// отвесная стена - нет, и лезть на неё хуже, чем обойти в километр.
+        ///
+        /// Уклон здесь меряется на восьми метрах, то есть это средняя, а не стена: два -
+        /// это шестнадцать метров подъёма на восемь.
+        /// </summary>
+        private const float PlanClimbMost = 2.0f;
+
         /// <summary>Уклон, с которого начинает дорожать: тот же, что держит `LimitGrade`.</summary>
         private const float PlanEasyGrade = 0.35f;
 
@@ -153,6 +166,7 @@ namespace AstvardServerMod
             var water = zones.m_waterLevel;
             PlanWet.Clear();
             PlanSteep.Clear();
+            PlanSheer.Clear();
             var height = new float[wide * high];
             for (var z = 0; z < high; z++)
             for (var x = 0; x < wide; x++)
@@ -177,6 +191,7 @@ namespace AstvardServerMod
                 {
                     field.Cost[i] = RoadPlan.Blocked;
                     PlanSteep.Add(i);
+                    if (grade >= PlanClimbMost) PlanSheer.Add(i);
                     continue;
                 }
 
@@ -191,7 +206,20 @@ namespace AstvardServerMod
             return field;
         }
 
-        /// <summary>Самый крутой склон из четырёх соседей - в долях подъёма на метр.</summary>
+        /// <summary>
+        /// Самый крутой склон под клеткой - в долях подъёма на метр.
+        ///
+        /// Считается **и по соседям, и внутри самой клетки**, и второе тут важнее. Высота
+        /// спрашивается в серединах клеток, через восемь метров, а обрыв уже восьми метров
+        /// такой шаг усредняет в пологое: A\* про него не знает вовсе и спокойно ведёт
+        /// дорогу поперёк стены. `CheckRoute` потом меряет по готовому пути через метр и
+        /// видит правду - оттого на укладке 23.09.2026 медиана уклона 83%, а максимум
+        /// 2911%. Четыре лишних вопроса о высоте на клетку ловят всё, что шире четырёх
+        /// метров, и стоят одного прохода по полю.
+        ///
+        /// Крестом, а не сеткой: обрыв - вещь протяжённая, и мимо всех четырёх лучей он
+        /// пройти не может, разве что кончится ровно в клетке.
+        /// </summary>
         private static float Grade(RoadPlan.Field field, float[] height, int x, int z)
         {
             var here = height[field.At(x, z)];
@@ -204,6 +232,19 @@ namespace AstvardServerMod
                 if (!field.Inside(nx, nz)) continue;
 
                 var drop = Mathf.Abs(height[field.At(nx, nz)] - here) / field.Step;
+                if (drop > worst) worst = drop;
+            }
+
+            var world = WorldGenerator.instance;
+            if (world == null) return worst;
+
+            var at = field.World(x, z);
+            var half = field.Step * 0.5f;
+            for (var side = 0; side < 4; side++)
+            {
+                var ax = at.X + (side == 0 ? half : side == 1 ? -half : 0f);
+                var az = at.Z + (side == 2 ? half : side == 3 ? -half : 0f);
+                var drop = Mathf.Abs(world.GetHeight(ax, az) - here) / half;
                 if (drop > worst) worst = drop;
             }
 
@@ -379,13 +420,16 @@ namespace AstvardServerMod
         ///
         /// **Вода не открывается никогда.** Дорога по дну залива - это то, ради чего
         /// заводят мост, а не то, что кладут от безысходности; открыв её здесь, мы
-        /// получили бы брод молча и по всему материку.
+        /// получили бы брод молча и по всему материку. **И отвесное не открывается** (см.
+        /// <see cref="PlanClimbMost"/>): лезть на стену хуже, чем обойти в километр.
         /// </summary>
         private static void OpenHard(RoadPlan.Field field, List<KeyValuePair<int, float>> was)
         {
             for (var i = 0; i < field.Cost.Length; i++)
             {
-                if (field.Cost[i] < RoadPlan.Blocked || PlanWet.Contains(i)) continue;
+                if (field.Cost[i] < RoadPlan.Blocked
+                    || PlanWet.Contains(i)
+                    || PlanSheer.Contains(i)) continue;
 
                 was.Add(new KeyValuePair<int, float>(i, field.Cost[i]));
                 field.Cost[i] = PlanHardCost;
@@ -397,6 +441,9 @@ namespace AstvardServerMod
 
         /// <summary>То же про обрыв: вода, обрыв и круг вещи лечатся по-разному.</summary>
         private static readonly HashSet<int> PlanSteep = new HashSet<int>();
+
+        /// <summary>Отвесное: через него не пускает даже запасной проход.</summary>
+        private static readonly HashSet<int> PlanSheer = new HashSet<int>();
 
         private static bool Wet(RoadPlan.Field field, int x, int z)
         {
