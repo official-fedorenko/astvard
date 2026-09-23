@@ -196,7 +196,7 @@ namespace AstvardServerMod
             SetActive(SurveyButton, admin && MenuState == StateCheats);
             SetActive(SurveyClearButton, admin && MenuState == StateCheats && SurveyPinCount > 0);
             SetLabel(SurveyClearButton, $"Снять метки ({SurveyPinCount})");
-            SetLabel(SurveyButton, $"Перепись вокруг спавна ({SurveyReach:F0} м)");
+            SetLabel(SurveyButton, "Перепись материка");
 
             var page = admin && MenuState == StateTimeSkip;
             SetActive(TimeSkipHint, page);

@@ -87,23 +87,24 @@ namespace AstvardServerMod
 
         internal static void RegisterSurveyRpcs(ZRoutedRpc rpc)
         {
-            rpc.Register<float>(RpcSurveyAsk, OnSurveyAsk);
+            rpc.Register<float, float>(RpcSurveyAsk, OnSurveyAsk);
             rpc.Register<ZPackage>(RpcSurveyPins, OnSurveyPins);
         }
 
         // ---------------- клиент ----------------
-
-        /// <summary>Сколько метров вокруг спавна переписывать.</summary>
-        internal static float SurveyReach = 1000f;
 
         internal static void AskSurvey()
         {
             var player = Player.m_localPlayer;
             if (player == null) return;
 
-            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcSurveyAsk, SurveyReach);
+            // Откуда стоим, тот материк и переписываем - так же, как сеть обводит тот
+            // материк, на котором стоит админ. Круг вокруг спавна, стоявший тут сперва,
+            // хозяин отверг: «пусть только переписывает материк на котором я стою».
+            var at = player.transform.position;
+            ZRoutedRpc.instance?.InvokeRoutedRPC(RpcSurveyAsk, at.x, at.z);
             player.Message(MessageHud.MessageType.Center,
-                $"Перепись вокруг спавна, {SurveyReach:F0} м — жди, это минуты");
+                "Перепись материка, на котором стоишь — жди, это минуты");
         }
 
         /// <summary>Метки, поставленные переписью. Не сохраняются: их ставят заново.</summary>
@@ -198,12 +199,13 @@ namespace AstvardServerMod
 
         // ---------------- сервер ----------------
 
-        private static void OnSurveyAsk(long sender, float reach)
+        private static void OnSurveyAsk(long sender, float x, float z)
         {
             if (!ServerAllows(sender)) return;
 
             var zones = ZoneSystem.instance;
-            if (zones == null || !zones.LocationsGenerated)
+            var world = WorldGenerator.instance;
+            if (zones == null || world == null || !zones.LocationsGenerated)
             {
                 SayAboutZone(sender, "Мир ещё не готов — попробуй через несколько секунд.");
                 return;
@@ -215,49 +217,51 @@ namespace AstvardServerMod
                 return;
             }
 
-            // Не число с потолка: `RoadJobMargin` и так держит полосу в 64 м, а перепись
-            // по всему материку подняла бы тысячи зон разом.
-            reach = Mathf.Clamp(reach, 64f, 2000f);
-
-            Vector3 centre;
-            var what = SurveyCentre(zones, out centre);
-
-            _surveying = true;
-            Instance.StartCoroutine(RunSurvey(sender, centre, reach, what));
-        }
-
-        /// <summary>
-        /// Откуда мерить. Спавн, если он на этой карте есть, - о нём и спрашивали.
-        ///
-        /// Ищется он там же, где его ищет сеть: в словаре локаций мира, который заполнен с
-        /// генерации. Не нашёлся - значит карта без храма, и тогда меряем от середины
-        /// мира, а не молчим: перепись не о спавне, спавн в ней только точка отсчёта.
-        /// </summary>
-        private static string SurveyCentre(ZoneSystem zones, out Vector3 centre)
-        {
-            foreach (var pair in zones.m_locationInstances)
+            // Тот же обвод материка, которым сеть находит свои камни: высота спрашивается
+            // у генератора, значит ни одной зоны грузить не надо и ответ одинаков для
+            // любой точки мира.
+            var land = Continent(world, zones.m_waterLevel, x, z);
+            if (land.Count == 0)
             {
-                var where = pair.Value;
-                if (where.m_location == null) continue;
-                if (where.m_location.m_name != "StartTemple") continue;
-
-                centre = where.m_position;
-                return "спавн";
+                SayAboutZone(sender, "Ты стоишь не на суше — материк отсюда не обвести.");
+                return;
             }
 
-            centre = Vector3.zero;
-            return "середина мира";
+            _surveying = true;
+            Instance.StartCoroutine(RunSurvey(sender, new Vector3(x, 0f, z), land));
         }
 
         /// <summary>
-        /// Обход круга зонами, пачка за пачкой, с записью найденного в файл.
+        /// Клетки зон, накрывающие материк, от игрока наружу.
         ///
-        /// Пишется он по ходу дела, а не в конце: перепись на километр - это десятки
-        /// тысяч строк и минуты работы, а сервер, поднятый из Claude, умирает вместе с
+        /// Наружу - не ради вида: перепись материка это минуты, и оборванная на середине
+        /// должна рассказывать про то место, где стоят, а не про случайный его угол.
+        /// </summary>
+        private static List<Vector2s> SurveyZonesOf(HashSet<long> land, Vector3 from)
+        {
+            var zones = new HashSet<Vector2s>();
+            foreach (var cell in land)
+            {
+                var cx = (int)(cell >> 32);
+                var cz = (int)(cell & 0xFFFFFFFF);
+                zones.Add(ZoneSystem.GetZone(new Vector3(cx * LandStep, 0f, cz * LandStep)));
+            }
+
+            var list = new List<Vector2s>(zones);
+            list.Sort((a, b) => Flat(ZoneSystem.GetZonePos(a), from)
+                .CompareTo(Flat(ZoneSystem.GetZonePos(b), from)));
+            return list;
+        }
+
+        /// <summary>
+        /// Обход материка зонами, пачка за пачкой, с записью найденного в файл.
+        ///
+        /// Пишется он по ходу дела, а не в конце: перепись материка - это сотни тысяч
+        /// строк и минуты работы, а сервер, поднятый из Claude, умирает вместе с
         /// приложением. Оборванная на середине перепись всё равно чего-то стоит;
         /// несохранённая не стоит ничего.
         /// </summary>
-        private static IEnumerator RunSurvey(long sender, Vector3 centre, float reach, string what)
+        private static IEnumerator RunSurvey(long sender, Vector3 centre, HashSet<long> land)
         {
             var job = new RoadJob { Id = Random.Range(1, int.MaxValue), Sender = sender };
             var began = Time.realtimeSinceStartup;
@@ -275,9 +279,15 @@ namespace AstvardServerMod
             {
                 _roadJob = job;
 
-                file.WriteLine($"# перепись вокруг «{what}» {centre.x:F0} {centre.z:F0}, "
-                               + $"радиус {reach:F0} м");
+                var sweep = SurveyZonesOf(land, centre);
+                var area = land.Count * LandStep * LandStep / 1000000f;
+
+                file.WriteLine($"# перепись материка от {Num(centre.x)} {Num(centre.z)}, "
+                               + $"{area:0.0} км², зон {sweep.Count}");
                 file.WriteLine("# род\tимя\tx\tz\tрадиус\tрост");
+
+                SayAboutZone(sender, $"Материк {area:0.0} км², зон {sweep.Count} — "
+                                     + $"это примерно {sweep.Count * 155 / 888 / 60 + 1} мин.");
 
                 // Локации - первыми и без единой зоны: мир знает их с генерации. Это те
                 // самые круги, вокруг которых дорога гнётся заранее, и увидеть их надо
@@ -287,7 +297,7 @@ namespace AstvardServerMod
                 {
                     var where = pair.Value;
                     if (where.m_location == null) continue;
-                    if (Flat(where.m_position, centre) > reach) continue;
+                    if (!OnLand(land, where.m_position.x, where.m_position.z)) continue;
 
                     file.WriteLine($"location\t{where.m_location.m_name}\t{Num(where.m_position.x)}\t"
                                    + $"{Num(where.m_position.z)}\t{Num(where.m_location.m_exteriorRadius)}\t0");
@@ -304,16 +314,17 @@ namespace AstvardServerMod
                 }
 
                 file.Flush();
-                Log.LogInfo($"[AstvardServerMod] Survey {job.Id}: {places} locations within "
-                            + $"{reach:F0} m of {what}, before a single zone was built.");
+                Log.LogInfo($"[AstvardServerMod] Survey {job.Id}: {area:0.0} km2 of land, "
+                            + $"{sweep.Count} zones, {places} locations on it — before a "
+                            + "single zone was built.");
 
                 var batch = new List<Vector2s>();
-                foreach (var zone in SurveyZones(centre, reach))
+                foreach (var zone in sweep)
                 {
                     batch.Add(zone);
                     if (batch.Count < SurveyZonesAtOnce) continue;
 
-                    yield return SurveyBatch(job, batch, centre, reach, file, seen, marks,
+                    yield return SurveyBatch(job, batch, land, file, seen, marks,
                                              count => things += count);
                     batches++;
                     batch.Clear();
@@ -331,7 +342,7 @@ namespace AstvardServerMod
 
                 if (batch.Count > 0 && !job.Stop && ZNet.instance != null)
                 {
-                    yield return SurveyBatch(job, batch, centre, reach, file, seen, marks,
+                    yield return SurveyBatch(job, batch, land, file, seen, marks,
                                              count => things += count);
                     batches++;
                 }
@@ -348,8 +359,14 @@ namespace AstvardServerMod
                         + $"batches, {Time.realtimeSinceStartup - began:F0} s, written to {SurveyFile}"
                         + $", {marks.Count} marks for the map.");
 
-            SayAboutZone(sender, $"Перепись готова: {things} объектов вокруг «{what}», "
-                                 + $"на карте отмечено {marks.Count}. Файл {SurveyFile}.");
+            // Сказать, что метки урезаны, обязательно: карта, на которой отмечена половина
+            // материка, врёт молча, а число в сообщении - единственное, что это ловит.
+            var capped = marks.Count >= SurveyMarksMost
+                ? $" (предел меток {SurveyMarksMost} — дальний край материка не отмечен)"
+                : "";
+
+            SayAboutZone(sender, $"Перепись готова: {things} объектов на материке, "
+                                 + $"на карте отмечено {marks.Count}{capped}. Файл {SurveyFile}.");
             SendSurveyPins(sender, marks);
         }
 
@@ -412,8 +429,8 @@ namespace AstvardServerMod
         }
 
         /// <summary>Одна пачка зон: поднять, дождаться, переписать, отпустить.</summary>
-        private static IEnumerator SurveyBatch(RoadJob job, List<Vector2s> batch, Vector3 centre,
-                                               float reach, System.IO.TextWriter file,
+        private static IEnumerator SurveyBatch(RoadJob job, List<Vector2s> batch, HashSet<long> land,
+                                               System.IO.TextWriter file,
                                                HashSet<int> seen, List<SurveyMark> marks,
                                                System.Action<int> counted)
         {
@@ -435,7 +452,7 @@ namespace AstvardServerMod
             yield return null;
             if (ZNetScene.instance == null) yield break;
 
-            counted(WriteSurvey(job, centre, reach, file, seen, marks));
+            counted(WriteSurvey(job, land, file, seen, marks));
             file.Flush();
         }
 
@@ -446,44 +463,44 @@ namespace AstvardServerMod
         /// всем объектам мира, и звать её на каждую из семисот зон значило бы семьсот
         /// полных обходов.
         /// </summary>
-        private static int WriteSurvey(RoadJob job, Vector3 centre, float reach,
+        private static int WriteSurvey(RoadJob job, HashSet<long> land,
                                        System.IO.TextWriter file, HashSet<int> seen,
                                        List<SurveyMark> marks)
         {
             var wrote = 0;
 
             foreach (var thing in Object.FindObjectsByType<Destructible>(FindObjectsSortMode.None))
-                if (SurveyOne(job, centre, reach, file, seen, marks, thing == null ? null : thing.gameObject))
+                if (SurveyOne(job, land, file, seen, marks, thing == null ? null : thing.gameObject))
                     wrote++;
 
             foreach (var tree in Object.FindObjectsByType<TreeBase>(FindObjectsSortMode.None))
-                if (SurveyOne(job, centre, reach, file, seen, marks, tree == null ? null : tree.gameObject))
+                if (SurveyOne(job, land, file, seen, marks, tree == null ? null : tree.gameObject))
                     wrote++;
 
             foreach (var log in Object.FindObjectsByType<TreeLog>(FindObjectsSortMode.None))
-                if (SurveyOne(job, centre, reach, file, seen, marks, log == null ? null : log.gameObject))
+                if (SurveyOne(job, land, file, seen, marks, log == null ? null : log.gameObject))
                     wrote++;
 
             foreach (var rock in Object.FindObjectsByType<MineRock>(FindObjectsSortMode.None))
-                if (SurveyOne(job, centre, reach, file, seen, marks, rock == null ? null : rock.gameObject))
+                if (SurveyOne(job, land, file, seen, marks, rock == null ? null : rock.gameObject))
                     wrote++;
 
             foreach (var rock in Object.FindObjectsByType<MineRock5>(FindObjectsSortMode.None))
-                if (SurveyOne(job, centre, reach, file, seen, marks, rock == null ? null : rock.gameObject))
+                if (SurveyOne(job, land, file, seen, marks, rock == null ? null : rock.gameObject))
                     wrote++;
 
             foreach (var pick in Object.FindObjectsByType<Pickable>(FindObjectsSortMode.None))
-                if (SurveyOne(job, centre, reach, file, seen, marks, pick == null ? null : pick.gameObject))
+                if (SurveyOne(job, land, file, seen, marks, pick == null ? null : pick.gameObject))
                     wrote++;
 
             foreach (var nest in Object.FindObjectsByType<CreatureSpawner>(FindObjectsSortMode.None))
-                if (SurveyOne(job, centre, reach, file, seen, marks, nest == null ? null : nest.gameObject))
+                if (SurveyOne(job, land, file, seen, marks, nest == null ? null : nest.gameObject))
                     wrote++;
 
             return wrote;
         }
 
-        private static bool SurveyOne(RoadJob job, Vector3 centre, float reach,
+        private static bool SurveyOne(RoadJob job, HashSet<long> land,
                                       System.IO.TextWriter file, HashSet<int> seen,
                                       List<SurveyMark> marks, GameObject go)
         {
@@ -493,7 +510,7 @@ namespace AstvardServerMod
             // вещь попала бы в перепись столько раз, сколько пачек её застали.
             var at = go.transform.position;
             if (!job.Zones.Contains(ZoneSystem.GetZone(at))) return false;
-            if (Flat(at, centre) > reach) return false;
+            if (!OnLand(land, at.x, at.z)) return false;
             if (!seen.Add(go.GetInstanceID())) return false;
 
             float tall;
