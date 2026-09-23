@@ -98,7 +98,6 @@ namespace AstvardServerMod
         private const int StateTimeSkip = 80;   // на сколько игровых часов сдвинуть мир
         private const int StateSortBeds = 81;   // сколько грядок держать в зоне
 
-        private const int StateSurveyMarks = 82; // перепись: что метить на карте
 
         internal static GameObject Panel;
 
@@ -1127,7 +1126,6 @@ namespace AstvardServerMod
                 // У этих двух возврата не было вовсе, и «Назад» с них проваливалось в
                 // общий else - то есть в админ-меню, которого игрок и не открывал.
                 else if (MenuState == StateTimeSkip) MenuState = StateCheats;
-                else if (MenuState == StateSurveyMarks) MenuState = StateCheats;
                 else if (MenuState == StateBrewOne) MenuState = StateBrews;
                 else if (MenuState == StateBrews) MenuState = StateSortSetup;
                 else if (MenuState == StateSortZone) MenuState = StateSortZones;

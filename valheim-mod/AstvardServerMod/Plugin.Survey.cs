@@ -33,8 +33,6 @@ namespace AstvardServerMod
     {
         private const string RpcSurveyAsk = "AstvardSurveyAsk";
 
-        private const string RpcSurveyPins = "AstvardSurveyPins";
-
         /// <summary>
         /// Число в файл - всегда с точкой, чем бы ни была локаль сервера.
         ///
@@ -71,8 +69,6 @@ namespace AstvardServerMod
         /// </summary>
         private const int SurveyMarksMost = 20000;
 
-        private const int SurveyMarksPerPacket = 800;
-
         /// <summary>
         /// С какого радиуса каменное образование считается валуном.
         ///
@@ -94,23 +90,20 @@ namespace AstvardServerMod
         private const float BoulderLeast = 8f;
 
         /// <summary>
-        /// Что метится на карте и в каком порядке показано на странице «Метки».
+        /// Что перепись запоминает для прокладки, а остальное только считает.
         ///
         /// Список хозяина, слово в слово: «руны с надписями, спавны босов, спавн не нужно
         /// он и так отмечен, руды, просто большие валуны, деревни и строения из
         /// процедурной генерации, ягодники, пещеры скелетов и тролей, спавнеры». Камни с
         /// надписями, алтари, деревни, руины и пещеры - **все локации**, оттого их один
         /// род на всех.
+        ///
+        /// До 23.09.2026 это же решало, что метится на карте игрока. Метки были
+        /// отладочными и убраны в тот же день: смотреть на материк удобнее рисовальщиком
+        /// по файлу переписи, а значок на карте Valheim не уменьшается при отдалении, так
+        /// что пять тысяч меток сливались в ковёр.
         /// </summary>
         private static readonly string[] MarkKinds = { "location", "ore", "boulder", "nest", "berries" };
-
-        /// <summary>
-        /// Что включено по умолчанию. Гнёзда и ягодники - нет: их на материке 1 304 и
-        /// 2 591, а значок на карте Valheim не уменьшается при отдалении, так что тысячи
-        /// меток сливаются в ковёр. Включаются одной кнопкой, без повторной переписи.
-        /// </summary>
-        private static readonly HashSet<string> MarksShown =
-            new HashSet<string> { "location", "ore", "boulder" };
 
         /// <summary>Файл переписи: рядом с прочими файлами мода, у сервера.</summary>
         private const string SurveyFile = "astvard-survey.txt";
@@ -119,12 +112,6 @@ namespace AstvardServerMod
         private const int SurveyZonesAtOnce = 24;
 
         internal static GameObject SurveyButton;
-
-        internal static GameObject SurveyClearButton;
-
-        internal static GameObject SurveyMarksButton;
-
-        internal static GameObject[] SurveyKindButtons;
 
         private static bool _surveying;
 
@@ -136,7 +123,6 @@ namespace AstvardServerMod
         internal static void RegisterSurveyRpcs(ZRoutedRpc rpc)
         {
             rpc.Register<float, float>(RpcSurveyAsk, OnSurveyAsk);
-            rpc.Register<ZPackage>(RpcSurveyPins, OnSurveyPins);
         }
 
         // ---------------- клиент ----------------
@@ -153,150 +139,6 @@ namespace AstvardServerMod
             ZRoutedRpc.instance?.InvokeRoutedRPC(RpcSurveyAsk, at.x, at.z);
             player.Message(MessageHud.MessageType.Center,
                 "Перепись материка, на котором стоишь — жди, это минуты");
-        }
-
-        /// <summary>Метки, поставленные переписью. Не сохраняются: их ставят заново.</summary>
-        private static readonly List<Minimap.PinData> SurveyPins = new List<Minimap.PinData>();
-
-        /// <summary>
-        /// Всё, что прислала перепись, - и выключенное тоже.
-        ///
-        /// Держится оно здесь, а не выбрасывается по дороге, ровно ради того, чтобы
-        /// включить ягодники можно было кнопкой, а не четырьмя минутами новой переписи.
-        /// </summary>
-        private static readonly List<SurveyMark> SurveyFound = new List<SurveyMark>();
-
-        internal static int SurveyPinCount
-        {
-            get { return SurveyPins.Count; }
-        }
-
-        internal static int SurveyFoundCount
-        {
-            get { return SurveyFound.Count; }
-        }
-
-        internal static int SurveyFoundOf(string kind)
-        {
-            var n = 0;
-            foreach (var mark in SurveyFound)
-                if (mark.Kind == kind) n++;
-            return n;
-        }
-
-        internal static bool MarkShown(string kind)
-        {
-            return MarksShown.Contains(kind);
-        }
-
-        internal static void ToggleMarkKind(string kind)
-        {
-            if (!MarksShown.Remove(kind)) MarksShown.Add(kind);
-            RepinSurvey();
-        }
-
-        internal static void ClearSurveyPins()
-        {
-            var map = Minimap.instance;
-            if (map != null)
-                foreach (var pin in SurveyPins)
-                    if (pin != null) map.RemovePin(pin);
-
-            SurveyPins.Clear();
-            RefreshMenu();
-        }
-
-        internal static void ForgetSurvey()
-        {
-            SurveyFound.Clear();
-            ClearSurveyPins();
-        }
-
-        /// <summary>Заново раскладывает метки по карте из того, что прислала перепись.</summary>
-        private static void RepinSurvey()
-        {
-            ClearSurveyPins();
-
-            var map = Minimap.instance;
-            if (map == null) return;
-
-            foreach (var mark in SurveyFound)
-            {
-                if (!MarksShown.Contains(mark.Kind)) continue;
-                SurveyPins.Add(map.AddPin(new Vector3(mark.X, 0f, mark.Z), PinFor(mark.Kind),
-                    $"{MarkTitle(mark.Kind)}: {mark.Name}", false, false));
-            }
-
-            Log.LogInfo($"[AstvardServerMod] Survey pins: {SurveyPins.Count} of "
-                        + $"{SurveyFound.Count} on the map.");
-            RefreshMenu();
-        }
-
-        /// <summary>
-        /// Метки переписи на карту.
-        ///
-        /// Значок берётся по роду, чтобы карту можно было читать глазами, а не наведением:
-        /// у `Icon3` уже живут зоны сортировки, так что переписи он не достаётся.
-        /// </summary>
-        private static void OnSurveyPins(long sender, ZPackage pkg)
-        {
-            if (GUIManager.IsHeadless()) return;
-
-            bool first;
-            int count;
-            try
-            {
-                first = pkg.ReadBool();
-                count = pkg.ReadInt();
-            }
-            catch (System.Exception e)
-            {
-                Log.LogWarning($"[AstvardServerMod] Survey pins unreadable: {e.Message}");
-                return;
-            }
-
-            // Первая пачка - это новая перепись, а не добавка к прежней.
-            if (first) ForgetSurvey();
-
-            for (var i = 0; i < count; i++)
-            {
-                try
-                {
-                    SurveyFound.Add(new SurveyMark
-                    {
-                        Kind = pkg.ReadString(),
-                        Name = pkg.ReadString(),
-                        X = pkg.ReadSingle(),
-                        Z = pkg.ReadSingle(),
-                    });
-                }
-                catch (System.Exception e)
-                {
-                    Log.LogWarning($"[AstvardServerMod] Survey mark {i} unreadable: {e.Message}");
-                    break;
-                }
-            }
-
-            RepinSurvey();
-        }
-
-        private static Minimap.PinType PinFor(string kind)
-        {
-            if (kind == "location") return Minimap.PinType.Icon0;
-            if (kind == "ore") return Minimap.PinType.Icon1;
-            if (kind == "boulder") return Minimap.PinType.Icon2;
-            if (kind == "berries") return Minimap.PinType.Icon3;
-            return Minimap.PinType.Icon4;
-        }
-
-        internal static string MarkTitle(string kind)
-        {
-            if (kind == "location") return "Локация";
-            if (kind == "ore") return "Руда";
-            if (kind == "boulder") return "Валун";
-            if (kind == "nest") return "Гнездо";
-            if (kind == "berries") return "Ягодник";
-            return kind;
         }
 
         // ---------------- сервер ----------------
@@ -464,12 +306,13 @@ namespace AstvardServerMod
 
             Log.LogInfo($"[AstvardServerMod] Survey {job.Id} done: {things} things in {batches} "
                         + $"batches, {Time.realtimeSinceStartup - began:F0} s, written to {SurveyFile}"
-                        + $", {marks.Count} marks for the map.");
+                        + $", {marks.Count} things the road will go round.");
 
-            // Сказать, что метки урезаны, обязательно: карта, на которой отмечена половина
-            // материка, врёт молча, а число в сообщении - единственное, что это ловит.
+            // Сказать, что список урезан, обязательно: прокладка, знающая половину
+            // материка, обойдёт увиденное и пройдёт напрямик сквозь остальное, а снаружи
+            // одно от другого не отличить.
             var capped = marks.Count >= SurveyMarksMost
-                ? $" (предел меток {SurveyMarksMost} — дальний край материка не отмечен)"
+                ? $" (предел {SurveyMarksMost} — дальний край материка не учтён)"
                 : "";
 
             SurveyKnown.Clear();
@@ -477,45 +320,7 @@ namespace AstvardServerMod
             SurveyLand = land;
 
             SayAboutZone(sender, $"Перепись готова: {things} объектов на материке, "
-                                 + $"на карте отмечено {marks.Count}{capped}. Файл {SurveyFile}.");
-            SendSurveyPins(sender, marks);
-        }
-
-        /// <summary>
-        /// Метки уезжают игроку пачками, потому что их тысячи, а не десятки.
-        ///
-        /// Пакет на восемь сотен - это килобайтов двадцать; одним куском ушло бы всё
-        /// разом, и на большом радиусе это был бы пакет, которого никто не ждал.
-        /// </summary>
-        private static void SendSurveyPins(long sender, List<SurveyMark> marks)
-        {
-            var rpc = ZRoutedRpc.instance;
-            if (rpc == null) return;
-
-            var target = ReplyTarget(sender);
-            var sent = 0;
-            while (sent < marks.Count || sent == 0)
-            {
-                var take = Mathf.Min(SurveyMarksPerPacket, marks.Count - sent);
-                var pkg = new ZPackage();
-
-                // Первая пачка снимает прежние метки: перепись показывает то, что нашла
-                // сейчас, а не сумму всех прошлых.
-                pkg.Write(sent == 0);
-                pkg.Write(take);
-                for (var i = 0; i < take; i++)
-                {
-                    var mark = marks[sent + i];
-                    pkg.Write(mark.Kind);
-                    pkg.Write(mark.Name ?? "");
-                    pkg.Write(mark.X);
-                    pkg.Write(mark.Z);
-                }
-
-                rpc.InvokeRoutedRPC(target, RpcSurveyPins, pkg);
-                sent += take;
-                if (take == 0) break;
-            }
+                                 + $"дорога будет обходить {marks.Count}{capped}. Файл {SurveyFile}.");
         }
 
         /// <summary>Клетки круга, от середины наружу: оборванная перепись тогда о середине.</summary>
