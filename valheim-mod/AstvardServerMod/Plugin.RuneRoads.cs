@@ -1,4 +1,5 @@
 using System.Collections;
+using BepInEx.Configuration;
 using Splatform;
 using System.Collections.Generic;
 using UnityEngine;
@@ -58,6 +59,42 @@ namespace AstvardServerMod
         {
             return Mathf.Clamp(own, RingMin, RingMax);
         }
+
+        /// <summary>
+        /// Класть ли сеть на горе. По умолчанию нет, и вот почему.
+        ///
+        /// Гора в Valheim - это поле валунов по 18-35 м на склонах круче сорока пяти
+        /// градусов: `rock1_mountain` намерен переписью 18,2..34,8 м. Дорога там либо
+        /// стоит (всё непроходимо), либо лезет между глыбами по отвесному - хозяин
+        /// прислал четыре снимка ровно этого, добавив, что «в остальных биомах пока что
+        /// всё хорошо». Настоящая горная дорога просит серпантина и десятков метров
+        /// выемки, а укладка режет шесть.
+        ///
+        /// Поэтому метки на горе выпадают из сети целиком - ни круга, ни дорог: дорога,
+        /// уходящая в камни и там кончающаяся, хуже её отсутствия. До горных рун и до
+        /// алтаря Модера ходят ногами, как ходили.
+        ///
+        /// Ключ на случай, когда захочется обратно: `[Дороги] Mountains = true`. И число
+        /// пропущенного всегда в отчёте - молчаливая пропажа алтаря читалась бы как
+        /// поломка.
+        /// </summary>
+        private static ConfigEntry<bool> _netMountains;
+
+        internal static void BindRuneRoads(ConfigFile config)
+        {
+            _netMountains = config.Bind("Дороги", "Mountains", false,
+                "Класть ли сеть дорог на горе. Гора - это поле валунов по 18-35 м на "
+                + "отвесных склонах: дорога там либо не находит пути, либо лезет между "
+                + "глыбами. По умолчанию метки на горе выпадают из сети целиком.");
+        }
+
+        private static bool NetTakesMountains
+        {
+            get { return _netMountains != null && _netMountains.Value; }
+        }
+
+        /// <summary>Сколько меток последний обвод материка оставил на горе.</summary>
+        private static int _marksInTheHills;
 
         internal static void RegisterRuneRoadRpcs(ZRoutedRpc rpc)
         {
@@ -291,6 +328,9 @@ namespace AstvardServerMod
                             + $"{net.ShortcutMetres / 1000f:0.0} км");
 
             said.Append($". Кругов {marks.Count}: {Rings(marks)}");
+            if (_marksInTheHills > 0)
+                said.Append($". На горе пропущено меток: {_marksInTheHills}"
+                            + " — туда сеть не ходит ([Дороги] Mountains)");
             said.Append(" — и каждый дорастёт до края запрета стройки, если тот шире.");
 
             Say(sender, said.ToString(), census, marks);
@@ -892,7 +932,10 @@ namespace AstvardServerMod
             var land = Continent(world, zones.m_waterLevel, x, z);
             var marks = new List<Mark>();
             cells = land.Count;
+            _marksInTheHills = 0;
             if (land.Count == 0) return marks;
+
+            var inTheHills = 0;
 
             foreach (var pair in zones.m_locationInstances)
             {
@@ -910,6 +953,16 @@ namespace AstvardServerMod
                 var kind = KindOf(name);
                 if (kind == MarkKind.None) continue;
 
+                // Гора спрашивается у генератора - чистая функция от координат, ни одной
+                // зоны поднимать не надо, как и для высоты.
+                if (!NetTakesMountains
+                    && world.GetBiome(where.m_position.x, where.m_position.z)
+                       == Heightmap.Biome.Mountain)
+                {
+                    inTheHills++;
+                    continue;
+                }
+
                 marks.Add(new Mark
                 {
                     At = where.m_position,
@@ -919,6 +972,7 @@ namespace AstvardServerMod
                 });
             }
 
+            _marksInTheHills = inTheHills;
             return marks;
         }
 

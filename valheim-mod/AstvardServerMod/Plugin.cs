@@ -102,6 +102,7 @@ namespace AstvardServerMod
             BindChestZone(Config);
             BindBrewing(Config);
             BindWorldRates(Config);
+            BindRuneRoads(Config);
             BindSiteLists(Config);
 
             _harmony = new Harmony("astvard.servermod");
