@@ -48,6 +48,9 @@ namespace AstvardServerMod
             // Перепись: глаза для разбора, а не функция мода. Рельефа она не трогает.
             SurveyButton = MakeButton(gui, "", AskSurvey);
 
+            // Метки переписи не сохраняются в карту игрока, но висят до перезахода.
+            SurveyClearButton = MakeButton(gui, "", ClearSurveyPins);
+
             TimeSkipButton = MakeButton(gui, "Сдвинуть время", () =>
             {
                 SetFieldText(TimeSkipInput, "2");
@@ -191,6 +194,8 @@ namespace AstvardServerMod
             SetLabel(RuneStonesButton, RunesArmed ? "Класть? Нажми ещё раз" : "Сеть дорог");
             SetActive(RuneStonesStopButton, admin && MenuState == StateCheats && RunesAsked);
             SetActive(SurveyButton, admin && MenuState == StateCheats);
+            SetActive(SurveyClearButton, admin && MenuState == StateCheats && SurveyPinCount > 0);
+            SetLabel(SurveyClearButton, $"Снять метки ({SurveyPinCount})");
             SetLabel(SurveyButton, $"Перепись вокруг спавна ({SurveyReach:F0} м)");
 
             var page = admin && MenuState == StateTimeSkip;
