@@ -592,6 +592,7 @@ namespace AstvardServerMod
 
             var planned = 0;
             var straightened = 0;
+            var climbedOver = 0;
             var began = Time.realtimeSinceStartup;
 
             foreach (var step in Steps(marks, net, new Vector3(x, 0f, z)))
@@ -616,10 +617,17 @@ namespace AstvardServerMod
                 // Разобрать путь, проложить по цене, проверить - и только потом в очередь.
                 if (field != null)
                 {
-                    if (PlanRoad(field, road, from, to, marks[link.A].Radius, marks[link.B].Radius))
+                    bool climbed;
+                    if (PlanRoad(field, road, from, to, marks[link.A].Radius, marks[link.B].Radius,
+                                 out climbed))
+                    {
                         planned++;
+                        if (climbed) climbedOver++;
+                    }
                     else
+                    {
                         straightened++;
+                    }
                 }
                 road.Lit = job.Lit;
 
@@ -638,7 +646,8 @@ namespace AstvardServerMod
             // а не догадкой - сервер на это время стоит.
             if (field != null)
                 Log.LogInfo($"[AstvardServerMod] Road net: planning {planned + straightened} roads "
-                            + $"took {Time.realtimeSinceStartup - began:F1} s.");
+                            + $"took {Time.realtimeSinceStartup - began:F1} s, "
+                            + $"{climbedOver} of them had to climb over something.");
 
             _runeJob = job;
             Instance.StartCoroutine(RunRuneJob(job));
@@ -649,6 +658,7 @@ namespace AstvardServerMod
                 ? ", проложено по прямой (переписи не было)"
                 : straightened > 0
                     ? $", проложено с обходом {planned}, прямыми {straightened}"
+                        + (climbedOver > 0 ? $" (перелезать пришлось {climbedOver})" : "")
                     : $", все {planned} проложены с обходом";
 
             var said = $"Кругов {job.Stones}, дорог {job.Metres / 1000f:0.0} км"

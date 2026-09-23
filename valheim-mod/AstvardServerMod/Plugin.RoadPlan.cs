@@ -76,6 +76,15 @@ namespace AstvardServerMod
         private const int PlanEasePasses = 600;
 
         /// <summary>
+        /// Во что обходится клетка, через которую иначе не пройти вовсе.
+        ///
+        /// Пятьсот против единицы у ровной земли: восемь метров такого стоят, как четыре
+        /// километра ровного, - то есть дорога перелезет в самом узком месте и больше
+        /// нигде. Цена нарочно нелепая, потому что и случай нелепый.
+        /// </summary>
+        private const float PlanHardCost = 500f;
+
+        /// <summary>
         /// Насколько точка съезжает к середине между соседями за один проход.
         ///
         /// Половина, и больше нельзя: на единице точка встаёт ровно в середину, а такой
@@ -272,6 +281,29 @@ namespace AstvardServerMod
             }
         }
 
+        /// <summary>
+        /// Открывает всё непроходимое, кроме воды, по нелепой цене.
+        ///
+        /// Последняя попытка, и только после того, как строгий поиск сказал «прохода
+        /// нет». На случайной карте так заперты выходили метки на скальных площадках
+        /// (поиск обходил семь клеток - ровно открытый круг самой метки) и целые половины
+        /// материка за хребтом: 21 712 клеток из 39 976.
+        ///
+        /// **Вода не открывается никогда.** Дорога по дну залива - это то, ради чего
+        /// заводят мост, а не то, что кладут от безысходности; открыв её здесь, мы
+        /// получили бы брод молча и по всему материку.
+        /// </summary>
+        private static void OpenHard(RoadPlan.Field field, List<KeyValuePair<int, float>> was)
+        {
+            for (var i = 0; i < field.Cost.Length; i++)
+            {
+                if (field.Cost[i] < RoadPlan.Blocked || PlanWet.Contains(i)) continue;
+
+                was.Add(new KeyValuePair<int, float>(i, field.Cost[i]));
+                field.Cost[i] = PlanHardCost;
+            }
+        }
+
         /// <summary>Память о том, что было непроходимо из-за воды, а не из-за вещи.</summary>
         private static readonly HashSet<int> PlanWet = new HashSet<int>();
 
@@ -399,8 +431,9 @@ namespace AstvardServerMod
         /// не бывает - он уходит в лог с причиной.
         /// </summary>
         private static bool PlanRoad(RoadPlan.Field field, RoadJob road, Vector3 from, Vector3 to,
-                                     float fromRing, float toRing)
+                                     float fromRing, float toRing, out bool climbed)
         {
+            climbed = false;
             // Концы дороги - середины меток, а метка это непроходимый круг. Открываем
             // ровно их, иначе поиск честно ответит «прохода нет» у каждой дороги сети.
             // Что открыли - вернём: сетка одна на всю сеть, и дыра в ней живёт до конца.
@@ -411,6 +444,31 @@ namespace AstvardServerMod
                 OpenEnd(field, to, toRing + road.Radius + 2f, opened);
 
                 var route = RoadPlan.Find(field, new Vec2(from.x, from.z), new Vec2(to.x, to.z));
+
+                // Не прошло по-строгому - пробуем по-дорогому. Отказ здесь означает не
+                // «дороги не будет», а «дорога будет прямой», то есть сквозь деревни,
+                // жилы и валуны разом: худшее из всего, что могло выйти. Перелезть через
+                // одну скалу и обойти остальное лучше по любому счёту.
+                if (!route.Found && route.Reached > 0)
+                {
+                    var hard = new List<KeyValuePair<int, float>>();
+                    try
+                    {
+                        OpenHard(field, hard);
+                        var again = RoadPlan.Find(field, new Vec2(from.x, from.z),
+                                                  new Vec2(to.x, to.z));
+                        if (again.Found)
+                        {
+                            route = again;
+                            climbed = true;
+                        }
+                    }
+                    finally
+                    {
+                        foreach (var was in hard) field.Cost[was.Key] = was.Value;
+                    }
+                }
+
                 if (!route.Found)
                 {
                     Log.LogWarning($"[AstvardServerMod] Road plan {road.Id}: {route.Why}; from "
@@ -444,6 +502,7 @@ namespace AstvardServerMod
 
                 Log.LogInfo($"[AstvardServerMod] Road plan {road.Id}: {route.Metres:F0} m over "
                             + $"{route.Cost:F0} of cost, {check.Say}"
+                            + (climbed ? ", пришлось перелезать" : "")
                             + (check.Good ? "." : " — ПРОВЕРКА НЕ ПРОШЛА."));
                 return true;
             }
