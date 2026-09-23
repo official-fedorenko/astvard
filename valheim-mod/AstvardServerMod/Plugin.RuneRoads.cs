@@ -484,6 +484,20 @@ namespace AstvardServerMod
 
             var net = Whole(marks);
 
+            // Сетка цены земли - одна на всю сеть, и это нарочно: проложенная дорога
+            // дешевит землю вокруг себя, и следующие к ней прижимаются. Нет переписи -
+            // нет и сетки, тогда дороги рисуются кривой, как рисовались до 23.09.2026.
+            var field = PlanReady ? PlanField(SurveyLand, radius) : null;
+            if (field != null)
+                Log.LogInfo($"[AstvardServerMod] Road net: cost field {field.Wide}x{field.High} "
+                            + $"cells of {PlanStep:F0} m, from {SurveyKnownCount} things known.");
+            else
+                SayAboutZone(sender, "Переписи не было — дороги пойдут по прямой, как раньше. "
+                                     + "Сделай «Перепись материка», и они будут обходить.");
+
+            var planned = 0;
+            var straightened = 0;
+
             foreach (var step in Steps(marks, net, new Vector3(x, 0f, z)))
             {
                 if (step.Mark >= 0)
@@ -502,6 +516,15 @@ namespace AstvardServerMod
 
                 var road = RoadBetween(from, to, radius, width, paved, smooth, clear, torch,
                                        spacing, forever, bend, creator, platform);
+
+                // Разобрать путь, проложить по цене, проверить - и только потом в очередь.
+                if (field != null)
+                {
+                    if (PlanRoad(field, road, from, to, marks[link.A].Radius, marks[link.B].Radius))
+                        planned++;
+                    else
+                        straightened++;
+                }
                 road.Lit = job.Lit;
 
                 // Точки сети - это метки, одна к одной, так что номер связи и есть номер
@@ -517,9 +540,17 @@ namespace AstvardServerMod
             _runeJob = job;
             Instance.StartCoroutine(RunRuneJob(job));
 
+            // Сколько дорог проложено по цене земли, а сколько осталось прямыми: прямая
+            // здесь значит «прохода не нашлось», и знать это надо до, а не после.
+            var how = field == null
+                ? ", проложено по прямой (переписи не было)"
+                : straightened > 0
+                    ? $", проложено с обходом {planned}, прямыми {straightened}"
+                    : $", все {planned} проложены с обходом";
+
             var said = $"Кругов {job.Stones}, дорог {job.Metres / 1000f:0.0} км"
                        + (net.Shortcuts > 0 ? $" (срезок {net.Shortcuts})" : "")
-                       + $", заданий {job.Queue.Count}. Начал.";
+                       + $", заданий {job.Queue.Count}{how}. Начал.";
             SayAboutZone(sender, said);
             Log.LogInfo($"[AstvardServerMod] Road net: {said} Asked by {SenderName(sender)}.");
         }

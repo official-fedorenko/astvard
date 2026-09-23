@@ -57,6 +57,12 @@ namespace AstvardServerMod
             public float X;
 
             public float Z;
+
+            /// <summary>
+            /// Ширина на земле. Клиенту она не нужна - значок один на всех, - а прокладке
+            /// нужна: круг этой ширины и есть то, что дорога обходит.
+            /// </summary>
+            public float Radius;
         }
 
         /// <summary>
@@ -410,6 +416,7 @@ namespace AstvardServerMod
                             Name = where.m_location.m_name,
                             X = where.m_position.x,
                             Z = where.m_position.z,
+                            Radius = where.m_location.m_exteriorRadius,
                         });
                 }
 
@@ -464,6 +471,10 @@ namespace AstvardServerMod
             var capped = marks.Count >= SurveyMarksMost
                 ? $" (предел меток {SurveyMarksMost} — дальний край материка не отмечен)"
                 : "";
+
+            SurveyKnown.Clear();
+            SurveyKnown.AddRange(marks);
+            SurveyLand = land;
 
             SayAboutZone(sender, $"Перепись готова: {things} объектов на материке, "
                                  + $"на карте отмечено {marks.Count}{capped}. Файл {SurveyFile}.");
@@ -621,7 +632,10 @@ namespace AstvardServerMod
                            + $"{Num(radius)}\t{tall:F0}");
 
             if (WorthAMark(kind) && marks.Count < SurveyMarksMost)
-                marks.Add(new SurveyMark { Kind = kind, Name = name, X = at.x, Z = at.z });
+                marks.Add(new SurveyMark
+                {
+                    Kind = kind, Name = name, X = at.x, Z = at.z, Radius = radius,
+                });
 
             return true;
         }
