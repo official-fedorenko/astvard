@@ -187,6 +187,7 @@ namespace AstvardServerMod
             }
 
             PlanBlockers(field, halfWidth);
+            PlanWards(field, halfWidth);
             return field;
         }
 
@@ -279,6 +280,93 @@ namespace AstvardServerMod
                 was.Add(new KeyValuePair<int, float>(i, field.Cost[i]));
                 field.Cost[i] = 2f;
             }
+        }
+
+        /// <summary>
+        /// Обереги игроков - тоже непроходимое, и спрашиваются они не у сцены.
+        ///
+        /// Просьба хозяина 23.09.2026, и мысль верная: дорога, прорезавшая чужую базу, -
+        /// это то, за что потом извиняются, а рельеф назад не ходит.
+        ///
+        /// **`PrivateArea.m_allAreas` для этого не годится.** Он наполняется в `Awake`,
+        /// то есть знает только обереги в зонах, которые кто-то поднял, а прокладка идёт
+        /// до того, как поднята хоть одна. Запись же есть у сервера всегда:
+        /// `ZDOMan.GetAllZDOsWithPrefabIterative` обходит все записи мира, по четыреста
+        /// секторов за вызов, и его надо докрутить до «готово».
+        ///
+        /// **Какой префаб - оберег, спрашивается у самой игры**, а не пишется именем:
+        /// оберег это то, на чём висит `PrivateArea`, и радиус у каждого свой, его же.
+        /// Имя `guard_stone` устареет ровно в тот день, когда игра добавит второй оберег,
+        /// а эта проверка - нет.
+        ///
+        /// **Выключенный оберег обходим наравне с включённым.** Он не защищает, но он
+        /// стоит там, где человек строил, и это всё, что нам нужно знать.
+        ///
+        /// Оберег держит только строгий поиск: если иначе до метки не добраться,
+        /// запасной проход (<see cref="OpenHard"/>) перелезет и через него. Так честнее,
+        /// чем отказ, - отказ кладёт дорогу **прямой**, то есть сквозь тот же оберег и
+        /// сквозь всё остальное разом.
+        /// </summary>
+        /// <summary>
+        /// Обереги, найденные прокладкой: середина в x/z, радиус спрятан в y.
+        ///
+        /// Нужны они после неё ещё раз - кругам меток. Обойти базу дорогой и тут же
+        /// замостить в её середине площадку было бы половиной вежливости.
+        /// </summary>
+        private static readonly List<Vector3> PlanWardRings = new List<Vector3>();
+
+        /// <summary>Накрывает ли круг такого радиуса чей-нибудь оберег.</summary>
+        private static bool TouchesAWard(Vector3 at, float radius)
+        {
+            foreach (var ward in PlanWardRings)
+            {
+                var dx = ward.x - at.x;
+                var dz = ward.z - at.z;
+                var reach = ward.y + radius;
+                if (dx * dx + dz * dz < reach * reach) return true;
+            }
+
+            return false;
+        }
+
+        private static void PlanWards(RoadPlan.Field field, float halfWidth)
+        {
+            var scene = ZNetScene.instance;
+            var records = ZDOMan.instance;
+            if (scene == null || records == null) return;
+
+            var keep = halfWidth + 1f;
+            var found = 0;
+            var kinds = 0;
+            PlanWardRings.Clear();
+
+            foreach (var prefab in scene.m_prefabs)
+            {
+                if (prefab == null) continue;
+
+                var ward = prefab.GetComponent<PrivateArea>();
+                if (ward == null) continue;
+
+                kinds++;
+                var mine = new List<ZDO>();
+                var index = 0;
+
+                // Предел от нелепого, а не от дела: обход кончается сам, и на живом мире
+                // это единицы вызовов. Вечный цикл в укладке стоил бы повисшего сервера.
+                for (var turn = 0; turn < 10000; turn++)
+                    if (records.GetAllZDOsWithPrefabIterative(prefab.name, mine, ref index)) break;
+
+                foreach (var zdo in mine)
+                {
+                    var at = zdo.GetPosition();
+                    field.Circle(new Vec2(at.x, at.z), ward.m_radius + keep, RoadPlan.Blocked);
+                    PlanWardRings.Add(new Vector3(at.x, ward.m_radius, at.z));
+                    found++;
+                }
+            }
+
+            Log.LogInfo($"[AstvardServerMod] Road net: {found} wards of {kinds} kinds "
+                        + "are gone round.");
         }
 
         /// <summary>

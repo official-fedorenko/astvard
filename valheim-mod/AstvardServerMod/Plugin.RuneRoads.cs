@@ -593,12 +593,22 @@ namespace AstvardServerMod
             var planned = 0;
             var straightened = 0;
             var climbedOver = 0;
+            var wardedRings = 0;
             var began = Time.realtimeSinceStartup;
 
             foreach (var step in Steps(marks, net, new Vector3(x, 0f, z)))
             {
                 if (step.Mark >= 0)
                 {
+                    // Обойти базу дорогой и замостить площадку в её середине - это
+                    // половина вежливости. Круг метки, накрывающий чей-то оберег, не
+                    // кладётся вовсе: рельеф назад не ходит.
+                    if (field != null && TouchesAWard(marks[step.Mark].At, marks[step.Mark].Radius))
+                    {
+                        wardedRings++;
+                        continue;
+                    }
+
                     var ring = CircleJob(marks[step.Mark], paved, smooth, clear, torch,
                                          spacing, forever, bend, creator, platform);
                     ring.Mark = step.Mark;
@@ -661,9 +671,11 @@ namespace AstvardServerMod
                         + (climbedOver > 0 ? $" (перелезать пришлось {climbedOver})" : "")
                     : $", все {planned} проложены с обходом";
 
-            var said = $"Кругов {job.Stones}, дорог {job.Metres / 1000f:0.0} км"
+            var said = $"Кругов {job.Stones - wardedRings}, дорог {job.Metres / 1000f:0.0} км"
                        + (net.Shortcuts > 0 ? $" (срезок {net.Shortcuts})" : "")
-                       + $", заданий {job.Queue.Count}{how}. Начал.";
+                       + $", заданий {job.Queue.Count}{how}"
+                       + (wardedRings > 0 ? $", кругов под оберегами не тронуто {wardedRings}" : "")
+                       + ". Начал.";
             SayAboutZone(sender, said);
             Log.LogInfo($"[AstvardServerMod] Road net: {said} Asked by {SenderName(sender)}.");
         }
